@@ -34,7 +34,7 @@ func newConfigurationFixture(t *testing.T) configurationFixture {
 	for name, body := range map[string]string{
 		"uname":  "printf '%s\\n' \"${CONFIG_TEST_OS:-Linux}\"",
 		"id":     "case \"$1\" in -u) printf '1001\\n';; -g) printf '1002\\n';; *) exit 1;; esac",
-		"stat":   "if [ \"${CONFIG_TEST_SOCKET_FAIL:-}\" = 1 ]; then exit 1; fi; printf '999\\n'",
+		"stat":   "if [ \"${CONFIG_TEST_SOCKET_FAIL:-}\" = 1 ]; then exit 1; fi; case \"${CONFIG_TEST_OS:-Linux}\" in Linux) test \"$1\" = -c || exit 1;; Darwin) test \"$1\" = -f || exit 1;; esac; printf '999\\n'",
 		"docker": "printf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"",
 	} {
 		if err := os.WriteFile(filepath.Join(f.bin, name), []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
@@ -46,11 +46,20 @@ func newConfigurationFixture(t *testing.T) configurationFixture {
 
 func (f configurationFixture) run(t *testing.T, body string, extra ...string) ([]byte, error) {
 	t.Helper()
-	cmd := exec.CommandContext(t.Context(), "bash", "-c", body) // #nosec G204 -- body is a test-owned literal, not user input.
+	return f.runShell(t, "bash", body, extra...)
+}
+
+func (f configurationFixture) runShell(t *testing.T, shell, body string, extra ...string) ([]byte, error) {
+	t.Helper()
+	args := []string{"-c", body}
+	if shell == "zsh" {
+		args = append([]string{"-f"}, args...)
+	}
+	cmd := exec.CommandContext(t.Context(), shell, args...) // #nosec G204 -- shell and body are test-owned literals.
 	cmd.Dir = f.taskHome
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
-		if name != "HOME" && name != "PATH" {
+		if name != "HOME" && name != "PATH" && name != "BASH_ENV" && name != "ENV" && name != "ZDOTDIR" {
 			cmd.Env = append(cmd.Env, entry)
 		}
 	}
@@ -135,6 +144,11 @@ lab load start --replicas 4
 	if err != nil {
 		t.Fatalf("wrappers: %s (%v)", out, err)
 	}
+	assertConfigurationWrapperArguments(t, f)
+}
+
+func assertConfigurationWrapperArguments(t *testing.T, f configurationFixture) {
+	t.Helper()
 	data, err := os.ReadFile(f.dockerLog)
 	if err != nil {
 		t.Fatal(err)
@@ -152,13 +166,83 @@ func TestConfigurationFailuresLeaveInteractiveShellAlive(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		env  []string
-	}{{"platform", []string{"CONFIG_TEST_OS=Darwin"}}, {"socket", []string{"CONFIG_TEST_SOCKET_FAIL=1"}}} {
+	}{{"platform", []string{"CONFIG_TEST_OS=FreeBSD"}}, {"socket", []string{"CONFIG_TEST_SOCKET_FAIL=1"}}} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newConfigurationFixture(t)
 			out, err := f.run(t, `source "$CONFIG_TEST_SCRIPT"
 status=$?
 printf 'ALIVE:%s\n' "$status"
 `, tc.env...)
+			if err != nil || !strings.Contains(string(out), "ALIVE:1") {
+				t.Fatalf("caller did not survive failure: %s (%v)", out, err)
+			}
+			if _, err := os.Stat(filepath.Join(f.root, ".env")); !os.IsNotExist(err) {
+				t.Fatal("failed configuration wrote .env")
+			}
+		})
+	}
+}
+
+func TestConfigurationShellsAndPlatforms(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh"} {
+		for _, platform := range []string{"Linux", "Darwin"} {
+			t.Run(shell+"/"+platform, func(t *testing.T) {
+				f := newConfigurationFixture(t)
+				original := "CLOUD_IMAGE=example/cloud:custom\nUID=77\n"
+				if err := os.WriteFile(filepath.Join(f.root, ".env"), []byte(original), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				out, err := f.runShell(t, shell, `CDPATH= cd -- "$(dirname -- "$CONFIG_TEST_SCRIPT")/.." || exit
+export CDPATH=.
+if [ -n "${BASH_VERSION:-}" ]; then shopt -s expand_aliases; fi
+alias cloud='echo wrong-cloud'
+alias lab='echo wrong-lab'
+before_dir=$PWD
+before_flags=$-
+source scripts/configure.sh || exit
+source scripts/configure.sh || exit
+[[ "$PWD" == "$before_dir" && "$-" == "$before_flags" && "$CDPATH" == . ]] || exit 8
+[[ "$KUBECONFIG" == "$HOME/.kube/config" && "$CLOUD_LAB_ROOT" == "$before_dir" ]] || exit 9
+typeset -f cloud lab >/dev/null || exit 10
+[[ ! -e "$CONFIG_TEST_DOCKER_LOG" ]] || exit 11
+cloud clusters describe 'name with spaces'
+lab load start --replicas 4
+`, "CONFIG_TEST_OS="+platform)
+				if err != nil {
+					t.Fatalf("configure: %s (%v)", out, err)
+				}
+				data, err := os.ReadFile(filepath.Join(f.root, ".env"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				group := "999"
+				if platform == "Darwin" {
+					group = "0"
+				}
+				if !strings.HasPrefix(string(data), original) || strings.Count(string(data), "UID=") != 1 || strings.Count(string(data), "\nGID=1002\n") != 1 || strings.Count(string(data), "\nDOCKER_GID="+group+"\n") != 1 {
+					t.Fatalf("configuration changed or duplicated: %q", data)
+				}
+				assertConfigurationWrapperArguments(t, f)
+			})
+		}
+	}
+}
+
+func TestZshConfigurationFailuresAndExecutionLeaveSessionAlive(t *testing.T) {
+	for _, mode := range []string{"platform", "socket", "execution"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newConfigurationFixture(t)
+			extra := []string{"CONFIG_TEST_OS=Darwin"}
+			body := `source "$CONFIG_TEST_SCRIPT"`
+			switch mode {
+			case "platform":
+				extra = []string{"CONFIG_TEST_OS=FreeBSD"}
+			case "socket":
+				extra = append(extra, "CONFIG_TEST_SOCKET_FAIL=1")
+			case "execution":
+				body = `zsh -f "$CONFIG_TEST_SCRIPT"`
+			}
+			out, err := f.runShell(t, "zsh", body+"\nsource_exit=$?\nprintf 'ALIVE:%s\\n' \"$source_exit\"\n", extra...)
 			if err != nil || !strings.Contains(string(out), "ALIVE:1") {
 				t.Fatalf("caller did not survive failure: %s (%v)", out, err)
 			}
