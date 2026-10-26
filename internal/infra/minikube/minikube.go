@@ -162,7 +162,13 @@ func (i *Infra) CreateCluster(ctx context.Context, spec infra.ClusterSpec) error
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(i.home, spec.Name+".kubeconfig"), data, 0o600)
+	if err := os.WriteFile(filepath.Join(i.home, spec.Name+".kubeconfig"), data, 0o600); err != nil {
+		return err
+	}
+	if err := enableYAKD(ctx, cc); err != nil {
+		return fmt.Errorf("enable YAKD addon: %w", err)
+	}
+	return nil
 }
 
 // DeleteCluster removes machines and their dedicated resources.
