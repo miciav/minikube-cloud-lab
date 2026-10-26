@@ -26,3 +26,8 @@ repos:
         entry: go run github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 -strict -summary -kubernetes-version 1.35.0
         language: system
         files: ^lab/manifests/.*\.yaml$
+
+  - repo: https://github.com/AleksaC/hadolint-py
+    rev: v2.15.1
+    hooks:
+      - id: hadolint

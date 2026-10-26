@@ -1,0 +1,19 @@
+services:
+  cloud:
+    image: ${CLOUD_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/cloud:latest}
+    network_mode: host
+    user: "${UID:?set UID in .env}:${GID:?set GID in .env}"
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID in .env}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/.minikube-cloud-lab:/data
+      - ${HOME}/.kube:/kube
+    restart: unless-stopped
+  lab:
+    image: ${LAB_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/lab:latest}
+    profiles: [tools]
+    network_mode: host
+    user: "${UID:?set UID in .env}:${GID:?set GID in .env}"
+    volumes:
+      - ${HOME}/.kube:/kube:ro
