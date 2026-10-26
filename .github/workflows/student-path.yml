@@ -31,7 +31,7 @@ jobs:
         run: |
           source scripts/configure.sh
           docker compose up -d cloud
-          cloud() { docker compose exec -T cloud cloud "$@"; }
+          cloud() { timeout 10m docker compose exec -T cloud cloud "$@"; }
           lab() { docker compose run --rm -T lab "$@"; }
           for _ in $(seq 1 60); do
             if cloud machine-types list; then break; fi
@@ -79,19 +79,27 @@ jobs:
           done
           cloud clusters delete demo
       - name: Diagnostics
-        if: failure()
+        if: failure() || cancelled()
         run: |
           docker compose logs --no-color cloud > cloud.log 2>&1 || true
-          kubectl get events -A --sort-by=.lastTimestamp > events.txt 2>&1 || true
-          kubectl -n kube-system logs deployment/cluster-autoscaler > autoscaler.log 2>&1 || true
+          docker ps -a --no-trunc > containers.txt 2>&1 || true
+          docker top "$(docker compose ps -q cloud)" > cloud-processes.txt 2>&1 || true
+          for machine in demo demo-m02 demo-m03; do
+            timeout 30s docker exec "$machine" journalctl -u kubelet -n 80 --no-pager > "$machine-kubelet.log" 2>&1 || true
+          done
+          kubectl --request-timeout=10s get events -A --sort-by=.lastTimestamp > events.txt 2>&1 || true
+          kubectl --request-timeout=10s -n kube-system logs deployment/cluster-autoscaler > autoscaler.log 2>&1 || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: failure()
+        if: failure() || cancelled()
         with:
           name: student-path-diagnostics
           path: |
             cloud.log
             events.txt
             autoscaler.log
+            containers.txt
+            cloud-processes.txt
+            *-kubelet.log
           if-no-files-found: ignore
       - name: Stop cloud container
         if: always()
