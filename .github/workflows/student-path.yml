@@ -62,6 +62,7 @@ jobs:
             return 1
           }
           wait_nodes 2
+          kubectl rollout status deployment/lab-load --timeout=5m
           cloud machines list
           cloud operations list
           kubectl get pods -l app=lab-load
