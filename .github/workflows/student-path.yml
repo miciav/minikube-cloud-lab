@@ -83,6 +83,7 @@ jobs:
         run: |
           docker ps -a --no-trunc > containers.txt 2>&1 || true
           docker top "$(docker compose ps -q cloud)" > cloud-processes.txt 2>&1 || true
+          docker network inspect minikube-cloud-lab > network-inspect.json 2>&1 || true
           docker inspect demo > node-inspect.json 2>&1 || true
           timeout 5s docker compose exec -T cloud curl -v --connect-timeout 2 --max-time 3 telnet://172.30.0.2:22 > ssh-connectivity.log 2>&1 || true
           docker kill --signal=QUIT "$(docker compose ps -q cloud)" || true
@@ -103,6 +104,7 @@ jobs:
             containers.txt
             cloud-processes.txt
             node-inspect.json
+            network-inspect.json
             ssh-connectivity.log
             *-kubelet.log
           if-no-files-found: ignore
