@@ -138,7 +138,7 @@ func TestReadRPCsAndTemplate(t *testing.T) {
 	if err := node.Unmarshal(template.NodeBytes); err != nil {
 		t.Fatal(err)
 	}
-	if node.Status.Capacity.Cpu().Value() != 2 || node.Status.Allocatable.Memory().Value() != 4294967296 || node.Status.Capacity.Pods().Value() != 110 {
+	if node.Status.Capacity.Cpu().Value() != 2 || node.Status.Allocatable.Memory().Value() != 2147483648 || node.Status.Capacity.Memory().Value() != 2147483648 || node.Status.Capacity.Pods().Value() != 110 {
 		t.Fatalf("template: %+v", node.Status)
 	}
 	for k, v := range map[string]string{"kubernetes.io/os": "linux", "kubernetes.io/arch": runtime.GOARCH, "node.kubernetes.io/instance-type": "lab-small", "topology.kubernetes.io/region": "lab-region-1", "topology.kubernetes.io/zone": "lab-region-1-a"} {

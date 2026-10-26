@@ -34,7 +34,7 @@ func TestMachineResourceCalibration(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if err := setMachineResources(ctx, created.ID, infra.MachineShape{CPUs: 2, MemoryMiB: 4096}); err != nil {
+	if err := setMachineResources(ctx, created.ID, infra.MachineShape{CPUs: 2, MemoryMiB: 2048}); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
@@ -44,7 +44,7 @@ func TestMachineResourceCalibration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if observed.HostConfig.NanoCPUs != 2000000000 || observed.HostConfig.Memory != 4294967296 {
+	if observed.HostConfig.NanoCPUs != 2000000000 || observed.HostConfig.Memory != 2147483648 {
 		t.Fatalf("runtime limits not applied: %+v", observed.HostConfig.Resources)
 	}
 }

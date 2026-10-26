@@ -58,7 +58,7 @@ func TestClusterLifecycle(t *testing.T) {
 		"topology.kubernetes.io/region":    "lab-region-1",
 		"topology.kubernetes.io/zone":      "lab-region-1-a",
 	}
-	if err := inf.CreateCluster(ctx, infra.ClusterSpec{Name: name, KubernetesVersion: "v1.35.6", Shape: infra.MachineShape{CPUs: 2, MemoryMiB: 4096}, NodeLabels: labels}); err != nil {
+	if err := inf.CreateCluster(ctx, infra.ClusterSpec{Name: name, KubernetesVersion: "v1.35.6", Shape: infra.MachineShape{CPUs: 2, MemoryMiB: 2048}, NodeLabels: labels}); err != nil {
 		t.Fatal(err)
 	}
 	machines, err := inf.Machines(ctx, name)
@@ -112,7 +112,7 @@ func TestClusterLifecycle(t *testing.T) {
 						t.Fatalf("different node CPU capacities: %s", n.Name)
 					}
 					t.Logf("node %s capacity=%v allocatable=%v", n.Name, n.Status.Capacity, n.Status.Allocatable)
-					if n.Status.Allocatable.Memory().Value() != 4294967296 {
+					if n.Status.Allocatable.Memory().Value() != 2147483648 {
 						t.Fatalf("node %s allocatable memory: %s", n.Name, n.Status.Allocatable.Memory())
 					}
 					if n.Status.Allocatable.Cpu().Value() != 2 {
@@ -145,7 +145,7 @@ func TestClusterLifecycle(t *testing.T) {
 		if err := json.Unmarshal(data, &config); err != nil {
 			t.Fatal(err)
 		}
-		if config.NanoCpus != 2000000000 || config.Memory != 4294967296 {
+		if config.NanoCpus != 2000000000 || config.Memory != 2147483648 {
 			t.Fatalf("container shape: %+v", config)
 		}
 	}

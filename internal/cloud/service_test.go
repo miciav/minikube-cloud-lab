@@ -109,20 +109,27 @@ func TestValidatesSizes(t *testing.T) {
 }
 
 func TestCreateClusterPassesShapeAndLabels(t *testing.T) {
-	s, f, _ := newService(t)
-	op, err := s.CreateCluster("demo", "lab-medium", 1, 3, "student")
-	if err != nil {
-		t.Fatal(err)
-	}
-	wait(t, s, op)
-	call := f.Calls()[0]
-	if call.Spec.Shape.CPUs != 4 || call.Spec.Shape.MemoryMiB != 8192 || call.Spec.KubernetesVersion != "v1.35.6" {
-		t.Fatalf("shape: %+v", call.Spec)
-	}
-	for k, v := range map[string]string{"node.kubernetes.io/instance-type": "lab-medium", "topology.kubernetes.io/region": "lab-region-1", "topology.kubernetes.io/zone": "lab-region-1-a"} {
-		if call.Spec.NodeLabels[k] != v {
-			t.Fatalf("label %s: %q", k, call.Spec.NodeLabels[k])
-		}
+	for _, tc := range []struct {
+		kind            string
+		cpus, memoryMiB int
+	}{{"lab-small", 2, 2048}, {"lab-medium", 4, 8192}} {
+		t.Run(tc.kind, func(t *testing.T) {
+			s, f, _ := newService(t)
+			op, err := s.CreateCluster("demo", tc.kind, 1, 3, "student")
+			if err != nil {
+				t.Fatal(err)
+			}
+			wait(t, s, op)
+			call := f.Calls()[0]
+			if call.Spec.Shape.CPUs != tc.cpus || call.Spec.Shape.MemoryMiB != tc.memoryMiB || call.Spec.KubernetesVersion != "v1.35.6" {
+				t.Fatalf("shape: %+v", call.Spec)
+			}
+			for k, v := range map[string]string{"node.kubernetes.io/instance-type": tc.kind, "topology.kubernetes.io/region": "lab-region-1", "topology.kubernetes.io/zone": "lab-region-1-a"} {
+				if call.Spec.NodeLabels[k] != v {
+					t.Fatalf("label %s: %q", k, call.Spec.NodeLabels[k])
+				}
+			}
+		})
 	}
 }
 
