@@ -221,3 +221,61 @@ func TestForwardedAPIServerRequiresLoopbackMapping(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkerDeletionRemovesVolumeBeforeForgettingOwnership(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			b, _ := isolatedBackend(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"kind":"Status","apiVersion":"v1","reason":"NotFound","code":404}`))
+			}))
+			defer server.Close()
+			cfg := clientapi.NewConfig()
+			cfg.Clusters["demo"] = &clientapi.Cluster{Server: server.URL}
+			cfg.Contexts["demo"] = &clientapi.Context{Cluster: "demo"}
+			if err := clientcmd.WriteToFile(*cfg, filepath.Join(b.home, "kubeconfig")); err != nil {
+				t.Fatal(err)
+			}
+			cc := &config.ClusterConfig{Name: "demo", Nodes: []config.Node{{ControlPlane: true}, {Name: "m02", Worker: true}}}
+			if err := config.SaveProfile("demo", cc); err != nil {
+				t.Fatal(err)
+			}
+			bin := t.TempDir()
+			log := filepath.Join(bin, "calls")
+			code := "0"
+			if fail {
+				code = "7"
+			}
+			script := "#!/bin/sh\nprintf '%s\n' \"$*\" >> \"$CALL_LOG\"\ncase \"$1 $2\" in\n'volume ls') printf 'demo-m02\n';;\n'volume rm') exit " + code + ";;\nesac\n"
+			if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			} // #nosec G306 -- executable fake Docker fixture.
+			t.Setenv("CALL_LOG", log)
+			t.Setenv("PATH", bin)
+			err := b.removeWorker(t.Context(), cc, "demo-m02")
+			data, readErr := os.ReadFile(log) // #nosec G304 -- path is a fake Docker call log inside t.TempDir.
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if !strings.Contains(string(data), "volume ls --filter label=name.minikube.sigs.k8s.io=demo-m02") || !strings.Contains(string(data), "volume rm --force demo-m02") {
+				t.Fatalf("worker volume leaked; calls: %s", data)
+			}
+			if (err != nil) != fail {
+				t.Fatalf("cleanup fail=%v error=%v", fail, err)
+			}
+			p, loadErr := config.LoadProfile("demo")
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			want := 1
+			if fail {
+				want = 2
+			}
+			if len(p.Config.Nodes) != want {
+				t.Fatalf("lost volume ownership after failure: nodes=%d want=%d", len(p.Config.Nodes), want)
+			}
+		})
+	}
+}

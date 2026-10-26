@@ -74,6 +74,9 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8080/v1/operations | jq -e 'all(.[]; .status != "RUNNING")'
           cloud operations list
+          for machine in demo-m02 demo-m03; do
+            test -z "$(docker volume ls --filter "label=name.minikube.sigs.k8s.io=$machine" --format '{{.Name}}')"
+          done
           cloud clusters delete demo
       - name: Diagnostics
         if: failure()
