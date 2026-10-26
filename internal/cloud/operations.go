@@ -32,6 +32,8 @@ func (s *Service) store(next snapshot) error {
 }
 
 func (s *Service) launch(id string, work func() error, finish func(*snapshot, error)) {
+	accepted := s.state.operation(id)
+	s.logger.Info("operation started", "id", id, "requester", accepted.Requester, "type", accepted.Type, "target", accepted.Target)
 	go func() {
 		s.workMu.Lock()
 		defer s.workMu.Unlock()

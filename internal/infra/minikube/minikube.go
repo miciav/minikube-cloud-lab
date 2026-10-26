@@ -77,7 +77,8 @@ func New(dataDir string) (*Infra, error) {
 			return nil, err
 		}
 	}
-	klog.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
+	klog.SetLogger(logr.FromSlogHandler(slog.Default().Handler()).V(1))
+	out.SetSilent(true)
 	register.Reg.SetStep(register.InitialSetup)
 	machine.StartDriver(options)
 	out.SetOutFile(logWriter{})
