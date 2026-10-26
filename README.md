@@ -1,46 +1,50 @@
 # Minikube Cloud Lab
 
-Laboratorio didattico per osservare come Kubernetes chiede capacità a un cloud provider.
-Il sistema separa tre oggetti:
+A teaching lab for observing how Kubernetes requests capacity from a cloud provider.
+The system separates three objects:
 
-| Oggetto | Cosa fa | Strumento |
+| Object | Responsibility | Tool |
 | --- | --- | --- |
-| Cloud simulato | Crea il cluster, possiede le macchine, registra le richieste | `cloud` |
-| Kubernetes | Esegue i Pod e ospita Cluster Autoscaler | `kubectl` |
-| Strumenti di laboratorio | Installano Autoscaler e generano pressione di risorse | `lab` oppure YAML |
+| Simulated cloud | Creates the cluster, owns machines, records requests | `cloud` |
+| Kubernetes | Runs Pods and hosts Cluster Autoscaler | `kubectl` |
+| Lab tools | Install Autoscaler and generate resource pressure | `lab` or YAML |
+
+**Start with the [student tutorial](docs/student-tutorial.md)** for a guided experiment
+with predictions, observations, checkpoints, and questions.
 
 ```mermaid
 flowchart LR
-  L["Carico: lab"] --> P["Pod Pending: Kubernetes"]
-  P --> A["Cluster Autoscaler decide"]
-  A -->|externalgrpc| C["Il cloud riceve la richiesta"]
-  C --> M["Il cloud crea una macchina"]
-  M --> N["Il nodo entra nel cluster"]
-  N --> R["I Pod partono"]
+  L["Workload: lab"] --> P["Pending Pods: Kubernetes"]
+  P --> A["Cluster Autoscaler decides"]
+  A -->|externalgrpc| C["The cloud receives the request"]
+  C --> M["The cloud creates a machine"]
+  M --> N["The node joins the cluster"]
+  N --> R["The Pods run"]
 ```
 
-L'MVP gestisce **un solo cluster alla volta**, con un tipo di macchina omogeneo.
-Il control plane conta nel minimo e nel massimo ed è protetto dalla rimozione.
+The MVP manages **one cluster at a time**, with a single machine type throughout.
+The control plane counts toward the minimum and maximum size and is protected
+from removal.
 
-| Tipo | CPU | Memoria |
+| Type | CPUs | Memory |
 | --- | --- | --- |
 | `lab-small` (default) | 2 | 4 GiB |
 | `lab-medium` | 4 | 8 GiB |
 
-Kubernetes è fissato a **v1.35.6**, Cluster Autoscaler a **v1.35.0**, la libreria
-minikube a **v1.39.0**. I nodi espongono le label standard del tipo di istanza,
-della regione `lab-region-1` e della zona `lab-region-1-a`.
+Kubernetes is pinned to **v1.35.6**, Cluster Autoscaler to **v1.35.0**, and the
+minikube library to **v1.39.0**. Nodes expose the standard instance-type label,
+region `lab-region-1`, and zone `lab-region-1-a`.
 
-## Percorso studente: VM Linux con Docker
+## Student quick start: Linux VM with Docker
 
-Servono Docker Engine con Compose v2, accesso al socket Docker e `kubectl` v1.35
-per osservare il cluster. Per il percorso predefinito predisporre almeno 6 CPU e
-12 GiB di memoria disponibile. Le immagini supportano Linux amd64 e arm64;
-la verifica completa automatizzata viene eseguita su amd64.
+You need Docker Engine with Compose v2, permission to access the Docker socket,
+and `kubectl` v1.35 to inspect the cluster. For the default experiment, provide
+at least 6 CPUs and 12 GiB of available memory. The images support Linux amd64
+and arm64; the complete automated student path runs on amd64.
 
-Il repository e le immagini GHCR sono privati: serve accesso al repository e un
-login Docker a `ghcr.io` con credenziali autorizzate alla lettura dei package.
-In alternativa, costruire le immagini dal checkout come descritto più avanti.
+The repository and GHCR images are private. You need repository access and a
+Docker login to `ghcr.io` with permission to read the packages. Alternatively,
+build the images from a checkout as described below.
 
 ```sh
 git clone git@github.com:miciav/minikube-cloud-lab.git ~/cloud-lab
@@ -48,31 +52,34 @@ cd ~/cloud-lab
 mkdir -p "$HOME/.minikube-cloud-lab" "$HOME/.kube"
 printf 'UID=%s\nGID=%s\nDOCKER_GID=%s\n' \
   "$(id -u)" "$(id -g)" "$(stat -c '%g' /var/run/docker.sock)" > .env
-docker compose pull
+docker compose --profile tools pull
 docker compose up -d cloud
 
 alias cloud='docker compose -f ~/cloud-lab/compose.yaml exec cloud cloud'
 alias lab='docker compose -f ~/cloud-lab/compose.yaml run --rm lab'
+export KUBECONFIG="$HOME/.kube/config"
 cloud machine-types list
 cloud clusters create demo --machine-type lab-small --min-nodes 1 --max-nodes 3
 cloud clusters get-credentials demo
 kubectl get nodes -L node.kubernetes.io/instance-type,topology.kubernetes.io/zone
 ```
 
-Aspettare che `cloud machine-types list` risponda prima della creazione. Il primo
-avvio scarica immagini e componenti Kubernetes e può richiedere alcuni minuti.
-Il kubeconfig contiene i certificati incorporati, conserva gli altri contesti e
-seleziona `demo` come contesto corrente. Viene pubblicato atomicamente con permessi
-`0600`; se `KUBECONFIG` elenca più file, le voci unite vengono scritte nel file selezionato.
+Wait until `cloud machine-types list` responds before creating the cluster.
+The first start downloads node images and Kubernetes components and may take
+several minutes. The kubeconfig embeds its certificates, preserves other
+contexts, and selects `demo` as the current context. It is published atomically
+with permissions `0600`; when `KUBECONFIG` lists multiple files, merged entries
+are written to the selected file. With Compose, the CLI writes `/kube/config`,
+which is the host's `~/.kube/config`.
 
-In un altro terminale osservare le richieste ricevute dal cloud:
+Watch cloud requests in another terminal:
 
 ```sh
 cd ~/cloud-lab
 docker compose logs -f cloud
 ```
 
-Installare Autoscaler e creare carico:
+Install Autoscaler and create the workload:
 
 ```sh
 lab install autoscaler
@@ -81,8 +88,8 @@ lab load start
 kubectl get pods -l app=lab-load -w
 ```
 
-I quattro Pod richiedono ciascuno 600m CPU: una macchina `lab-small` non può
-ospitarli tutti. Nei terminali di osservazione seguire gli anelli della catena:
+Each of the four Pods requests 600m CPU, so a single `lab-small` machine cannot
+host them all. In observation terminals, follow each link in the chain:
 
 ```sh
 kubectl get nodes -w
@@ -91,23 +98,24 @@ cloud machines list
 cloud operations list
 ```
 
-Quando ci sono due nodi Ready e i Pod sono in esecuzione, rimuovere il carico:
+Once two nodes are Ready and all four Pods are running, remove the workload:
 
 ```sh
+kubectl rollout status deployment/lab-load --timeout=5m
 lab load stop
 kubectl get nodes -w
 cloud operations list
 ```
 
-Autoscaler attende i ritardi di scale-down configurati nei manifest e riporta il
-cluster a una macchina. Prima di cancellare il cluster, verificare con
-`cloud operations list` che anche la rimozione della macchina sia terminata:
-il nodo Kubernetes può scomparire prima che il cloud abbia finito il teardown.
-Le operazioni riportano requester `student` oppure
-`cluster-autoscaler`, stato, durata ed eventuale errore. `cloud` identifica le
-osservazioni tecniche registrate durante la riconciliazione dopo un riavvio.
+Autoscaler waits for the scale-down delays configured in the manifests and
+returns the cluster to one machine. Before deleting the cluster, use
+`cloud operations list` to check that machine removal has also finished: the
+Kubernetes Node can disappear before the cloud finishes its teardown.
+Operations include requester `student` or `cluster-autoscaler`, status, duration,
+and any error. Requester `cloud` identifies technical observations recorded
+during reconciliation after a restart.
 
-Per terminare il laboratorio:
+Finish the lab:
 
 ```sh
 lab uninstall autoscaler
@@ -115,64 +123,66 @@ cloud clusters delete demo
 docker compose down
 ```
 
-`lab` applica via API Kubernetes gli stessi file visibili in
-[`lab/manifests`](lab/manifests) e stampa il comando `kubectl` equivalente.
-Si possono applicare direttamente con `kubectl apply --server-side --field-manager=lab -f`.
+`lab` uses Kubernetes APIs to apply the same files visible in
+[`lab/manifests`](lab/manifests) and prints the equivalent `kubectl` command.
+You can also apply those files directly with
+`kubectl apply --server-side --field-manager=lab -f`.
 
-## Comandi
+## Command reference
 
-| Comando | Effetto / opzioni |
+| Command | Purpose / options |
 | --- | --- |
-| `cloud serve` | Avvia API e servizio externalgrpc; `--data-dir`, `--api` (loopback), `--grpc` |
-| `cloud machine-types list` | Mostra il catalogo |
+| `cloud serve` | Starts the management API and externalgrpc service; `--data-dir`, `--api` (loopback), `--grpc` |
+| `cloud machine-types list` | Displays the catalog |
 | `cloud clusters create NAME` | `--machine-type lab-small`, `--min-nodes 1`, `--max-nodes 3`, `--async` |
-| `cloud clusters list` | Elenca il cluster gestito |
-| `cloud clusters describe NAME` | Mostra forma, limiti e stato |
-| `cloud clusters delete NAME` | Cancella cluster e macchine; `--async` |
-| `cloud clusters get-credentials NAME` | Aggiorna `$KUBECONFIG` o `~/.kube/config` |
-| `cloud machines list` | `--cluster NAME` per filtrare |
-| `cloud operations list` | Registro, più recenti prima |
-| `cloud operations describe ID` | Dettaglio dell'operazione |
-| `lab install autoscaler` / `lab uninstall autoscaler` | Installa / rimuove Autoscaler |
-| `lab load start` / `lab load stop` | Crea / elimina il carico; `start --replicas N` |
+| `cloud clusters list` | Lists the managed cluster |
+| `cloud clusters describe NAME` | Displays machine type, size limits, and status |
+| `cloud clusters delete NAME` | Deletes the cluster and its machines; `--async` |
+| `cloud clusters get-credentials NAME` | Updates `$KUBECONFIG` or `~/.kube/config` |
+| `cloud machines list` | Optional `--cluster NAME` filter |
+| `cloud operations list` | Displays the request history, newest first |
+| `cloud operations describe ID` | Displays one operation |
+| `lab install autoscaler` / `lab uninstall autoscaler` | Installs / removes Autoscaler |
+| `lab load start` / `lab load stop` | Creates / deletes the workload; `start --replicas N` |
 
-La CLI cloud usa `--api-url` oppure `CLOUD_API_URL` (default
-`http://127.0.0.1:8080`). `lab` accetta `--kubeconfig` e `--context`.
-I comandi di creazione e cancellazione attendono l'esito: con `--async` restituiscono
-l'ID. Ctrl-C interrompe l'attesa del client; l'operazione continua nel servizio.
+The cloud CLI uses `--api-url` or `CLOUD_API_URL` (default
+`http://127.0.0.1:8080`). `lab` accepts `--kubeconfig` and `--context`.
+Create and delete commands wait for completion; `--async` returns the operation
+ID immediately. Ctrl-C stops the client's wait, while the operation continues
+in the service.
 
-## Stato e reset
+## State and reset
 
-Compose monta `~/.minikube-cloud-lab` in `/data` e `~/.kube` in `/kube`.
-`state.json` conserva cluster, macchine e operazioni; `minikube/` contiene lo stato
-isolato del backend. Il servizio non usa il profilo minikube personale dell'utente.
-Al riavvio marca le operazioni interrotte come ERROR e riconcilia le macchine.
-Se Docker non è osservabile, conserva i riferimenti alle macchine e avvia l'API
-con il cluster in ERROR per consentire il cleanup. Un'aggiunta fallita può aver già
-creato una macchina: questa resta registrata; se l'osservazione fallisce, resta
-prenotata la capacità fino alla riconciliazione o alla cancellazione del cluster.
+Compose mounts `~/.minikube-cloud-lab` at `/data` and `~/.kube` at `/kube`.
+`state.json` stores clusters, machines, and operations; `minikube/` contains the
+isolated backend state. The service does not use your personal minikube profile.
+After a restart, it marks interrupted operations as ERROR and reconciles machines.
+If Docker cannot be observed, the service preserves machine ownership and starts
+the API with the cluster in ERROR so cleanup remains possible. A failed addition
+may already have created a machine: it remains recorded. If observation fails,
+its capacity stays reserved until reconciliation or cluster deletion.
 
-`docker compose down` ferma il servizio e conserva dati e macchine. **Prima di
-eliminare la directory di stato**, usare `cloud clusters delete NAME` e attenderne
-l'esito: cancellare soltanto i file farebbe perdere il riferimento alle risorse Docker.
-Poi, per azzerare anche il registro:
+`docker compose down` stops the service and preserves data and machines.
+**Before deleting the state directory**, run `cloud clusters delete NAME` and
+wait for it to finish. Removing only the files would lose the references to
+Docker resources. Then, to clear the operation history as well:
 
 ```sh
 docker compose down
 rm -rf "$HOME/.minikube-cloud-lab"
 ```
 
-Il contesto in kubeconfig resta presente dopo la cancellazione del cluster;
-gli altri contesti sono conservati. Non eliminare tutta `~/.kube` per questo reset.
+The kubeconfig context remains after cluster deletion; other contexts are
+preserved. Do not delete all of `~/.kube` to reset this lab.
 
-Il cloud controlla il socket Docker della VM. L'API di gestione ascolta soltanto
-su `127.0.0.1:8080`; externalgrpc su `0.0.0.0:9090` per essere raggiunto dai nodi
-come `host.minikube.internal:9090`. L'MVP non ha autenticazione o TLS: usare una
-VM di laboratorio fidata e limitare l'accesso alla porta 9090 alla rete dei nodi.
+The cloud controls the VM's Docker socket. Its management API listens on
+`127.0.0.1:8080`; externalgrpc listens on `0.0.0.0:9090` so nodes can reach it at
+`host.minikube.internal:9090`. The MVP has no authentication or TLS: use a trusted
+lab VM and restrict port 9090 to the node network.
 
-## Sviluppo
+## Development
 
-Servono Go 1.27.3, `uv` per pre-commit e Docker per le prove reali.
+You need Go 1.27.3, `uv` for pre-commit, and Docker for real infrastructure tests.
 
 ```sh
 make build
@@ -182,34 +192,38 @@ make integration
 make images
 ```
 
-`make verify` esegue lint, controllo moduli, analisi vulnerabilità, coverage ≥90%
-e race detector. Il coverage include tutti i pacchetti scritti a mano e i main,
-esclude l'adapter minikube verificato con integration e i bindings proto generati.
-Il report completo `vuln-report.json` è ignorato da Git: il gate applica una triage
-esatta per ID/modulo/versione a tre advisory non applicabili al nostro uso
-(`GO-2023-1961`, `GO-2026-4887`, `GO-2026-4883`), documentata con fonti primarie in
-[`tools/vulncheck`](tools/vulncheck). Qualsiasi altro finding raggiungibile blocca il gate.
+`make verify` runs lint, module checks, vulnerability analysis, the 90% coverage
+gate, and the race detector. Coverage includes all handwritten packages and the
+command entry points. It excludes the minikube adapter covered by integration
+tests and the generated protocol bindings.
 
-`make integration` crea un cluster reale, controlla risorse, label, DNS e kubeconfig,
-aggiunge e rimuove una macchina e cancella tutto, con il binario minikube assente
-dal PATH. Richiede Docker attivo e risorse libere; timeout 30 minuti.
+The complete `vuln-report.json` is ignored by Git. The gate applies exact
+ID/module/version triage to three advisories that do not apply to our usage
+(`GO-2023-1961`, `GO-2026-4887`, `GO-2026-4883`), documented with primary sources in
+[`tools/vulncheck`](tools/vulncheck). Any other reachable finding fails the gate.
 
-Per usare le immagini appena costruite sulla VM Linux, aggiungere a `.env`:
+`make integration` creates a real cluster, checks resources, labels, DNS, and
+kubeconfig, adds and removes a machine, and deletes everything with the minikube
+executable absent from PATH. It requires a running Docker daemon and available
+resources; the timeout is 30 minutes.
+
+To use locally built images on a Linux VM, add these entries to `.env`:
 
 ```dotenv
 CLOUD_IMAGE=minikube-cloud-lab/cloud:dev
 LAB_IMAGE=minikube-cloud-lab/lab:dev
 ```
 
-La CI verifica Go, manifest, Compose e immagini su Ubuntu amd64, esegue Trivy
-CRITICAL/HIGH con fix disponibili e pubblica immagini amd64/arm64 su GHCR.
-Il workflow manuale `Student path` esegue il ciclo Compose completo 1→2→1.
+CI checks Go, manifests, Compose, and images on Ubuntu amd64, runs Trivy against
+fixable CRITICAL/HIGH findings, and publishes amd64/arm64 images to GHCR.
+The manually triggered `Student path` workflow runs the complete Compose
+1→2→1 cycle.
 
-### macOS con Docker Desktop
+### macOS with Docker Desktop
 
-Usare i binari nativi per lo sviluppo; il percorso Compose con rete host è destinato
-alle VM Linux. Attivare Docker Desktop e rendere disponibili almeno 6 CPU e 12 GiB.
-Il backend usa il contesto Docker selezionato da Docker Desktop.
+Use native binaries for development; the Compose path with host networking is
+intended for Linux VMs. Start Docker Desktop and make at least 6 CPUs and 12 GiB
+available. The backend uses the selected Docker Desktop context.
 
 ```sh
 go build -o /tmp/cloud-lab-cloud ./cmd/cloud
@@ -217,7 +231,7 @@ go build -o /tmp/cloud-lab-lab ./cmd/lab
 /tmp/cloud-lab-cloud serve
 ```
 
-In un secondo terminale:
+In a second terminal:
 
 ```sh
 alias cloud=/tmp/cloud-lab-cloud
@@ -228,25 +242,28 @@ lab install autoscaler
 lab load start
 ```
 
-Poi seguire gli stessi comandi di osservazione e pulizia del percorso studente.
-Non avviare due servizi sulla stessa directory di stato.
+Then use the same observation and cleanup commands as the student path.
+Do not run two services against the same state directory.
 
 ### Backend
 
-Il cloud chiama direttamente la libreria Go minikube: non richiede i binari
-`minikube` o `kubectl`. La libreria upstream avvia internamente Docker CLI e altri
-strumenti; l'immagine cloud contiene Docker CLI e curl. Il codice Go del progetto
-non avvia processi esterni; i test possono usarli per misurare il sistema reale.
-Il bootstrap compone le primitive Go di driver, libmachine, runtime, CNI e kubeadm
-che restituiscono errori. Evita gli helper CLI `node.Start`, `node.Add`, `node.Delete`
-e `machine.StartHost`, che possono chiamare `os.Exit`. Il drain usa l'helper Go
-di Kubernetes e il client API; non esegue il binario kubectl. Sono supportati
-il driver Docker e gli indirizzi nodo assegnati automaticamente.
-Su Linux il client SDK Docker applica anche le quote CPU/RAM, perché il driver
-minikube fissato può ignorare la quota CPU su cgroup v2. Usa `DOCKER_HOST` oppure
-il socket locale; contesti Docker remoti senza `DOCKER_HOST` non sono supportati.
+The cloud calls the minikube Go library directly; it does not require the
+`minikube` or `kubectl` executables. The upstream library internally starts
+Docker CLI and other tools; the cloud image includes Docker CLI and curl.
+The project's Go code does not start external processes; tests may do so to
+measure the real system.
 
-I container nodo condividono il kernel dell'host: Kubernetes può mostrare la
-capacità grezza dell'host. Le quote Docker limitano le risorse reali e la riserva
-kubelet rende **Allocatable** uguale al tipo di macchina, coerente con il template
-fornito ad Autoscaler. Dopo cambiamenti alle risorse dell'host ricreare il cluster.
+Bootstrap composes driver, libmachine, runtime, CNI, and kubeadm Go primitives
+that return errors. It avoids the CLI helpers `node.Start`, `node.Add`,
+`node.Delete`, and `machine.StartHost`, which can call `os.Exit`. Draining uses
+the Kubernetes Go helper and API client; it does not execute kubectl.
+Only the Docker driver and automatically assigned node addresses are supported.
+
+On Linux, the Docker SDK client also applies CPU/memory limits because the pinned
+minikube driver may skip CPU limits on cgroup v2. It uses `DOCKER_HOST` or the
+local socket; remote Docker contexts without `DOCKER_HOST` are not supported.
+
+Node containers share the host kernel, so Kubernetes may report the host's raw
+capacity. Docker quotas enforce actual limits, and kubelet reservation makes
+**Allocatable** match the machine type and the template supplied to Autoscaler.
+Recreate the cluster after changing host resources.
