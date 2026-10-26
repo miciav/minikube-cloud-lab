@@ -18,3 +18,11 @@ repos:
         exclude: \.md$
       - id: mixed-line-ending
         args: [--fix=lf]
+
+  - repo: local
+    hooks:
+      - id: kubeconform
+        name: kubeconform
+        entry: go run github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 -strict -summary -kubernetes-version 1.35.0
+        language: system
+        files: ^lab/manifests/.*\.yaml$
