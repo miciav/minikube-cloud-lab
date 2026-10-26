@@ -3,3 +3,4 @@
 docs/superpowers
 .env
 coverage*
+vuln-report.json

@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,6 +25,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	ktesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/clientcmd"
+	clientapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"github.com/miciav/minikube-cloud-lab/lab/manifests"
 )
@@ -175,5 +180,62 @@ func TestConnectionFailure(t *testing.T) {
 	root.SetArgs([]string{"install", "autoscaler"})
 	if err := root.ExecuteContext(context.Background()); err == nil || !strings.Contains(err.Error(), "unavailable cluster") {
 		t.Fatalf("connection: %v", err)
+	}
+}
+
+func TestRealKubeconfigContextOverride(t *testing.T) {
+	wrongRequests := atomic.Int32{}
+	wrong := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		wrongRequests.Add(1)
+		http.Error(w, "wrong context", http.StatusForbidden)
+	}))
+	defer wrong.Close()
+	deleted := atomic.Bool{}
+	selected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api":
+			_, _ = io.WriteString(w, `{"kind":"APIVersions","apiVersion":"v1","versions":["v1"]}`)
+		case "/apis":
+			_, _ = io.WriteString(w, `{"kind":"APIGroupList","apiVersion":"v1","groups":[{"name":"apps","versions":[{"groupVersion":"apps/v1","version":"v1"}],"preferredVersion":{"groupVersion":"apps/v1","version":"v1"}}]}`)
+		case "/api/v1":
+			_, _ = io.WriteString(w, `{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"v1","resources":[]}`)
+		case "/apis/apps/v1":
+			_, _ = io.WriteString(w, `{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"apps/v1","resources":[{"name":"deployments","namespaced":true,"kind":"Deployment","verbs":["delete"]}]}`)
+		case "/apis/apps/v1/namespaces/default/deployments/lab-load":
+			if r.Method != http.MethodDelete {
+				http.Error(w, "wrong method", http.StatusBadRequest)
+				return
+			}
+			deleted.Store(true)
+			_, _ = io.WriteString(w, `{"kind":"Status","apiVersion":"v1","status":"Success"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer selected.Close()
+	config := clientapi.NewConfig()
+	config.Clusters["other"] = &clientapi.Cluster{Server: wrong.URL}
+	config.Clusters["target"] = &clientapi.Cluster{Server: selected.URL}
+	config.Contexts["other"] = &clientapi.Context{Cluster: "other"}
+	config.Contexts["target"] = &clientapi.Context{Cluster: "target"}
+	config.CurrentContext = "other"
+	path := filepath.Join(t.TempDir(), "config with 'quote'.yaml")
+	if err := clientcmd.WriteToFile(*config, path); err != nil {
+		t.Fatal(err)
+	}
+	root := NewRoot()
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{"--kubeconfig", path, "--context", "target", "load", "stop"})
+	if err := root.ExecuteContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !deleted.Load() || wrongRequests.Load() != 0 {
+		t.Fatal("context override sent the deletion to the wrong cluster")
+	}
+	if !strings.Contains(output.String(), "--context 'target'") || !strings.Contains(output.String(), `'"'"'`) {
+		t.Fatalf("unsafe or incomplete equivalent: %s", output.String())
 	}
 }

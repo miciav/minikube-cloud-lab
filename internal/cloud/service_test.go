@@ -347,3 +347,78 @@ func TestInfrastructureMutationsAreSerialized(t *testing.T) {
 		t.Fatal("overlapping infrastructure mutations")
 	}
 }
+
+func TestFailedMutationsPreserveRecordedCapacity(t *testing.T) {
+	s, f, _ := newService(t)
+	create(t, s, 1)
+	f.Errors["AddMachine"] = errors.New("worker creation failed")
+	ops, err := s.AddMachines("demo", 1, "cluster-autoscaler")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := wait(t, s, ops[0]); result.Status != "ERROR" {
+		t.Fatalf("failed increase: %+v", result)
+	}
+	machines, _ := s.Machines("demo")
+	if len(machines) != 1 {
+		t.Fatalf("failed increase retained reservation: %+v", machines)
+	}
+	delete(f.Errors, "AddMachine")
+	ops, err = s.AddMachines("demo", 1, "student")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait(t, s, ops[0])
+	machines, _ = s.Machines("demo")
+	f.Errors["DeleteMachine"] = errors.New("worker removal failed")
+	op, err := s.DeleteMachine("demo", machines[1].Name, "student")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := wait(t, s, op); result.Status != "ERROR" {
+		t.Fatalf("failed removal: %+v", result)
+	}
+	machines, _ = s.Machines("demo")
+	if len(machines) != 2 || machines[1].Status != "RUNNING" {
+		t.Fatalf("failure lost capacity: %+v", machines)
+	}
+	f.Errors["DeleteCluster"] = errors.New("teardown failed")
+	op, err = s.DeleteCluster("demo", "student")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait(t, s, op)
+	cluster, err := s.Cluster("demo")
+	if err != nil || cluster.Status != "ERROR" {
+		t.Fatalf("failed teardown: %+v %v", cluster, err)
+	}
+	delete(f.Errors, "DeleteCluster")
+	op, err = s.DeleteCluster("demo", "student")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait(t, s, op)
+	if len(s.Clusters()) != 0 {
+		t.Fatal("retry teardown did not remove cluster")
+	}
+}
+
+func TestOutcomePersistenceFailureDoesNotLeaveWaitersHanging(t *testing.T) {
+	s, f, dir := newService(t)
+	f.Delay = 30 * time.Millisecond
+	op, err := s.CreateCluster("demo", "lab-small", 1, 3, "student")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "state.json")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	result := wait(t, s, op)
+	if result.Status != "ERROR" || !strings.Contains(result.Error, "cannot persist outcome") {
+		t.Fatalf("persistence failure: %+v", result)
+	}
+}

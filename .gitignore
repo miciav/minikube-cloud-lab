@@ -1,2 +1,5 @@
 docs/superpowers/
 .superpowers/
+coverage.out
+.env
+vuln-report.json
