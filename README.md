@@ -80,6 +80,25 @@ with permissions `0600`; when `KUBECONFIG` lists multiple files, merged entries
 are written to the selected file. With Compose, the CLI writes `/kube/config`,
 which is the host's `~/.kube/config`.
 
+New clusters automatically include the **YAKD Kubernetes dashboard**, using the
+addon bundled with minikube. Creation installs its resources; wait for the
+Deployment before opening the UI:
+
+```sh
+kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
+kubectl -n yakd-dashboard port-forward --address 127.0.0.1 service/yakd-dashboard 8081:80
+```
+
+Open <http://127.0.0.1:8081> on the machine running `kubectl`. If that is a remote
+VM, use an SSH tunnel (`ssh -L 8081:127.0.0.1:8081 USER@VM`) from your computer.
+Keep the forwarding terminal open; Ctrl-C stops access without removing YAKD.
+The standard addon uses a NodePort Service and a cluster-admin service account:
+use a trusted lab network and keep the UI private. It requests 128 MiB and is
+capped at 256 MiB. Metrics-server is not installed, so live usage metrics are
+unavailable. Existing clusters are not modified; recreate them to obtain YAKD.
+An API error installing YAKD fails the create operation and leaves the partial
+cluster available for inspection or deletion through `cloud`.
+
 Watch cloud requests in another terminal:
 
 ```sh

@@ -153,6 +153,33 @@ system Pods already consume part of that budget through their requests.
 The backend shares the host kernel, so the raw Capacity field may reflect the
 host. Use Allocatable when reasoning about scheduling this experiment.
 
+### Open the dashboard installed by the cloud
+
+The cloud automatically installs the YAKD addon in new clusters. No separate
+install command is needed. Confirm that it is ready:
+
+```sh
+kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
+kubectl -n yakd-dashboard get pods,service
+```
+
+In another configured terminal, keep this command running:
+
+```sh
+kubectl -n yakd-dashboard port-forward --address 127.0.0.1 service/yakd-dashboard 8081:80
+```
+
+Open <http://127.0.0.1:8081> on the machine running `kubectl`. For a remote lab
+VM, run `ssh -L 8081:127.0.0.1:8081 USER@VM` on your computer and open that URL
+locally. Replace `USER@VM` with your lab login. The dashboard can administer the
+entire cluster; the upstream addon also has a NodePort Service. Keep the lab
+network trusted and do not expose the UI publicly.
+
+Use YAKD to inspect Nodes, Deployments, Pods and events while following the
+experiment below. It requests 128 MiB of the scheduling budget. Live CPU/memory
+usage graphs require metrics-server, which this lab does not install.
+Ctrl-C stops port forwarding; YAKD stays installed until the cluster is deleted.
+
 ## 3. Install Cluster Autoscaler before generating load
 
 You install Autoscaler as a Kubernetes workload using the lab tools:

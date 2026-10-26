@@ -39,6 +39,7 @@ jobs:
           done
           cloud clusters create demo
           cloud clusters get-credentials demo
+          kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
           kubectl get nodes -L node.kubernetes.io/instance-type,topology.kubernetes.io/zone
           # The cloud image must work without either host Kubernetes CLI binary.
           docker compose exec -T cloud sh -c '! command -v minikube && ! command -v kubectl'
