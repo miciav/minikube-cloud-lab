@@ -129,7 +129,7 @@ func (i *Infra) CreateCluster(ctx context.Context, spec infra.ClusterSpec) error
 		Name: spec.Name, Driver: "docker", Memory: spec.Shape.MemoryMiB, CPUs: spec.Shape.CPUs, DiskSize: 20000,
 		KicBaseImage: kic.BaseImage, APIServerPort: 8443, StartHostTimeout: 6 * time.Minute, CertExpiration: constants.DefaultCertExpiration,
 		KeepContext: true, EmbedCerts: true, MultiNodeRequested: true, ListenAddress: "127.0.0.1", Nodes: []config.Node{n},
-		KubernetesConfig: config.KubernetesConfig{KubernetesVersion: spec.KubernetesVersion, ClusterName: spec.Name, Namespace: "default", APIServerName: "minikubeCA", DNSDomain: "cluster.local", ContainerRuntime: "docker", ServiceCIDR: constants.DefaultServiceCIDR, ImageRepository: "registry.k8s.io", CNI: "flannel", ExtraOptions: config.ExtraOptionSlice{{Component: "kubelet", Key: "node-labels", Value: strings.Join(labels, ",")}, {Component: "kubelet", Key: "kube-reserved", Value: reserved}}},
+		KubernetesConfig: config.KubernetesConfig{KubernetesVersion: spec.KubernetesVersion, ClusterName: spec.Name, Namespace: "default", APIServerName: "minikubeCA", DNSDomain: "cluster.local", ContainerRuntime: "docker", ServiceCIDR: constants.DefaultServiceCIDR, ImageRepository: "registry.k8s.io", CNI: "flannel", NetworkPlugin: "cni", ExtraOptions: config.ExtraOptionSlice{{Component: "kubelet", Key: "node-labels", Value: strings.Join(labels, ",")}, {Component: "kubelet", Key: "kube-reserved", Value: reserved}}},
 	}
 	r, p, m, h, err := node.Provision(cc, &cc.Nodes[0], false, options)
 	if err != nil {

@@ -151,6 +151,35 @@ func TestClusterLifecycle(t *testing.T) {
 	}
 	assertShape(machines[0].Name)
 	assertNodes(1)
+	dnsDeadline := time.Now().Add(time.Minute)
+	for {
+		dns, err := client.AppsV1().Deployments("kube-system").Get(ctx, "coredns", metav1.GetOptions{})
+		if err == nil && dns.Status.AvailableReplicas > 0 {
+			break
+		}
+		if time.Now().After(dnsDeadline) {
+			t.Fatalf("CoreDNS never became available: %+v, %v", dns, err)
+		}
+		time.Sleep(time.Second)
+	}
+	_, err = client.CoreV1().Pods("default").Create(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "dns-check"}, Spec: corev1.PodSpec{RestartPolicy: corev1.RestartPolicyNever, Containers: []corev1.Container{{Name: "lookup", Image: "busybox:1.37.0", Command: []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local && nslookup host.minikube.internal"}}}}}, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	probeDeadline := time.Now().Add(time.Minute)
+	for {
+		pod, err := client.CoreV1().Pods("default").Get(ctx, "dns-check", metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pod.Status.Phase == corev1.PodSucceeded {
+			break
+		}
+		if pod.Status.Phase == corev1.PodFailed || time.Now().After(probeDeadline) {
+			t.Fatalf("DNS probe failed: %+v", pod.Status)
+		}
+		time.Sleep(time.Second)
+	}
 	worker, err := inf.AddMachine(ctx, name)
 	if err != nil {
 		t.Fatal(err)
