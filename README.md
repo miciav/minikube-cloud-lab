@@ -62,7 +62,8 @@ kubectl get nodes -L node.kubernetes.io/instance-type,topology.kubernetes.io/zon
 Aspettare che `cloud machine-types list` risponda prima della creazione. Il primo
 avvio scarica immagini e componenti Kubernetes e può richiedere alcuni minuti.
 Il kubeconfig contiene i certificati incorporati, conserva gli altri contesti e
-seleziona `demo` come contesto corrente.
+seleziona `demo` come contesto corrente. Viene pubblicato atomicamente con permessi
+`0600`; se `KUBECONFIG` elenca più file, le voci unite vengono scritte nel file selezionato.
 
 In un altro terminale osservare le richieste ricevute dal cloud:
 
@@ -122,7 +123,7 @@ Si possono applicare direttamente con `kubectl apply --server-side --field-manag
 
 | Comando | Effetto / opzioni |
 | --- | --- |
-| `cloud serve` | Avvia API e servizio externalgrpc; `--data-dir`, `--api`, `--grpc` |
+| `cloud serve` | Avvia API e servizio externalgrpc; `--data-dir`, `--api` (loopback), `--grpc` |
 | `cloud machine-types list` | Mostra il catalogo |
 | `cloud clusters create NAME` | `--machine-type lab-small`, `--min-nodes 1`, `--max-nodes 3`, `--async` |
 | `cloud clusters list` | Elenca il cluster gestito |
@@ -146,6 +147,10 @@ Compose monta `~/.minikube-cloud-lab` in `/data` e `~/.kube` in `/kube`.
 `state.json` conserva cluster, macchine e operazioni; `minikube/` contiene lo stato
 isolato del backend. Il servizio non usa il profilo minikube personale dell'utente.
 Al riavvio marca le operazioni interrotte come ERROR e riconcilia le macchine.
+Se Docker non è osservabile, conserva i riferimenti alle macchine e avvia l'API
+con il cluster in ERROR per consentire il cleanup. Un'aggiunta fallita può aver già
+creato una macchina: questa resta registrata; se l'osservazione fallisce, resta
+prenotata la capacità fino alla riconciliazione o alla cancellazione del cluster.
 
 `docker compose down` ferma il servizio e conserva dati e macchine. **Prima di
 eliminare la directory di stato**, usare `cloud clusters delete NAME` e attenderne

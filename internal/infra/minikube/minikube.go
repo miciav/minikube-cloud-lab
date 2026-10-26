@@ -21,10 +21,9 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/minikube/pkg/drivers/kic"
 	"k8s.io/minikube/pkg/drivers/kic/oci"
-	"k8s.io/minikube/pkg/libmachine/state"
+	"k8s.io/minikube/pkg/libmachine"
 	"k8s.io/minikube/pkg/minikube/config"
 	"k8s.io/minikube/pkg/minikube/constants"
-	cleanup "k8s.io/minikube/pkg/minikube/delete"
 	"k8s.io/minikube/pkg/minikube/kubeconfig"
 	"k8s.io/minikube/pkg/minikube/localpath"
 	"k8s.io/minikube/pkg/minikube/machine"
@@ -192,23 +191,28 @@ func (i *Infra) DeleteCluster(ctx context.Context, name string) error {
 		}
 	}()
 	var errs []error
+	names := []string{name}
 	for _, n := range p.Config.Nodes {
-		exists, err := api.Exists(config.MachineName(*p.Config, n))
-		if err != nil {
-			errs = append(errs, err)
-			continue
+		machineName := config.MachineName(*p.Config, n)
+		if machineName != name {
+			names = append(names, machineName)
 		}
-		if !exists {
-			continue
-		}
-		if err := machine.DeleteHost(api, config.MachineName(*p.Config, n)); err != nil {
+		if err := removeMachine(ctx, api, machineName); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	if err := errors.Join(errs...); err != nil {
 		return err
 	}
-	cleanup.PossibleLeftOvers(ctx, name, "docker")
+	for _, machineName := range names {
+		label := oci.ProfileLabelKey + "=" + machineName
+		errs = append(errs, oci.DeleteContainersByLabel("docker", label)...)
+		errs = append(errs, oci.DeleteAllVolumesByLabel(ctx, "docker", label)...)
+		errs = append(errs, oci.DeleteKICNetworksByLabel("docker", label)...)
+	}
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
 	if err := config.DeleteProfile(name); err != nil {
 		return err
 	}
@@ -216,6 +220,36 @@ func (i *Infra) DeleteCluster(ctx context.Context, name string) error {
 		return err
 	}
 	return nil
+}
+
+func removeMachine(ctx context.Context, api libmachine.API, name string) error {
+	exists, err := oci.ContainerExists("docker", name)
+	if err != nil {
+		return err
+	}
+	if exists {
+		known, err := api.Exists(name)
+		if err != nil {
+			return err
+		}
+		if known {
+			err = machine.DeleteHost(api, name)
+		} else {
+			err = oci.DeleteContainer(ctx, "docker", name)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	// DeleteHost can swallow a driver error; observe absence before discarding ownership.
+	remaining, err := oci.ContainerExists("docker", name)
+	if err != nil {
+		return err
+	}
+	if remaining {
+		return fmt.Errorf("machine %s still exists after deletion", name)
+	}
+	return api.Remove(name)
 }
 
 // AddMachine joins a worker using the cluster shape.
@@ -288,31 +322,28 @@ func (i *Infra) Machines(ctx context.Context, name string) ([]infra.Machine, err
 	if err := i.selectCluster(name); err != nil {
 		return nil, err
 	}
+	if !config.ProfileExists(name) {
+		return []infra.Machine{}, nil
+	}
 	p, err := config.LoadProfile(name)
 	if err != nil {
 		return nil, err
 	}
-	api, err := machine.NewAPIClient(options)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := api.Close(); err != nil {
-			slog.Error("close infrastructure client", "error", err)
-		}
-	}()
 	result := make([]infra.Machine, 0, len(p.Config.Nodes))
 	for _, n := range p.Config.Nodes {
 		machineName := config.MachineName(*p.Config, n)
-		h, err := api.Load(machineName)
+		exists, err := oci.ContainerExists("docker", machineName)
 		if err != nil {
 			return nil, err
 		}
-		s, err := h.Driver.GetState()
+		if !exists {
+			continue
+		}
+		running, err := oci.ContainerRunning("docker", machineName)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, infra.Machine{Name: machineName, ControlPlane: n.ControlPlane, Running: s == state.Running})
+		result = append(result, infra.Machine{Name: machineName, ControlPlane: n.ControlPlane, Running: running})
 	}
 	return result, nil
 }
