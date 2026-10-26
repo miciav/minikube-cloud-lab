@@ -20,14 +20,14 @@ By the end, you should be able to:
 You should already be familiar with a terminal and the Kubernetes concepts of
 Pod, Deployment, and Node. No Go programming is required.
 
-## 1. Prepare your Linux lab VM
+## 1. Prepare Docker on your lab host
 
-Use the Linux VM provided or approved by your instructor. It needs:
+Use the Linux VM or Mac approved by your instructor. It needs:
 
 | Requirement | Check |
 | --- | --- |
-| At least 6 CPUs and 6 GiB of available memory | `nproc` and `free -h` |
-| Docker Engine running, with socket access for your user | `docker info` |
+| At least 6 CPUs and 6 GiB of available memory | Linux: `nproc` and `free -h`; Mac: Docker Desktop resource settings |
+| Docker Engine (Linux) or Docker Desktop (Mac) running, with local socket access | `docker info` |
 | Docker Compose v2 | `docker compose version` |
 | `kubectl` v1.35 | `kubectl version --client` |
 | Internet access to GitHub and GHCR | The VM can reach `github.com` and `ghcr.io` |
@@ -35,11 +35,13 @@ Use the Linux VM provided or approved by your instructor. It needs:
 The default two-node experiment uses machines capped at 2 GiB each (4 GiB
 combined); leave the remaining memory budget for the VM and cloud service.
 
-Use a dedicated lab VM: this exercise changes the current Kubernetes context
+Use a dedicated lab environment: this exercise changes the current Kubernetes context
 and allows the cloud service to create Docker resources. Keep the VM on a
-trusted network; externalgrpc port 9090 is intended for the cluster's nodes.
-The Compose instructions below target Linux. Native macOS development is
-covered in the [README](../README.md#macos-with-docker-desktop).
+trusted network. Compose keeps externalgrpc port 9090 inside a dedicated Docker
+bridge and publishes the management API only on localhost. These instructions
+work on Linux and Mac; Docker Desktop host networking is not required.
+The project commands run in containers, so no native `cloud`/`lab` binaries or
+Go installation are needed. `kubectl` is the standard host Kubernetes client.
 
 Clone the repository, unless your instructor has already placed it at
 `~/cloud-lab`:
@@ -53,7 +55,7 @@ The repository and container images are public. The HTTPS clone command needs
 no GitHub account or SSH key, and pulling the images needs no Docker login to
 `ghcr.io`.
 
-Prepare the configuration in your **Bash** terminal:
+Prepare the configuration in your **Bash or zsh** terminal:
 
 ```sh
 cd ~/cloud-lab
@@ -66,16 +68,19 @@ host kubeconfig for this session. It leaves existing `.env` values unchanged,
 including image overrides. If a copied `.env` contains IDs belonging to a
 different user, correct them before continuing.
 
-The cloud stores its state under `~/.minikube-cloud-lab`; both container tools
-use the host's `~/.kube/config`. The IDs let the cloud write those files as your
-user and access the local Docker socket through its group.
+The cloud stores state and its private kubeconfig under `~/.minikube-cloud-lab`.
+The `lab` container reads that state mount read-only to reach Kubernetes on the
+bridge network. Host `kubectl` uses `~/.kube/config`, where `cloud` exports the
+localhost API endpoint. The IDs let the tools access their files as your user
+and let the cloud access the local Docker socket. On Mac, the helper configures
+group 0 for Docker Desktop's VM socket.
 
 The script only configures files and the current shell. You will explicitly
 pull the images and start the cloud with Compose. It does not create a cluster,
-install Autoscaler, or start the workload, and it does not edit `.bashrc` or
+install Autoscaler, or start the workload, and it does not edit `.bashrc`, `.zshrc`, or
 other shell startup files.
 
-In **every new Bash terminal** used for the lab, run:
+In **every new Bash or zsh terminal** used for the lab, run:
 
 ```sh
 source ~/cloud-lab/scripts/configure.sh
@@ -199,8 +204,9 @@ Inspect the configuration files:
 - [Autoscaler permissions](../lab/manifests/autoscaler/rbac.yaml)
 
 Find `--cloud-provider=externalgrpc` and the address
-`host.minikube.internal:9090`. Autoscaler runs inside Kubernetes and contacts
-the cloud provider through this endpoint. Creating a cluster and installing
+`host.minikube.internal:9090`. Nodes and CoreDNS map this name to the cloud
+container on the shared Docker bridge. Autoscaler runs inside Kubernetes and
+contacts the cloud through this internal endpoint. Creating a cluster and installing
 Autoscaler are separate actions.
 
 The `lab` command prints its equivalent `kubectl` command and applies the same
@@ -268,8 +274,10 @@ is not required for this experiment.
 
 ## 5. Connect the Kubernetes decision to the cloud request
 
-On a clean lab, expect a control plane and one worker, commonly named
-`demo-m02`. Machine names, operation IDs, and timestamps may vary.
+On a clean lab, the workload usually needs a control plane and one worker,
+commonly named `demo-m02`. Autoscaler can request a second worker while a new
+node or its Pods are still settling, up to the configured three-machine maximum.
+Machine names, operation IDs, and timestamps may vary.
 
 Wait for all four replicas to become available:
 
@@ -284,7 +292,7 @@ cloud operations list
 If the new node is still provisioning, continue observing; allow up to
 15 minutes for the initial scale-up before using the troubleshooting section.
 
-**Checkpoint:** two Nodes are Ready, all four lab Pods are Running, and the cloud
+**Checkpoint:** at least two Nodes are Ready, all four lab Pods are Running, and the cloud
 has an ADD_MACHINE operation with requester `cluster-autoscaler` and status DONE.
 The worker's `CREATED_BY` column should also identify `cluster-autoscaler`.
 Use `cloud operations describe OPERATION_ID` to inspect that operation.
@@ -346,9 +354,10 @@ machine has been fully removed.
 ## 7. Optional experiment: reach the maximum size
 
 Complete the previous scale-down checkpoint before starting this experiment.
-This optional experiment can create a third 2 GiB machine: allow another 2 GiB
-of memory headroom beyond the default two-node lab budget, or skip this section
-on a smaller VM.
+This experiment targets the three-machine maximum. A third 2 GiB machine can
+also appear transiently during the earlier scale-up; allow that headroom when
+planning the lab. To enforce a two-machine budget, create the cluster with
+`--max-nodes 2` in section 2 and skip this optional experiment.
 Check the maximum and request ten replicas:
 
 ```sh

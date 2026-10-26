@@ -40,12 +40,15 @@ Existing clusters keep their original machine resources. To adopt the smaller
 images, and create a new cluster. The configuration helper does not resize or
 delete machines.
 
-## Student quick start: Linux VM with Docker
+## Student quick start: Docker on Linux or macOS
 
-You need Docker Engine with Compose v2, permission to access the Docker socket,
-and `kubectl` v1.35 to inspect the cluster. For the default experiment, provide
+You need Docker Engine on Linux or Docker Desktop on macOS, Compose v2, access
+to the local Docker socket, and `kubectl` v1.35 to inspect the cluster.
+The `cloud` and `lab` tools run in containers on both platforms; no Go install
+or native project binaries are needed. For the default experiment, provide
 at least 6 CPUs and 6 GiB of available memory. The images support Linux amd64
-and arm64; the complete automated student path runs on amd64.
+and arm64. Docker Desktop host networking is not required: Compose creates a
+dedicated bridge network and publishes the management API on localhost.
 
 The repository and GHCR images are public. Cloning over HTTPS and pulling the
 images require no GitHub account, SSH key, or Docker login to `ghcr.io`.
@@ -67,10 +70,15 @@ kubectl get nodes -L node.kubernetes.io/instance-type,topology.kubernetes.io/zon
 
 `source scripts/configure.sh` prepares the data directories, adds missing
 UID/GID/socket-group entries to `.env`, and defines the `cloud` and `lab` shell
-commands plus `KUBECONFIG` for this Bash session. Existing `.env` values are
+commands plus `KUBECONFIG` for this Bash or zsh session. Existing `.env` values are
 preserved. Run it in each terminal; it does not edit shell startup files, pull
 images, start Docker services, or create cluster resources. Students run Compose
 and all cloud/Kubernetes commands explicitly.
+
+On macOS, start Docker Desktop first. The helper uses BSD `stat` and configures
+the group of Docker Desktop's root-owned VM socket. On Linux it reads the local
+socket group with GNU `stat`. Existing explicit `.env` values are preserved;
+correct copied UID/GID values if they belong to another machine.
 
 Wait until `cloud machine-types list` responds before creating the cluster.
 The first start downloads node images and Kubernetes components and may take
@@ -79,6 +87,9 @@ contexts, and selects `demo` as the current context. It is published atomically
 with permissions `0600`; when `KUBECONFIG` lists multiple files, merged entries
 are written to the selected file. With Compose, the CLI writes `/kube/config`,
 which is the host's `~/.kube/config`.
+Inside the bridge network, `lab` uses the cloud's private kubeconfig from the
+read-only state mount. Host `kubectl` uses the exported localhost API endpoint;
+the two endpoints use the same cluster identity and embedded certificates.
 
 New clusters automatically include the **YAKD Kubernetes dashboard**, using the
 addon bundled with minikube. Creation installs its resources; wait for the
@@ -189,7 +200,9 @@ the API with the cluster in ERROR so cleanup remains possible. A failed addition
 may already have created a machine: it remains recorded. If observation fails,
 its capacity stays reserved until reconciliation or cluster deletion.
 
-`docker compose down` stops the service and preserves data and machines.
+Delete the cluster before `docker compose down`, so Compose can remove its
+network. Stopping the service preserves data and machines; if nodes remain,
+Docker refuses to remove the network while it is in use.
 **Before deleting the state directory**, run `cloud clusters delete NAME` and
 wait for it to finish. Removing only the files would lose the references to
 Docker resources. Then, to clear the operation history as well:
@@ -202,14 +215,31 @@ rm -rf "$HOME/.minikube-cloud-lab"
 The kubeconfig context remains after cluster deletion; other contexts are
 preserved. Do not delete all of `~/.kube` to reset this lab.
 
-The cloud controls the VM's Docker socket. Its management API listens on
-`127.0.0.1:8080`; externalgrpc listens on `0.0.0.0:9090` so nodes can reach it at
-`host.minikube.internal:9090`. The MVP has no authentication or TLS: use a trusted
-lab VM and restrict port 9090 to the node network.
+The cloud controls the local Docker socket. Compose publishes its management
+API at `127.0.0.1:8080`. Externalgrpc port 9090 stays inside the dedicated Docker
+network: nodes resolve `host.minikube.internal` to the cloud container's stable
+address. The MVP has no management authentication or TLS; use a trusted lab host.
+
+The default network is `172.30.0.0/24`; cloud uses `172.30.0.254`, outside
+minikube's automatic node-address range. If that subnet conflicts with another
+network, delete the cluster and run `docker compose down`, then set a matching
+pair in `.env`, for example:
+
+```dotenv
+CLOUD_DOCKER_SUBNET=172.29.240.0/24
+CLOUD_DOCKER_IP=172.29.240.254
+```
+
+Use a private `/24` subnet with the cloud address ending in `.254`. Start
+Compose again and create a new cluster. Before upgrading an older host-network
+installation, delete its cluster with the old cloud, run `docker compose down`,
+pull the updated images, and run `docker compose up -d cloud` before recreating
+the cluster. Existing clusters do not migrate between networks automatically.
 
 ## Development
 
-You need Go 1.27.3, `uv` for pre-commit, and Docker for real infrastructure tests.
+You need Go 1.27.3, Bash and zsh for the configuration tests, `uv` for pre-commit,
+and Docker for real infrastructure tests.
 
 ```sh
 make build
@@ -234,7 +264,7 @@ kubeconfig, adds and removes a machine, and deletes everything with the minikube
 executable absent from PATH. It requires a running Docker daemon and available
 resources; the timeout is 30 minutes.
 
-To use locally built images on a Linux VM, add these entries to `.env`:
+To use locally built images on Linux or macOS, add these entries to `.env`:
 
 ```dotenv
 CLOUD_IMAGE=minikube-cloud-lab/cloud:dev
@@ -248,29 +278,12 @@ The manually triggered `Student path` workflow runs the complete Compose
 
 ### macOS with Docker Desktop
 
-Use native binaries for development; the Compose path with host networking is
-intended for Linux VMs. Start Docker Desktop and make at least 6 CPUs and 6 GiB
-available. The backend uses the selected Docker Desktop context.
-
-```sh
-go build -o /tmp/cloud-lab-cloud ./cmd/cloud
-go build -o /tmp/cloud-lab-lab ./cmd/lab
-/tmp/cloud-lab-cloud serve
-```
-
-In a second terminal:
-
-```sh
-alias cloud=/tmp/cloud-lab-cloud
-alias lab=/tmp/cloud-lab-lab
-cloud clusters create demo
-cloud clusters get-credentials demo
-lab install autoscaler
-lab load start
-```
-
-Then use the same observation and cleanup commands as the student path.
-Do not run two services against the same state directory.
+Start Docker Desktop with Linux containers and make at least 6 CPUs and 6 GiB
+available to its VM. Use the same Compose quick start above from Bash or zsh.
+Keep the local Docker socket available at `/var/run/docker.sock`; no host
+networking setting or native `cloud`/`lab` build is needed. Standard host
+`kubectl` connects through the control plane's published localhost port.
+Do not run two cloud services against the same state directory.
 
 ### Backend
 
