@@ -47,12 +47,12 @@ and `kubectl` v1.35 to inspect the cluster. For the default experiment, provide
 at least 6 CPUs and 6 GiB of available memory. The images support Linux amd64
 and arm64; the complete automated student path runs on amd64.
 
-The repository and GHCR images are private. You need repository access and a
-Docker login to `ghcr.io` with permission to read the packages. Alternatively,
-build the images from a checkout as described below.
+The repository and GHCR images are public. Cloning over HTTPS and pulling the
+images require no GitHub account, SSH key, or Docker login to `ghcr.io`.
+Alternatively, build the images from a checkout as described below.
 
 ```sh
-git clone git@github.com:miciav/minikube-cloud-lab.git ~/cloud-lab
+git clone https://github.com/miciav/minikube-cloud-lab.git ~/cloud-lab
 cd ~/cloud-lab
 source scripts/configure.sh
 docker compose --profile tools pull

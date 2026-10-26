@@ -60,7 +60,7 @@ Su macOS usare i binari nativi con Docker Desktop. Compose è per VM Linux.
   da leggere: non modificarlo.
 - `docs/superpowers/` e `.superpowers/` restano ignorati. Non committare spec, piani,
   log, credenziali, `.env` o report locali.
-- Repository e package GHCR privati. CI amd64; build multiarch tramite QEMU;
-  niente CodeQL o runner arm64 finché il progetto resta privato.
+- Repository e package GHCR pubblici: clonazione HTTPS e pull anonimo per gli studenti.
+  CI amd64; build multiarch tramite QEMU.
 - TDD per funzionalità e bugfix; commit piccoli con prefisso convenzionale e trailer
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` previsto dal piano.

@@ -30,7 +30,7 @@ Use the Linux VM provided or approved by your instructor. It needs:
 | Docker Engine running, with socket access for your user | `docker info` |
 | Docker Compose v2 | `docker compose version` |
 | `kubectl` v1.35 | `kubectl version --client` |
-| Repository and private GHCR package access | Confirm with your instructor |
+| Internet access to GitHub and GHCR | The VM can reach `github.com` and `ghcr.io` |
 
 The default two-node experiment uses machines capped at 2 GiB each (4 GiB
 combined); leave the remaining memory budget for the VM and cloud service.
@@ -45,14 +45,13 @@ Clone the repository, unless your instructor has already placed it at
 `~/cloud-lab`:
 
 ```sh
-git clone git@github.com:miciav/minikube-cloud-lab.git ~/cloud-lab
+git clone https://github.com/miciav/minikube-cloud-lab.git ~/cloud-lab
 cd ~/cloud-lab
 ```
 
-The clone command assumes GitHub SSH access is configured. Follow your
-instructor's instructions for accessing the private repository and logging
-Docker into `ghcr.io` before pulling images. Repository access and package
-access must both be available.
+The repository and container images are public. The HTTPS clone command needs
+no GitHub account or SSH key, and pulling the images needs no Docker login to
+`ghcr.io`.
 
 Prepare the configuration in your **Bash** terminal:
 
@@ -408,7 +407,7 @@ needed to clean up its resources.
 
 | Observation | What to inspect |
 | --- | --- |
-| Private image pull is denied | Confirm Docker login and GHCR package access with your instructor |
+| An image pull fails | Check the image name/tag and network access to `ghcr.io`; the default images are public and need no login |
 | Docker socket permission is denied | Check `docker info`, the socket's group, and `.env`; ask your instructor to correct access |
 | The cloud CLI cannot connect | Run `docker compose ps` and `docker compose logs cloud`; check the service has started |
 | `kubectl` uses the wrong cluster | Check `KUBECONFIG` and `kubectl config current-context`; repeat `cloud clusters get-credentials demo` |
