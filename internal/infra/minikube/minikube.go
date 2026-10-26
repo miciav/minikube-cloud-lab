@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -141,6 +142,11 @@ func (i *Infra) CreateCluster(ctx context.Context, spec infra.ClusterSpec) error
 			slog.Error("close infrastructure client", "error", err)
 		}
 	}()
+	if runtime.GOOS == "linux" {
+		if err := setMachineResources(ctx, spec.Name, spec.Shape); err != nil {
+			return err
+		}
+	}
 	settings, err := node.Start(node.Starter{Runner: r, PreExists: p, MachineAPI: m, Host: h, Cfg: cc, Node: &cc.Nodes[0]}, options)
 	if err != nil {
 		return err
@@ -245,6 +251,11 @@ func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, err
 	n := config.Node{Name: fmt.Sprintf("m%02d", index), KubernetesVersion: cc.KubernetesConfig.KubernetesVersion, ContainerRuntime: cc.KubernetesConfig.ContainerRuntime, Worker: true}
 	if err := node.Add(cc, n, false, options); err != nil {
 		return infra.Machine{}, err
+	}
+	if runtime.GOOS == "linux" {
+		if err := setMachineResources(ctx, config.MachineName(*cc, n), infra.MachineShape{CPUs: cc.CPUs, MemoryMiB: cc.Memory}); err != nil {
+			return infra.Machine{}, err
+		}
 	}
 	return infra.Machine{Name: config.MachineName(*cc, n), Running: true}, nil
 }
