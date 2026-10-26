@@ -69,9 +69,10 @@ including image overrides. If a copied `.env` contains IDs belonging to a
 different user, correct them before continuing.
 
 The cloud stores state and its private kubeconfig under `~/.minikube-cloud-lab`.
-The `lab` container reads that state mount read-only to reach Kubernetes on the
-bridge network. Host `kubectl` uses `~/.kube/config`, where `cloud` exports the
-localhost API endpoint. The IDs let the tools access their files as your user
+The `lab` container reads that state mount read-only and shares the running
+cloud container's network namespace to reach Kubernetes on the bridge. Finish
+running `lab` commands before recreating the cloud container. Host `kubectl` uses
+`~/.kube/config`, where `cloud` exports the localhost API endpoint. The IDs let the tools access their files as your user
 and let the cloud access the local Docker socket. On Mac, the helper configures
 group 0 for Docker Desktop's VM socket.
 

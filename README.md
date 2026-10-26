@@ -87,9 +87,11 @@ contexts, and selects `demo` as the current context. It is published atomically
 with permissions `0600`; when `KUBECONFIG` lists multiple files, merged entries
 are written to the selected file. With Compose, the CLI writes `/kube/config`,
 which is the host's `~/.kube/config`.
-Inside the bridge network, `lab` uses the cloud's private kubeconfig from the
-read-only state mount. Host `kubectl` uses the exported localhost API endpoint;
-the two endpoints use the same cluster identity and embedded certificates.
+The `lab` container shares the running cloud container's network namespace,
+so it consumes no address from minikube's node range. It uses the cloud's private
+kubeconfig from the read-only state mount. Finish running `lab` commands before
+recreating the cloud container. Host `kubectl` uses the exported localhost API
+endpoint; the two endpoints use the same cluster identity and embedded certificates.
 
 New clusters automatically include the **YAKD Kubernetes dashboard**, using the
 addon bundled with minikube. Creation installs its resources; wait for the
@@ -235,6 +237,10 @@ Compose again and create a new cluster. Before upgrading an older host-network
 installation, delete its cluster with the old cloud, run `docker compose down`,
 pull the updated images, and run `docker compose up -d cloud` before recreating
 the cluster. Existing clusters do not migrate between networks automatically.
+Older versions could leave worker volumes after scale-down. Before reusing a
+cluster name, inspect any volume named `NAME-mNN` with `docker volume inspect`.
+Remove it only after confirming it belongs to the deleted lab and no container
+uses it; the cloud does not automatically delete historical orphan volumes.
 
 ## Development
 

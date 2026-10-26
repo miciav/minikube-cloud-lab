@@ -68,14 +68,14 @@ func TestComposeConfiguration(t *testing.T) {
 	if cloud.Image != "example/cloud:test" || lab.Image != "example/lab:test" {
 		t.Fatal("image overrides ignored")
 	}
-	if cloud.NetworkMode != "" || lab.NetworkMode != "" || cloud.User != "1001:1001" || lab.User != "1001:1001" {
+	if cloud.NetworkMode != "" || lab.NetworkMode != "service:cloud" || cloud.User != "1001:1001" || lab.User != "1001:1001" {
 		t.Fatalf("network/user: %+v", config.Services)
 	}
 	network := config.Networks["lab"]
 	if network.Name != "minikube-cloud-lab" || network.Driver != "bridge" || len(network.IPAM.Config) != 1 || network.IPAM.Config[0].Subnet != "172.30.0.0/24" || network.IPAM.Config[0].Gateway != "" {
 		t.Fatalf("bridge IPAM: %+v", network)
 	}
-	if len(cloud.Networks) != 1 || cloud.Networks["lab"].IPv4Address != "172.30.0.254" || len(lab.Networks) != 1 {
+	if len(cloud.Networks) != 1 || cloud.Networks["lab"].IPv4Address != "172.30.0.254" || len(lab.Networks) != 0 {
 		t.Fatalf("shared network: cloud=%+v lab=%+v", cloud.Networks, lab.Networks)
 	}
 	if cloud.Environment["CLOUD_DOCKER_NETWORK"] != "minikube-cloud-lab" || cloud.Environment["CLOUD_DOCKER_IP"] != "172.30.0.254" || lab.Environment["KUBECONFIG"] != "/data/minikube/kubeconfig" {
