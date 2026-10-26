@@ -1,0 +1,88 @@
+name: Student path
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+concurrency:
+  group: student-path-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  CLOUD_IMAGE: minikube-cloud-lab/cloud:dev
+  LAB_IMAGE: minikube-cloud-lab/lab:dev
+  KUBECTL_VERSION: v1.35.6
+jobs:
+  student-path:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build images
+        run: make images
+      - name: Install matching kubectl
+        run: |
+          curl -fsSLo /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          curl -fsSLo /tmp/kubectl.sha256 "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
+          (cd /tmp && printf '%s  kubectl\n' "$(cat kubectl.sha256)" | sha256sum -c -)
+          sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+      - name: Student autoscaling cycle
+        run: |
+          mkdir -p "$HOME/.minikube-cloud-lab" "$HOME/.kube"
+          printf 'UID=%s\nGID=%s\nDOCKER_GID=%s\n' "$(id -u)" "$(id -g)" "$(stat -c '%g' /var/run/docker.sock)" > .env
+          docker compose up -d cloud
+          cloud() { docker compose exec -T cloud cloud "$@"; }
+          lab() { docker compose run --rm -T lab "$@"; }
+          for attempt in $(seq 1 60); do
+            if cloud machine-types list; then break; fi
+            sleep 2
+          done
+          cloud clusters create demo
+          cloud clusters get-credentials demo
+          kubectl get nodes -L node.kubernetes.io/instance-type,topology.kubernetes.io/zone
+          # The cloud image must work without either host Kubernetes CLI binary.
+          docker compose exec -T cloud sh -c '! command -v minikube && ! command -v kubectl'
+          # Verify real runtime quotas as well as what Kubernetes can schedule.
+          test "$(docker inspect demo --format '{{.HostConfig.NanoCpus}}')" = 2000000000
+          test "$(docker inspect demo --format '{{.HostConfig.Memory}}')" = 4294967296
+          test "$(kubectl get node demo -o jsonpath='{.status.allocatable.cpu}')" = 2
+          lab install autoscaler
+          kubectl -n kube-system rollout status deployment/cluster-autoscaler --timeout=5m
+          lab load start
+          wait_nodes() {
+            local expected=$1 deadline=$((SECONDS + 900)) observed
+            while (( SECONDS < deadline )); do
+              observed=$(kubectl get nodes -o json | jq '[.items[] | select(any(.status.conditions[]; .type == "Ready" and .status == "True"))] | length')
+              if [[ "$observed" == "$expected" ]]; then return 0; fi
+              sleep 5
+            done
+            kubectl get nodes
+            return 1
+          }
+          wait_nodes 2
+          cloud machines list
+          cloud operations list
+          kubectl get pods -l app=lab-load
+          lab load stop
+          wait_nodes 1
+          cloud operations list
+          cloud clusters delete demo
+      - name: Diagnostics
+        if: failure()
+        run: |
+          docker compose logs --no-color cloud > cloud.log 2>&1 || true
+          kubectl get events -A --sort-by=.lastTimestamp > events.txt 2>&1 || true
+          kubectl -n kube-system logs deployment/cluster-autoscaler > autoscaler.log 2>&1 || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: student-path-diagnostics
+          path: |
+            cloud.log
+            events.txt
+            autoscaler.log
+          if-no-files-found: ignore
+      - name: Stop cloud container
+        if: always()
+        run: docker compose down || true

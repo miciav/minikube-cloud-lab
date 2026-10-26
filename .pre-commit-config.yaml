@@ -31,3 +31,8 @@ repos:
     rev: v2.15.1
     hooks:
       - id: hadolint
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
