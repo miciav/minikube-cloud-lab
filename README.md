@@ -237,6 +237,11 @@ Il cloud chiama direttamente la libreria Go minikube: non richiede i binari
 `minikube` o `kubectl`. La libreria upstream avvia internamente Docker CLI e altri
 strumenti; l'immagine cloud contiene Docker CLI e curl. Il codice Go del progetto
 non avvia processi esterni; i test possono usarli per misurare il sistema reale.
+Il bootstrap compone le primitive Go di driver, libmachine, runtime, CNI e kubeadm
+che restituiscono errori. Evita gli helper CLI `node.Start`, `node.Add`, `node.Delete`
+e `machine.StartHost`, che possono chiamare `os.Exit`. Il drain usa l'helper Go
+di Kubernetes e il client API; non esegue il binario kubectl. Sono supportati
+il driver Docker e gli indirizzi nodo assegnati automaticamente.
 Su Linux il client SDK Docker applica anche le quote CPU/RAM, perché il driver
 minikube fissato può ignorare la quota CPU su cgroup v2. Usa `DOCKER_HOST` oppure
 il socket locale; contesti Docker remoti senza `DOCKER_HOST` non sono supportati.

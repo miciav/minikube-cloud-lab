@@ -27,7 +27,6 @@ import (
 	"k8s.io/minikube/pkg/minikube/kubeconfig"
 	"k8s.io/minikube/pkg/minikube/localpath"
 	"k8s.io/minikube/pkg/minikube/machine"
-	"k8s.io/minikube/pkg/minikube/node"
 	"k8s.io/minikube/pkg/minikube/out"
 	"k8s.io/minikube/pkg/minikube/out/register"
 
@@ -132,21 +131,23 @@ func (i *Infra) CreateCluster(ctx context.Context, spec infra.ClusterSpec) error
 		KeepContext: true, EmbedCerts: true, MultiNodeRequested: true, ListenAddress: "127.0.0.1", Nodes: []config.Node{n},
 		KubernetesConfig: config.KubernetesConfig{KubernetesVersion: spec.KubernetesVersion, ClusterName: spec.Name, Namespace: "default", APIServerName: "minikubeCA", DNSDomain: "cluster.local", ContainerRuntime: "docker", ServiceCIDR: constants.DefaultServiceCIDR, ImageRepository: "registry.k8s.io", CNI: "flannel", NetworkPlugin: "cni", ExtraOptions: config.ExtraOptionSlice{{Component: "kubelet", Key: "node-labels", Value: strings.Join(labels, ",")}, {Component: "kubelet", Key: "kube-reserved", Value: reserved}}},
 	}
-	r, p, m, h, err := node.Provision(cc, &cc.Nodes[0], false, options)
+	m, h, r, err := provisionNode(ctx, cc, &cc.Nodes[0])
+	if m != nil {
+		defer func() {
+			if err := m.Close(); err != nil {
+				slog.Error("close infrastructure client", "error", err)
+			}
+		}()
+	}
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := m.Close(); err != nil {
-			slog.Error("close infrastructure client", "error", err)
-		}
-	}()
 	if runtime.GOOS == "linux" {
 		if err := setMachineResources(ctx, spec.Name, spec.Shape); err != nil {
 			return err
 		}
 	}
-	settings, err := node.Start(node.Starter{Runner: r, PreExists: p, MachineAPI: m, Host: h, Cfg: cc, Node: &cc.Nodes[0]}, options)
+	settings, err := startNode(ctx, cc, &cc.Nodes[0], m, h, r)
 	if err != nil {
 		return err
 	}
@@ -283,14 +284,23 @@ func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, err
 		index++
 	}
 	n := config.Node{Name: fmt.Sprintf("m%02d", index), KubernetesVersion: cc.KubernetesConfig.KubernetesVersion, ContainerRuntime: cc.KubernetesConfig.ContainerRuntime, Worker: true}
-	if err := node.Add(cc, n, false, options); err != nil {
-		return infra.Machine{}, err
+	m, h, r, err := provisionNode(ctx, cc, &n)
+	if m != nil {
+		defer func() { _ = m.Close() }()
+	}
+	partial := infra.Machine{Name: config.MachineName(*cc, n)}
+	if err != nil {
+		return partial, err
 	}
 	if runtime.GOOS == "linux" {
-		if err := setMachineResources(ctx, config.MachineName(*cc, n), infra.MachineShape{CPUs: cc.CPUs, MemoryMiB: cc.Memory}); err != nil {
-			return infra.Machine{}, err
+		if err := setMachineResources(ctx, partial.Name, infra.MachineShape{CPUs: cc.CPUs, MemoryMiB: cc.Memory}); err != nil {
+			return partial, err
 		}
 	}
+	if _, err := startNode(ctx, cc, &n, m, h, r); err != nil {
+		return partial, err
+	}
+
 	return infra.Machine{Name: config.MachineName(*cc, n), Running: true}, nil
 }
 
@@ -308,8 +318,7 @@ func (i *Infra) DeleteMachine(ctx context.Context, name, m string) error {
 	if err != nil {
 		return err
 	}
-	_, err = node.Delete(*p.Config, m, options)
-	return err
+	return i.removeWorker(ctx, p.Config, m)
 }
 
 // Machines reports the machines observed by the Docker driver.

@@ -36,6 +36,10 @@ Su macOS usare i binari nativi con Docker Desktop. Compose è per VM Linux.
 - Nessun `os/exec`, shell, comando minikube o kubectl nel codice Go non di test.
   Sono autorizzati i processi interni della libreria upstream minikube; Docker CLI
   e curl nell'immagine servono a quella dipendenza. Usare client-go per Kubernetes.
+- Non usare gli helper minikube CLI `node.Provision/Start/Add/Delete` o
+  `machine.StartHost`: hanno percorsi `os.Exit`. Comporre le primitive Go verificate
+  in `bootstrap.go` e mantenere gli errori al confine Infra. Driver Docker e indirizzi
+  automatici soltanto; il caso fatal del driver KIC con StaticIP deve restare escluso.
 - Un solo cluster per servizio, un tipo per cluster, control plane incluso nei
   limiti min/max e protetto dalla cancellazione. Non introdurre supporto multi-cluster.
 - Requester: `student` per la CLI/API, `cluster-autoscaler` per externalgrpc,
