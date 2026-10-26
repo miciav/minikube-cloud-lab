@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -139,8 +140,8 @@ func (s *Service) CreateCluster(name, kind string, minM, maxM int, requester str
 	if err != nil {
 		return Operation{}, err
 	}
-	if len(validation.IsDNS1123Label(name)) > 0 || minM < 1 || maxM < minM {
-		return Operation{}, fmt.Errorf("%w: require a DNS-1123 name and 1 <= min <= max", ErrInvalid)
+	if len(validation.IsDNS1123Label(name)) > 0 || minM < 1 || maxM < minM || maxM > math.MaxInt32 {
+		return Operation{}, fmt.Errorf("%w: require a DNS-1123 name and 1 <= min <= max <= 2147483647", ErrInvalid)
 	}
 	next := s.state.clone()
 	c := Cluster{Name: name, MachineType: kind, MinMachines: minM, MaxMachines: maxM, Status: "PROVISIONING", CreatedAt: time.Now().UTC()}

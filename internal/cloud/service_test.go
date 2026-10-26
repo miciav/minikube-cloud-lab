@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,7 +98,7 @@ func TestValidatesSizes(t *testing.T) {
 	for _, tc := range []struct {
 		name, kind string
 		min, max   int
-	}{{"demo", "lab-small", 0, 3}, {"demo", "lab-small", 2, 1}, {"Not DNS!", "lab-small", 1, 3}, {"demo", "unknown", 1, 3}} {
+	}{{"demo", "lab-small", 0, 3}, {"demo", "lab-small", 2, 1}, {"Not DNS!", "lab-small", 1, 3}, {"demo", "unknown", 1, 3}, {"demo", "lab-small", 1, math.MaxInt32 + 1}} {
 		t.Run(fmt.Sprintf("%s-%s-%d", tc.name, tc.kind, tc.min), func(t *testing.T) {
 			s, _, _ := newService(t)
 			if _, err := s.CreateCluster(tc.name, tc.kind, tc.min, tc.max, "student"); !errors.Is(err, cloud.ErrInvalid) {
