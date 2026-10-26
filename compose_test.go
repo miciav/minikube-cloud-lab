@@ -72,7 +72,7 @@ func TestComposeConfiguration(t *testing.T) {
 		t.Fatalf("network/user: %+v", config.Services)
 	}
 	network := config.Networks["lab"]
-	if network.Name != "minikube-cloud-lab" || network.Driver != "bridge" || len(network.IPAM.Config) != 1 || network.IPAM.Config[0].Subnet != "172.30.0.0/24" || network.IPAM.Config[0].Gateway != "" {
+	if network.Name != "minikube-cloud-lab" || network.Driver != "bridge" || len(network.IPAM.Config) != 1 || network.IPAM.Config[0].Subnet != "172.30.0.0/24" || network.IPAM.Config[0].Gateway != "172.30.0.1" {
 		t.Fatalf("bridge IPAM: %+v", network)
 	}
 	if len(cloud.Networks) != 1 || cloud.Networks["lab"].IPv4Address != "172.30.0.254" || len(lab.Networks) != 0 {
