@@ -11,7 +11,7 @@ Leggere `README.md` per architettura, percorso studente e limiti operativi.
 - `make images`: immagini locali `minikube-cloud-lab/{cloud,lab}:dev`.
 - `go test -tags docker . -run TestComposeConfiguration -v`: configurazione Compose.
 
-Le prove reali richiedono Docker attivo, almeno 6 CPU e 12 GiB disponibili.
+Le prove reali richiedono Docker attivo, almeno 6 CPU e 6 GiB disponibili.
 Su macOS usare i binari nativi con Docker Desktop. Compose è per VM Linux.
 
 ## Mappa dei pacchetti
@@ -40,6 +40,8 @@ Su macOS usare i binari nativi con Docker Desktop. Compose è per VM Linux.
   `machine.StartHost`: hanno percorsi `os.Exit`. Comporre le primitive Go verificate
   in `bootstrap.go` e mantenere gli errori al confine Infra. Driver Docker e indirizzi
   automatici soltanto; il caso fatal del driver KIC con StaticIP deve restare escluso.
+- `lab-small`: 2 CPU / 2048 MiB; `lab-medium`: 4 CPU / 8192 MiB.
+- `source scripts/configure.sh` prepara soltanto directory/.env/comandi di sessione; non deve eseguire Docker o operazioni sul cluster.
 - Un solo cluster per servizio, un tipo per cluster, control plane incluso nei
   limiti min/max e protetto dalla cancellazione. Non introdurre supporto multi-cluster.
 - Requester: `student` per la CLI/API, `cluster-autoscaler` per externalgrpc,

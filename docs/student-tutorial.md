@@ -26,11 +26,14 @@ Use the Linux VM provided or approved by your instructor. It needs:
 
 | Requirement | Check |
 | --- | --- |
-| At least 6 CPUs and 12 GiB of available memory | `nproc` and `free -h` |
+| At least 6 CPUs and 6 GiB of available memory | `nproc` and `free -h` |
 | Docker Engine running, with socket access for your user | `docker info` |
 | Docker Compose v2 | `docker compose version` |
 | `kubectl` v1.35 | `kubectl version --client` |
 | Repository and private GHCR package access | Confirm with your instructor |
+
+The default two-node experiment uses machines capped at 2 GiB each (4 GiB
+combined); leave the remaining memory budget for the VM and cloud service.
 
 Use a dedicated lab VM: this exercise changes the current Kubernetes context
 and allows the cloud service to create Docker resources. Keep the VM on a
@@ -51,46 +54,51 @@ instructor's instructions for accessing the private repository and logging
 Docker into `ghcr.io` before pulling images. Repository access and package
 access must both be available.
 
-Prepare the directories and Compose identity settings:
+Prepare the configuration in your **Bash** terminal:
 
 ```sh
 cd ~/cloud-lab
-mkdir -p "$HOME/.minikube-cloud-lab" "$HOME/.kube"
-printf 'UID=%s\nGID=%s\nDOCKER_GID=%s\n' \
-  "$(id -u)" "$(id -g)" "$(stat -c '%g' /var/run/docker.sock)" > .env
-docker compose --profile tools pull
+source scripts/configure.sh
 ```
 
-The cloud writes its state under `~/.minikube-cloud-lab`. Both container tools
-use the host's `~/.kube/config`. The IDs in `.env` let the cloud write those files
-as your user and access the Docker socket through its group.
+This creates the data directories, adds missing UID/GID/socket-group values to
+`.env`, defines the `cloud` and `lab` command wrappers, and selects the matching
+host kubeconfig for this session. It leaves existing `.env` values unchanged,
+including image overrides. If a copied `.env` contains IDs belonging to a
+different user, correct them before continuing.
 
-In your command terminal, define the two tool aliases and select the matching
-host kubeconfig:
+The cloud stores its state under `~/.minikube-cloud-lab`; both container tools
+use the host's `~/.kube/config`. The IDs let the cloud write those files as your
+user and access the local Docker socket through its group.
+
+The script only configures files and the current shell. You will explicitly
+pull the images and start the cloud with Compose. It does not create a cluster,
+install Autoscaler, or start the workload, and it does not edit `.bashrc` or
+other shell startup files.
+
+In **every new Bash terminal** used for the lab, run:
 
 ```sh
-alias cloud='docker compose -f ~/cloud-lab/compose.yaml exec cloud cloud'
-alias lab='docker compose -f ~/cloud-lab/compose.yaml run --rm lab'
-export KUBECONFIG="$HOME/.kube/config"
+source ~/cloud-lab/scripts/configure.sh
 ```
 
-Aliases and environment variables apply to the current terminal. In every new
-terminal used below, run `cd ~/cloud-lab` and
-`export KUBECONFIG="$HOME/.kube/config"`. Define the aliases there too if you
-want to run `cloud` or `lab` in that terminal.
+The wrappers work from other directories too. Use `source`, rather than
+executing the script: a child process cannot configure its parent terminal.
 
 ## 2. Start the cloud and request a cluster
 
-Start the cloud service:
+Pull the images, then start the cloud service yourself:
 
 ```sh
+cd ~/cloud-lab
+docker compose --profile tools pull
 docker compose up -d cloud
 docker compose ps
 cloud machine-types list
 ```
 
 If the last command reports a connection error, wait a few seconds and retry.
-You should see `lab-small` with 2 CPUs and 4096 MiB, and `lab-medium` with
+You should see `lab-small` with 2 CPUs and 2048 MiB, and `lab-medium` with
 4 CPUs and 8192 MiB. To diagnose startup, use `docker compose logs cloud`.
 
 **Predict:** when you request a cluster with minimum 1 and maximum 3, how many
@@ -103,6 +111,10 @@ cloud clusters describe demo
 cloud machines list --cluster demo
 cloud operations list
 ```
+
+New `lab-small` machines have 2 GiB of memory. A cluster created with an older
+4 GiB shape keeps its original limits: delete it through the cloud and recreate
+it with the updated images to use the smaller shape.
 
 The initial cluster list should be empty. If another cluster exists, finish or
 clean up that earlier exercise first: this cloud manages one cluster at a time.
@@ -177,8 +189,7 @@ before starting the workload.
 In **terminal B**, watch the lab's Pods:
 
 ```sh
-cd ~/cloud-lab
-export KUBECONFIG="$HOME/.kube/config"
+source ~/cloud-lab/scripts/configure.sh
 kubectl get pods -l app=lab-load -w
 ```
 
@@ -187,8 +198,7 @@ An initially empty list is expected. Leave the watch running.
 In **terminal C**, watch Nodes:
 
 ```sh
-cd ~/cloud-lab
-export KUBECONFIG="$HOME/.kube/config"
+source ~/cloud-lab/scripts/configure.sh
 kubectl get nodes -w
 ```
 
@@ -310,6 +320,9 @@ machine has been fully removed.
 ## 7. Optional experiment: reach the maximum size
 
 Complete the previous scale-down checkpoint before starting this experiment.
+This optional experiment can create a third 2 GiB machine: allow another 2 GiB
+of memory headroom beyond the default two-node lab budget, or skip this section
+on a smaller VM.
 Check the maximum and request ten replicas:
 
 ```sh

@@ -28,18 +28,23 @@ from removal.
 
 | Type | CPUs | Memory |
 | --- | --- | --- |
-| `lab-small` (default) | 2 | 4 GiB |
+| `lab-small` (default) | 2 | 2 GiB |
 | `lab-medium` | 4 | 8 GiB |
 
 Kubernetes is pinned to **v1.35.6**, Cluster Autoscaler to **v1.35.0**, and the
 minikube library to **v1.39.0**. Nodes expose the standard instance-type label,
 region `lab-region-1`, and zone `lab-region-1-a`.
 
+Existing clusters keep their original machine resources. To adopt the smaller
+`lab-small` shape, delete the old cluster through `cloud`, pull the updated
+images, and create a new cluster. The configuration helper does not resize or
+delete machines.
+
 ## Student quick start: Linux VM with Docker
 
 You need Docker Engine with Compose v2, permission to access the Docker socket,
 and `kubectl` v1.35 to inspect the cluster. For the default experiment, provide
-at least 6 CPUs and 12 GiB of available memory. The images support Linux amd64
+at least 6 CPUs and 6 GiB of available memory. The images support Linux amd64
 and arm64; the complete automated student path runs on amd64.
 
 The repository and GHCR images are private. You need repository access and a
@@ -49,20 +54,23 @@ build the images from a checkout as described below.
 ```sh
 git clone git@github.com:miciav/minikube-cloud-lab.git ~/cloud-lab
 cd ~/cloud-lab
-mkdir -p "$HOME/.minikube-cloud-lab" "$HOME/.kube"
-printf 'UID=%s\nGID=%s\nDOCKER_GID=%s\n' \
-  "$(id -u)" "$(id -g)" "$(stat -c '%g' /var/run/docker.sock)" > .env
+source scripts/configure.sh
 docker compose --profile tools pull
 docker compose up -d cloud
+docker compose ps
 
-alias cloud='docker compose -f ~/cloud-lab/compose.yaml exec cloud cloud'
-alias lab='docker compose -f ~/cloud-lab/compose.yaml run --rm lab'
-export KUBECONFIG="$HOME/.kube/config"
 cloud machine-types list
 cloud clusters create demo --machine-type lab-small --min-nodes 1 --max-nodes 3
 cloud clusters get-credentials demo
 kubectl get nodes -L node.kubernetes.io/instance-type,topology.kubernetes.io/zone
 ```
+
+`source scripts/configure.sh` prepares the data directories, adds missing
+UID/GID/socket-group entries to `.env`, and defines the `cloud` and `lab` shell
+commands plus `KUBECONFIG` for this Bash session. Existing `.env` values are
+preserved. Run it in each terminal; it does not edit shell startup files, pull
+images, start Docker services, or create cluster resources. Students run Compose
+and all cloud/Kubernetes commands explicitly.
 
 Wait until `cloud machine-types list` responds before creating the cluster.
 The first start downloads node images and Kubernetes components and may take
@@ -222,7 +230,7 @@ The manually triggered `Student path` workflow runs the complete Compose
 ### macOS with Docker Desktop
 
 Use native binaries for development; the Compose path with host networking is
-intended for Linux VMs. Start Docker Desktop and make at least 6 CPUs and 12 GiB
+intended for Linux VMs. Start Docker Desktop and make at least 6 CPUs and 6 GiB
 available. The backend uses the selected Docker Desktop context.
 
 ```sh

@@ -29,8 +29,7 @@ jobs:
           sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
       - name: Student autoscaling cycle
         run: |
-          mkdir -p "$HOME/.minikube-cloud-lab" "$HOME/.kube"
-          printf 'UID=%s\nGID=%s\nDOCKER_GID=%s\n' "$(id -u)" "$(id -g)" "$(stat -c '%g' /var/run/docker.sock)" > .env
+          source scripts/configure.sh
           docker compose up -d cloud
           cloud() { docker compose exec -T cloud cloud "$@"; }
           lab() { docker compose run --rm -T lab "$@"; }
@@ -45,7 +44,7 @@ jobs:
           docker compose exec -T cloud sh -c '! command -v minikube && ! command -v kubectl'
           # Verify real runtime quotas as well as what Kubernetes can schedule.
           test "$(docker inspect demo --format '{{.HostConfig.NanoCpus}}')" = 2000000000
-          test "$(docker inspect demo --format '{{.HostConfig.Memory}}')" = 4294967296
+          test "$(docker inspect demo --format '{{.HostConfig.Memory}}')" = 2147483648
           test "$(kubectl get node demo -o jsonpath='{.status.allocatable.cpu}')" = 2
           lab install autoscaler
           kubectl -n kube-system rollout status deployment/cluster-autoscaler --timeout=5m
