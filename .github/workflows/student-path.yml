@@ -66,6 +66,12 @@ jobs:
           kubectl get pods -l app=lab-load
           lab load stop
           wait_nodes 1
+          # Kubernetes can remove the Node before the cloud finishes Docker teardown.
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/v1/operations | jq -e 'all(.[]; .status != "RUNNING")' > /dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8080/v1/operations | jq -e 'all(.[]; .status != "RUNNING")'
           cloud operations list
           cloud clusters delete demo
       - name: Diagnostics
