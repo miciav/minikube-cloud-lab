@@ -13,7 +13,7 @@ import (
 
 func TestComposeConfiguration(t *testing.T) {
 	envPath := filepath.Join(t.TempDir(), "sample.env")
-	if err := os.WriteFile(envPath, []byte("UID=1001\nGID=1001\nDOCKER_GID=998\nHOME=/tmp/cloud-lab-home\nCLOUD_IMAGE=example/cloud:test\nLAB_IMAGE=example/lab:test\n"), 0600); err != nil {
+	if err := os.WriteFile(envPath, []byte("UID=1001\nGID=1001\nDOCKER_GID=998\nHOME=/tmp/cloud-lab-home\nCLOUD_IMAGE=example/cloud:test\nLAB_IMAGE=example/lab:test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("docker", "compose", "--env-file", envPath, "-f", "compose.yaml", "--profile", "tools", "config", "--format", "json")
@@ -31,13 +31,29 @@ func TestComposeConfiguration(t *testing.T) {
 		Services map[string]struct {
 			Image       string
 			NetworkMode string `json:"network_mode"`
-			User        string
-			Restart     string
-			GroupAdd    []string `json:"group_add"`
-			Profiles    []string
-			Volumes     []struct {
+			Networks    map[string]struct {
+				IPv4Address string `json:"ipv4_address"`
+			}
+			Environment map[string]string
+			Command     []string
+			Ports       []struct {
+				HostIP    string `json:"host_ip"`
+				Published string
+				Target    int
+			}
+			User     string
+			Restart  string
+			GroupAdd []string `json:"group_add"`
+			Profiles []string
+			Volumes  []struct {
 				Source, Target string
 				ReadOnly       bool `json:"read_only"`
+			}
+		}
+		Networks map[string]struct {
+			Name, Driver string
+			IPAM         struct {
+				Config []struct{ Subnet, Gateway string }
 			}
 		}
 	}
@@ -52,8 +68,21 @@ func TestComposeConfiguration(t *testing.T) {
 	if cloud.Image != "example/cloud:test" || lab.Image != "example/lab:test" {
 		t.Fatal("image overrides ignored")
 	}
-	if cloud.NetworkMode != "host" || lab.NetworkMode != "host" || cloud.User != "1001:1001" || lab.User != "1001:1001" {
+	if cloud.NetworkMode != "" || lab.NetworkMode != "" || cloud.User != "1001:1001" || lab.User != "1001:1001" {
 		t.Fatalf("network/user: %+v", config.Services)
+	}
+	network := config.Networks["lab"]
+	if network.Name != "minikube-cloud-lab" || network.Driver != "bridge" || len(network.IPAM.Config) != 1 || network.IPAM.Config[0].Subnet != "172.30.0.0/24" || network.IPAM.Config[0].Gateway != "" {
+		t.Fatalf("bridge IPAM: %+v", network)
+	}
+	if len(cloud.Networks) != 1 || cloud.Networks["lab"].IPv4Address != "172.30.0.254" || len(lab.Networks) != 1 {
+		t.Fatalf("shared network: cloud=%+v lab=%+v", cloud.Networks, lab.Networks)
+	}
+	if cloud.Environment["CLOUD_DOCKER_NETWORK"] != "minikube-cloud-lab" || cloud.Environment["CLOUD_DOCKER_IP"] != "172.30.0.254" || lab.Environment["KUBECONFIG"] != "/data/minikube/kubeconfig" {
+		t.Fatalf("endpoint configuration: cloud=%+v lab=%+v", cloud.Environment, lab.Environment)
+	}
+	if strings.Join(cloud.Command, " ") != "serve --data-dir /data --api 0.0.0.0:8080" || len(cloud.Ports) != 1 || cloud.Ports[0].HostIP != "127.0.0.1" || cloud.Ports[0].Target != 8080 || cloud.Ports[0].Published != "8080" || len(lab.Ports) != 0 {
+		t.Fatalf("localhost publication: command=%v ports=%+v", cloud.Command, cloud.Ports)
 	}
 	if cloud.Restart != "unless-stopped" || len(cloud.GroupAdd) != 1 || cloud.GroupAdd[0] != "998" {
 		t.Fatalf("cloud settings: %+v", cloud)
@@ -70,7 +99,7 @@ func TestComposeConfiguration(t *testing.T) {
 			t.Fatalf("cloud volume: %+v", volume)
 		}
 	}
-	if len(lab.Volumes) != 1 || lab.Volumes[0].Target != "/kube" || lab.Volumes[0].Source != "/tmp/cloud-lab-home/.kube" || !lab.Volumes[0].ReadOnly {
+	if len(lab.Volumes) != 1 || lab.Volumes[0].Target != "/data" || lab.Volumes[0].Source != "/tmp/cloud-lab-home/.minikube-cloud-lab" || !lab.Volumes[0].ReadOnly {
 		t.Fatalf("lab volumes: %+v", lab.Volumes)
 	}
 }

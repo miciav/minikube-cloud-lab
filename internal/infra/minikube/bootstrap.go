@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -15,9 +16,11 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/minikube/pkg/drivers/kic"
+	"k8s.io/minikube/pkg/kapi"
 	"k8s.io/minikube/pkg/libmachine"
 	"k8s.io/minikube/pkg/libmachine/host"
 	"k8s.io/minikube/pkg/minikube/bootstrapper"
+	"k8s.io/minikube/pkg/minikube/bootstrapper/bsutil/kverify"
 	"k8s.io/minikube/pkg/minikube/cluster"
 	"k8s.io/minikube/pkg/minikube/cni"
 	"k8s.io/minikube/pkg/minikube/command"
@@ -31,6 +34,7 @@ import (
 	"k8s.io/minikube/pkg/minikube/localpath"
 	"k8s.io/minikube/pkg/minikube/machine"
 	"k8s.io/minikube/pkg/minikube/registry"
+	"k8s.io/minikube/pkg/minikube/sysinit"
 	"k8s.io/minikube/pkg/util"
 )
 
@@ -66,6 +70,9 @@ func provisionNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node
 	}
 	h.HostOptions.AuthOptions.CertDir = localpath.MiniPath()
 	h.HostOptions.AuthOptions.StorePath = localpath.MiniPath()
+	if cc.Network != "" {
+		h.Driver = privateSSHDriver{h.Driver}
+	}
 	if err := api.Create(h); err != nil {
 		return api, h, nil, err
 	}
@@ -136,12 +143,12 @@ func configureRuntime(ctx context.Context, cc config.ClusterConfig, r cruntime.C
 	return cr, err
 }
 
-func startNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node, api libmachine.API, h *host.Host, r command.Runner) (*kubeconfig.Settings, error) {
+func startNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node, api libmachine.API, h *host.Host, r command.Runner, providerIP string) (*kubeconfig.Settings, error) {
 	cr, err := configureRuntime(ctx, *cc, r)
 	if err != nil {
 		return nil, err
 	}
-	ip, err := cluster.HostIP(h, cc.Name)
+	ip, err := providerAddress(h, cc.Name, providerIP)
 	if err != nil {
 		return nil, err
 	}
@@ -153,9 +160,12 @@ func startNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node, ap
 		return nil, err
 	}
 	if !n.ControlPlane {
-		return nil, joinWorker(cc, n, api, bs, cr)
+		if err := joinWorker(cc, n, api, bs, cr); err != nil {
+			return nil, err
+		}
+		return nil, verifyNodes(ctx, cc.Name, r)
 	}
-	settings, err := clusterSettings(cc, n, h)
+	settings, err := clusterSettings(cc, n, h, providerIP != "")
 	if err != nil {
 		return nil, err
 	}
@@ -171,13 +181,35 @@ func startNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node, ap
 	if err := kubeconfig.Update(settings); err != nil {
 		return nil, err
 	}
-	if err := bs.WaitForNode(*cc, *n, 6*time.Minute); err != nil {
+	if err := verifyNodes(ctx, cc.Name, r); err != nil {
 		return nil, err
 	}
 	if err := configureClusterDNS(ctx, cc.Name, ip.String()); err != nil {
 		return nil, err
 	}
 	return settings, nil
+}
+
+func providerAddress(h *host.Host, name, providerIP string) (net.IP, error) {
+	if providerIP != "" {
+		return net.ParseIP(providerIP), nil
+	}
+	return cluster.HostIP(h, name)
+}
+
+// Keep minikube's default pressure check without its host-endpoint override.
+func verifyNodes(ctx context.Context, name string, r command.Runner) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := sysinit.New(r).Start("kubelet"); err != nil {
+		slog.Warn("ensure kubelet is started", "error", err)
+	}
+	client, err := kapi.Client(name)
+	if err != nil {
+		return err
+	}
+	return kverify.NodePressure(client)
 }
 
 func joinWorker(cc *config.ClusterConfig, n *config.Node, api libmachine.API, bs bootstrapper.Bootstrapper, cr cruntime.Manager) error {
@@ -189,6 +221,9 @@ func joinWorker(cc *config.ClusterConfig, n *config.Node, api libmachine.API, bs
 	if err != nil {
 		return err
 	}
+	if cc.Network != "" {
+		cpHost.Driver = privateSSHDriver{cpHost.Driver}
+	}
 	cpRunner, err := machine.CommandRunner(cpHost)
 	if err != nil {
 		return err
@@ -199,7 +234,7 @@ func joinWorker(cc *config.ClusterConfig, n *config.Node, api libmachine.API, bs
 	if err := bs.UpdateNode(*cc, *n, cr); err != nil {
 		return err
 	}
-	cpBootstrapper, err := cluster.ControlPlaneBootstrapper(api, cc, "kubeadm")
+	cpBootstrapper, err := cluster.Bootstrapper(api, "kubeadm", *cc, cpRunner)
 	if err != nil {
 		return err
 	}
@@ -213,15 +248,19 @@ func joinWorker(cc *config.ClusterConfig, n *config.Node, api libmachine.API, bs
 	if err := cpBootstrapper.LabelAndUntaintNode(*cc, *n); err != nil {
 		return err
 	}
-	return bs.WaitForNode(*cc, *n, 6*time.Minute)
+	return nil
 }
 
-func clusterSettings(cc *config.ClusterConfig, n *config.Node, h *host.Host) (*kubeconfig.Settings, error) {
-	ip, _, port, err := driver.ControlPlaneEndpoint(cc, n, h.DriverName)
-	if err != nil {
-		return nil, err
+func clusterSettings(cc *config.ClusterConfig, n *config.Node, h *host.Host, internal bool) (*kubeconfig.Settings, error) {
+	ip, port := n.IP, n.Port
+	if !internal {
+		var err error
+		ip, _, port, err = driver.ControlPlaneEndpoint(cc, n, h.DriverName)
+		if err != nil {
+			return nil, err
+		}
 	}
-	s := &kubeconfig.Settings{ClusterName: cc.Name, Namespace: "default", ClusterServerAddress: "https://" + net.JoinHostPort(ip, strconv.Itoa(port)), ClientCertificate: localpath.ClientCert(cc.Name), ClientKey: localpath.ClientKey(cc.Name), CertificateAuthority: localpath.CACert(), KeepContext: true, EmbedCerts: true}
+	s := &kubeconfig.Settings{ClusterName: cc.Name, Namespace: "default", ClusterServerAddress: "https://" + net.JoinHostPort(ip, strconv.Itoa(port)), ClientCertificate: localpath.ClientCert(cc.Name), ClientKey: localpath.ClientKey(cc.Name), CertificateAuthority: localpath.CACert(), KeepContext: false, EmbedCerts: true}
 	s.SetPath(kubeconfig.PathFromEnv())
 	return s, nil
 }

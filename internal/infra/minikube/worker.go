@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,11 +29,7 @@ func (i *Infra) removeWorker(ctx context.Context, cc *config.ClusterConfig, name
 	if cc.Nodes[index].ControlPlane {
 		return fmt.Errorf("cannot remove control plane")
 	}
-	data, err := i.Kubeconfig(ctx, cc.Name)
-	if err != nil {
-		return err
-	}
-	cfg, err := clientcmd.RESTConfigFromKubeConfig(data)
+	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: filepath.Join(i.home, "kubeconfig")}, &clientcmd.ConfigOverrides{CurrentContext: cc.Name}).ClientConfig()
 	if err != nil {
 		return err
 	}

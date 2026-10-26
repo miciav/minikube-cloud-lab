@@ -1,7 +1,15 @@
 services:
   cloud:
     image: ${CLOUD_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/cloud:latest}
-    network_mode: host
+    command: [serve, --data-dir, /data, --api, "0.0.0.0:8080"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      CLOUD_DOCKER_NETWORK: minikube-cloud-lab
+      CLOUD_DOCKER_IP: ${CLOUD_DOCKER_IP:-172.30.0.254}
+    networks:
+      lab:
+        ipv4_address: ${CLOUD_DOCKER_IP:-172.30.0.254}
     user: "${UID:?set UID in .env}:${GID:?set GID in .env}"
     group_add:
       - "${DOCKER_GID:?set DOCKER_GID in .env}"
@@ -13,7 +21,16 @@ services:
   lab:
     image: ${LAB_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/lab:latest}
     profiles: [tools]
-    network_mode: host
+    environment:
+      KUBECONFIG: /data/minikube/kubeconfig
+    networks: [lab]
     user: "${UID:?set UID in .env}:${GID:?set GID in .env}"
     volumes:
-      - ${HOME}/.kube:/kube:ro
+      - ${HOME}/.minikube-cloud-lab:/data:ro
+networks:
+  lab:
+    name: minikube-cloud-lab
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${CLOUD_DOCKER_SUBNET:-172.30.0.0/24}

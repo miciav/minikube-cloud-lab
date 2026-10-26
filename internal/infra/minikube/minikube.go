@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -45,7 +47,7 @@ var (
 
 type (
 	// Infra manages a dedicated minikube home.
-	Infra     struct{ home string }
+	Infra     struct{ home, network, providerIP string }
 	logWriter struct{}
 )
 
@@ -59,6 +61,17 @@ func (logWriter) Fd() uintptr { return os.Stderr.Fd() }
 
 // New initializes the dedicated state directory and library defaults.
 func New(dataDir string) (*Infra, error) {
+	network, providerIP := os.Getenv("CLOUD_DOCKER_NETWORK"), os.Getenv("CLOUD_DOCKER_IP")
+	if (network == "") != (providerIP == "") {
+		return nil, fmt.Errorf("CLOUD_DOCKER_NETWORK and CLOUD_DOCKER_IP must be set together")
+	}
+	if network != "" {
+		address, err := netip.ParseAddr(providerIP)
+		validName, _ := regexp.MatchString(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`, network)
+		if err != nil || !address.Is4() || !address.IsPrivate() || address.As4()[3] != 254 || !validName {
+			return nil, fmt.Errorf("bridge mode requires a valid Docker network name and a private IPv4 cloud address ending in .254")
+		}
+	}
 	home, err := filepath.Abs(filepath.Join(dataDir, "minikube"))
 	if err != nil {
 		return nil, err
@@ -88,7 +101,7 @@ func New(dataDir string) (*Infra, error) {
 	viper.Set("delete-on-failure", true)
 	viper.Set("bootstrapper", "kubeadm")
 	viper.Set("wait-timeout", 6*time.Minute)
-	return &Infra{home: home}, nil
+	return &Infra{home: home, network: network, providerIP: providerIP}, nil
 }
 
 func (i *Infra) selectCluster(name string) error {
@@ -126,7 +139,7 @@ func (i *Infra) CreateCluster(ctx context.Context, spec infra.ClusterSpec) error
 	sort.Strings(labels)
 	n := config.Node{Name: "", Port: 8443, KubernetesVersion: spec.KubernetesVersion, ContainerRuntime: "docker", ControlPlane: true, Worker: true}
 	cc := &config.ClusterConfig{
-		Name: spec.Name, Driver: "docker", Memory: spec.Shape.MemoryMiB, CPUs: spec.Shape.CPUs, DiskSize: 20000,
+		Name: spec.Name, Driver: "docker", Network: i.network, Memory: spec.Shape.MemoryMiB, CPUs: spec.Shape.CPUs, DiskSize: 20000,
 		KicBaseImage: kic.BaseImage, APIServerPort: 8443, StartHostTimeout: 6 * time.Minute, CertExpiration: constants.DefaultCertExpiration,
 		KeepContext: true, EmbedCerts: true, MultiNodeRequested: true, ListenAddress: "127.0.0.1", Nodes: []config.Node{n},
 		KubernetesConfig: config.KubernetesConfig{KubernetesVersion: spec.KubernetesVersion, ClusterName: spec.Name, Namespace: "default", APIServerName: "minikubeCA", DNSDomain: "cluster.local", ContainerRuntime: "docker", ServiceCIDR: constants.DefaultServiceCIDR, ImageRepository: "registry.k8s.io", CNI: "flannel", NetworkPlugin: "cni", ExtraOptions: config.ExtraOptionSlice{{Component: "kubelet", Key: "node-labels", Value: strings.Join(labels, ",")}, {Component: "kubelet", Key: "kube-reserved", Value: reserved}}},
@@ -147,12 +160,15 @@ func (i *Infra) CreateCluster(ctx context.Context, spec infra.ClusterSpec) error
 			return err
 		}
 	}
-	settings, err := startNode(ctx, cc, &cc.Nodes[0], m, h, r)
+	settings, err := startNode(ctx, cc, &cc.Nodes[0], m, h, r, i.providerIP)
 	if err != nil {
 		return err
 	}
 	settings.EmbedCerts = true
-	settings.KeepContext = true
+	settings.ClusterServerAddress, err = forwardedAPIServer(ctx, spec.Name)
+	if err != nil {
+		return err
+	}
 	cfg := clientapi.NewConfig()
 	if err := kubeconfig.PopulateFromSettings(settings, cfg); err != nil {
 		return err
@@ -303,7 +319,7 @@ func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, err
 			return partial, err
 		}
 	}
-	if _, err := startNode(ctx, cc, &n, m, h, r); err != nil {
+	if _, err := startNode(ctx, cc, &n, m, h, r, i.providerIP); err != nil {
 		return partial, err
 	}
 
