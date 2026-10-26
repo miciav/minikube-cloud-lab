@@ -34,7 +34,7 @@ jobs:
           docker compose up -d cloud
           cloud() { docker compose exec -T cloud cloud "$@"; }
           lab() { docker compose run --rm -T lab "$@"; }
-          for attempt in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if cloud machine-types list; then break; fi
             sleep 2
           done
