@@ -279,3 +279,29 @@ func TestWorkerDeletionRemovesVolumeBeforeForgettingOwnership(t *testing.T) {
 		})
 	}
 }
+
+func TestBridgeNetworkMustHaveUsableMinikubeGateway(t *testing.T) {
+	for _, tc := range []struct {
+		name, gateway string
+		valid         bool
+	}{
+		{"existing", "172.30.0.1", true}, {"missing-gateway", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := t.TempDir()
+			script := "#!/bin/sh\nif [ \"$1 $2\" = \"network inspect\" ]; then printf '%s' \"$NETWORK_INSPECT\"; else exit 7; fi\n"
+			if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			} // #nosec G306 -- executable fake Docker fixture.
+			t.Setenv("PATH", bin)
+			t.Setenv("NETWORK_INSPECT", fmt.Sprintf(`{"Name":"lab-net","Driver":"bridge","Subnet":"172.30.0.0/24","Gateway":%q,"MTU":1500,"ContainerIPs":[]}`, tc.gateway))
+			err := checkBridgeNetwork("lab-net")
+			if (err == nil) != tc.valid {
+				t.Fatalf("gateway=%q valid=%v error=%v", tc.gateway, tc.valid, err)
+			}
+		})
+	}
+	if err := checkBridgeNetwork(""); err != nil {
+		t.Fatal(err)
+	}
+}

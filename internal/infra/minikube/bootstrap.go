@@ -46,6 +46,9 @@ func provisionNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node
 	if cc.Driver != "docker" || cc.StaticIP != "" {
 		return nil, nil, nil, fmt.Errorf("only Docker with automatic node addresses is supported")
 	}
+	if err := checkBridgeNetwork(cc.Network); err != nil {
+		return nil, nil, nil, err
+	}
 	if err := prepareBaseImage(ctx, cc); err != nil {
 		return nil, nil, nil, err
 	}

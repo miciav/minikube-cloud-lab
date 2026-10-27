@@ -168,22 +168,70 @@ kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
 kubectl -n yakd-dashboard get pods,service
 ```
 
-In another configured terminal, keep this command running:
+Read the endpoint automatically published for the dashboard:
 
 ```sh
-kubectl -n yakd-dashboard port-forward --address 127.0.0.1 service/yakd-dashboard 8081:80
+lab services
 ```
 
-Open <http://127.0.0.1:8081> on the machine running `kubectl`. For a remote lab
-VM, run `ssh -L 8081:127.0.0.1:8081 USER@VM` on your computer and open that URL
-locally. Replace `USER@VM` with your lab login. The dashboard can administer the
-entire cluster; the upstream addon also has a NodePort Service. Keep the lab
-network trusted and do not expose the UI publicly.
+Open the `127.0.0.1:PORT` shown for `yakd-dashboard` on the computer running
+Docker. No forwarding terminal is needed. For a remote VM, run
+`ssh -L PORT:127.0.0.1:PORT USER@VM` on your computer, replacing PORT with the
+shown port and USER@VM with your login, then open that localhost URL.
+The dashboard can administer the entire cluster; keep it private.
 
-Use YAKD to inspect Nodes, Deployments, Pods and events while following the
-experiment below. It requests 128 MiB of the scheduling budget. Live CPU/memory
-usage graphs require metrics-server, which this lab does not install.
-Ctrl-C stops port forwarding; YAKD stays installed until the cluster is deleted.
+Use YAKD to inspect Nodes, Deployments, Pods and events during the experiment.
+It requests 128 MiB of the scheduling budget. Live CPU/memory graphs require
+metrics-server, which this lab does not install. A temporary alternative is
+`kubectl -n yakd-dashboard port-forward --address 127.0.0.1 service/yakd-dashboard 8081:80`;
+then open <http://127.0.0.1:8081> and keep that forwarding command running.
+
+### Try NodePort and LoadBalancer
+
+These Services reuse the existing dashboard Pods, so the exercise adds no server
+workload. **Predict:** can two LoadBalancer Services both use port 80? Which port
+will you use from your computer?
+
+```sh
+kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-node --type=NodePort --port=80 --target-port=8080
+kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-lb-one --type=LoadBalancer --port=80 --target-port=8080
+kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-lb-two --type=LoadBalancer --port=80 --target-port=8080
+kubectl -n yakd-dashboard get services
+lab services
+```
+
+Wait a few seconds if LOCAL_ENDPOINT is empty, then repeat `lab services`. Copy
+each displayed endpoint into `curl http://127.0.0.1:PORT` (replace PORT) and confirm
+that all three return dashboard HTML. NodePort uses its Kubernetes NodePort on
+localhost. Each LoadBalancer uses a different Docker IP and a free mapped host
+port, even though both Services use port 80.
+
+**Explain:** `EXTERNAL-IP` is the relay's private Docker IP. It is reachable at
+Service port 80 inside Docker, but is not directly reachable from a Mac shell.
+From the Docker host, use the localhost endpoint shown by `lab services`. This
+lab intentionally exposes nothing to the LAN. The read-only helper is equivalent
+to `kubectl get services -A -o json`: inspect the
+`minikube-cloud-lab.io/host-endpoints` and `minikube-cloud-lab.io/exposure-error`
+annotations to find the same information without the helper.
+
+A NodePort occupied by a host process gives an ERROR rather than an alternative
+port. Free it or choose another NodePort. This release supports TCP (including
+TLS passthrough) with `externalTrafficPolicy: Cluster`. UDP/SCTP, `Local`, custom
+LoadBalancer classes and disabled LoadBalancer NodePorts produce an explicit
+error. A Service with unsupported ports is not partially published.
+
+Unchanged Services keep their endpoints across a cloud restart. Changing ports
+or type may interrupt connections and assign a new LoadBalancer host port.
+Delete the exercise Services and check that their relay containers disappear:
+
+```sh
+kubectl -n yakd-dashboard delete service dashboard-node dashboard-lb-one dashboard-lb-two
+lab services
+```
+
+The original dashboard remains. Cluster deletion cleans up every owned relay.
+The relay address pool needs the current /23 network; for a lab created with the
+old /24 configuration, follow the [README migration](../README.md) before starting.
 
 ## 3. Install Cluster Autoscaler before generating load
 

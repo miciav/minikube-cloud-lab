@@ -145,3 +145,6 @@ users:
     client-key-data: a2V5
 `, name, name, name, name, name, name), nil
 }
+
+// RunServiceExposure waits for daemon shutdown without background work.
+func (f *Infra) RunServiceExposure(ctx context.Context) error { <-ctx.Done(); return nil }
