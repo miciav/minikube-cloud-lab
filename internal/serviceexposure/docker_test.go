@@ -37,6 +37,9 @@ func TestDockerNodePortUsesExactLocalhostPort(t *testing.T) {
 	if len(b) != 1 || b[0].HostIP != "127.0.0.1" || b[0].HostPort != "30080" {
 		t.Fatalf("wrong host binding: %+v", b)
 	}
+	if v.Labels["created_by.minikube.sigs.k8s.io"] != "" || v.Labels["name.minikube.sigs.k8s.io"] != "" {
+		t.Fatal("relay must not be registered as a minikube machine")
+	}
 	if v.Labels["minikube-cloud-lab.cluster"] != "demo" || v.Labels["minikube-cloud-lab.service-uid"] != "one" {
 		t.Fatalf("missing ownership: %v", v.Labels)
 	}
@@ -151,6 +154,7 @@ func TestDockerCleanupHonorsOwnershipAndErrors(t *testing.T) {
 	}
 	f.mu.Lock()
 	f.objects["foreign"] = &dockerRecord{Config: container.Config{Labels: map[string]string{"minikube-cloud-lab.service-proxy": "true", "minikube-cloud-lab.cluster": "another", "minikube-cloud-lab.service-uid": "one"}}, id: "foreign"}
+	f.objects["neighbor"] = &dockerRecord{Config: container.Config{Labels: map[string]string{"minikube-cloud-lab.service-proxy": "true", "minikube-cloud-lab.cluster": "demo", "minikube-cloud-lab.service-uid": "neighbor", "minikube-cloud-lab.network": "another-net"}}, id: "neighbor"}
 	f.removeFailure = true
 	f.mu.Unlock()
 	if err := m.Remove(t.Context(), "demo", "one"); err == nil {
@@ -166,7 +170,7 @@ func TestDockerCleanupHonorsOwnershipAndErrors(t *testing.T) {
 	remaining := len(f.objects)
 	_, foreign := f.objects["foreign"]
 	f.mu.Unlock()
-	if remaining != 2 || !foreign {
+	if remaining != 3 || !foreign {
 		t.Fatalf("prune ownership mismatch: remaining=%d foreign=%v", remaining, foreign)
 	}
 	if err := m.DeleteCluster(t.Context(), "demo"); err != nil {
@@ -174,7 +178,7 @@ func TestDockerCleanupHonorsOwnershipAndErrors(t *testing.T) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if len(f.objects) != 1 || f.objects["foreign"] == nil {
+	if len(f.objects) != 2 || f.objects["foreign"] == nil || f.objects["neighbor"] == nil {
 		t.Fatal("cleanup deleted foreign resource or leaked owned relay")
 	}
 }

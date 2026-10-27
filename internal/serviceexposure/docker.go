@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	networkLabel = "minikube-cloud-lab.network"
 	ownerLabel   = "minikube-cloud-lab.service-proxy"
 	clusterLabel = "minikube-cloud-lab.cluster"
 	uidLabel     = "minikube-cloud-lab.service-uid"
@@ -104,10 +105,10 @@ func (m *Manager) Ensure(ctx context.Context, cluster string, svc *corev1.Servic
 		}
 		bindings[port] = []nat.PortBinding{{HostIP: "127.0.0.1", HostPort: hostPort}}
 	}
-	nameHash := sha256.Sum256([]byte(cluster + "/" + string(svc.UID)))
+	nameHash := sha256.Sum256([]byte(m.network + "/" + cluster + "/" + string(svc.UID)))
 	created, err := m.client.ContainerCreate(ctx, &container.Config{
 		Image: m.image, Entrypoint: []string{"cloud"}, Cmd: []string{"service-proxy", "--config-json", string(payload)}, ExposedPorts: ports,
-		Labels: map[string]string{ownerLabel: "true", clusterLabel: cluster, uidLabel: string(svc.UID), hashLabel: digest, ipLabel: ip.String(), typeLabel: string(svc.Spec.Type)},
+		Labels: map[string]string{ownerLabel: "true", networkLabel: m.network, clusterLabel: cluster, uidLabel: string(svc.UID), hashLabel: digest, ipLabel: ip.String(), typeLabel: string(svc.Spec.Type)},
 	}, &container.HostConfig{PortBindings: bindings, RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped}, Sysctls: map[string]string{"net.ipv4.ip_unprivileged_port_start": "0"}}, &network.NetworkingConfig{EndpointsConfig: map[string]*network.EndpointSettings{m.network: {IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: ip.String()}}}}, nil, fmt.Sprintf("mcl-svc-%x", nameHash[:10]))
 	if err != nil {
 		return Status{}, err
@@ -236,10 +237,10 @@ func (m *Manager) observe(ctx context.Context, id string, svc *corev1.Service) (
 }
 
 func (m *Manager) owned(ctx context.Context, cluster string, uid types.UID) ([]container.Summary, error) {
-	if cluster == "" {
-		return nil, fmt.Errorf("cluster ownership is required")
+	if cluster == "" || m.network == "" {
+		return nil, fmt.Errorf("cluster and network ownership are required")
 	}
-	args := filters.NewArgs(filters.Arg("label", ownerLabel+"=true"), filters.Arg("label", clusterLabel+"="+cluster))
+	args := filters.NewArgs(filters.Arg("label", networkLabel+"="+m.network), filters.Arg("label", ownerLabel+"=true"), filters.Arg("label", clusterLabel+"="+cluster))
 	if uid != "" {
 		args.Add("label", uidLabel+"="+string(uid))
 	}
@@ -249,7 +250,7 @@ func (m *Manager) owned(ctx context.Context, cluster string, uid types.UID) ([]c
 	}
 	result := make([]container.Summary, 0, len(rows))
 	for _, c := range rows {
-		if c.Labels[ownerLabel] == "true" && c.Labels[clusterLabel] == cluster && (uid == "" || c.Labels[uidLabel] == string(uid)) {
+		if c.Labels[networkLabel] == m.network && c.Labels[ownerLabel] == "true" && c.Labels[clusterLabel] == cluster && (uid == "" || c.Labels[uidLabel] == string(uid)) {
 			result = append(result, c)
 		}
 	}

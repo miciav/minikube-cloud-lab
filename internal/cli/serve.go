@@ -43,6 +43,15 @@ func serveCommand(factory func(string) (infra.Infra, error)) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		workerCtx, stopWorker := context.WithCancel(cmd.Context())
+		workerDone := make(chan struct{})
+		go func() {
+			defer close(workerDone)
+			if err := inf.RunServiceExposure(workerCtx); err != nil && workerCtx.Err() == nil {
+				logger.Error("service exposure stopped", "error", err)
+			}
+		}()
+		defer func() { stopWorker(); <-workerDone }()
 		management := &http.Server{Handler: api.NewServer(svc), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute}
 		rpc := grpc.NewServer()
 		protos.RegisterCloudProviderServer(rpc, externalgrpc.New(svc, logger))

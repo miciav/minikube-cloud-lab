@@ -191,6 +191,9 @@ func (i *Infra) CreateCluster(ctx context.Context, spec infra.ClusterSpec) error
 func (i *Infra) DeleteCluster(ctx context.Context, name string) error {
 	libraryMu.Lock()
 	defer libraryMu.Unlock()
+	if err := i.deleteServiceExposure(ctx, name); err != nil {
+		return err
+	}
 	if err := i.selectCluster(name); err != nil {
 		return err
 	}
