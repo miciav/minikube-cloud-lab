@@ -94,23 +94,66 @@ recreating the cloud container. Host `kubectl` uses the exported localhost API
 endpoint; the two endpoints use the same cluster identity and embedded certificates.
 
 New clusters automatically include the **YAKD Kubernetes dashboard**, using the
-addon bundled with minikube. Creation installs its resources; wait for the
-Deployment before opening the UI:
+addon bundled with minikube. Wait for its Deployment, then read its automatic
+localhost NodePort endpoint:
 
 ```sh
 kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
-kubectl -n yakd-dashboard port-forward --address 127.0.0.1 service/yakd-dashboard 8081:80
+lab services
 ```
 
-Open <http://127.0.0.1:8081> on the machine running `kubectl`. If that is a remote
-VM, use an SSH tunnel (`ssh -L 8081:127.0.0.1:8081 USER@VM`) from your computer.
-Keep the forwarding terminal open; Ctrl-C stops access without removing YAKD.
-The standard addon uses a NodePort Service and a cluster-admin service account:
-use a trusted lab network and keep the UI private. It requests 128 MiB and is
-capped at 256 MiB. Metrics-server is not installed, so live usage metrics are
-unavailable. Existing clusters are not modified; recreate them to obtain YAKD.
-An API error installing YAKD fails the create operation and leaves the partial
-cluster available for inspection or deletion through `cloud`.
+Open the `127.0.0.1:PORT` shown for `yakd-dashboard` on the computer running
+Docker. No forwarding terminal is needed. On a remote VM, use an SSH tunnel
+(`ssh -L PORT:127.0.0.1:PORT USER@VM`) with that port.
+YAKD uses a cluster-admin service account: keep this local UI private. It requests
+128 MiB and is capped at 256 MiB. Metrics-server is not installed, so live usage
+metrics are unavailable. Existing clusters are not modified; recreate them to
+obtain YAKD. An API error installing YAKD fails the create operation and leaves
+the partial cluster available for inspection or deletion through `cloud`.
+
+### Local NodePort and LoadBalancer services
+
+Use ordinary Kubernetes Service commands; the cloud publishes supported Services
+automatically, usually within two seconds while no capacity operation is running:
+
+```sh
+kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-node --type=NodePort --port=80 --target-port=8080
+kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-lb-one --type=LoadBalancer --port=80 --target-port=8080
+kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-lb-two --type=LoadBalancer --port=80 --target-port=8080
+lab services
+```
+
+Copy a displayed endpoint into `curl http://127.0.0.1:PORT` or your browser.
+Each NodePort uses the same port on localhost. Each LoadBalancer has its own
+Docker IP and a free localhost port assigned by Docker, so two Services on port
+80 work together. `kubectl get services -A` shows the private Docker IP as
+`EXTERNAL-IP`; on macOS, use the localhost endpoint from `lab services`, rather
+than trying to reach that IP directly. The IP and Service port work inside the
+Docker bridge. Ports are bound only to `127.0.0.1`, never the LAN.
+
+`lab services` reads the `minikube-cloud-lab.io/host-endpoints` JSON annotation
+(`name`, `servicePort`, `nodePort`, `hostPort`) and
+`minikube-cloud-lab.io/exposure-error`. Its Kubernetes equivalent is
+`kubectl get services -A -o json`. A missing endpoint means publication is pending
+or failed; inspect the ERROR column. A NodePort already in use on the computer
+fails explicitly: free that port or change the Service's NodePort.
+
+The first release supports TCP, including raw TLS and database connections,
+with `externalTrafficPolicy: Cluster`. UDP/SCTP, `Local`, custom LoadBalancer
+classes and `allocateLoadBalancerNodePorts: false` produce a visible error without
+partial exposure. Changing type/ports can interrupt connections and change
+LoadBalancer host ports; restarting the cloud preserves unchanged relays.
+Each Service uses one small relay container from the cloud image. It has no
+Docker socket or credentials and does not count as a cloud machine.
+
+```sh
+kubectl -n yakd-dashboard delete service dashboard-node dashboard-lb-one dashboard-lb-two
+```
+
+Deleting a Service removes its relay; deleting the cluster removes all its relays.
+For optional temporary dashboard access, the standard
+`kubectl -n yakd-dashboard port-forward --address 127.0.0.1 service/yakd-dashboard 8081:80`
+still works. See the [student exercises](docs/student-tutorial.md#try-nodeport-and-loadbalancer).
 
 Watch cloud requests in another terminal:
 
