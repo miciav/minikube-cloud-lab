@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -271,5 +272,61 @@ func TestServeReportsInitializationFailure(t *testing.T) {
 	root.SetArgs([]string{"serve", "--data-dir", t.TempDir(), "--api", "127.0.0.1:0", "--grpc", "127.0.0.1:0"})
 	if err := root.ExecuteContext(context.Background()); err == nil || !strings.Contains(err.Error(), "backend unavailable") {
 		t.Fatalf("initialization: %v", err)
+	}
+}
+
+type exposureBackend struct {
+	infra.Infra
+	started, stopped chan struct{}
+	failure          error
+}
+
+func (b *exposureBackend) RunServiceExposure(ctx context.Context) error {
+	close(b.started)
+	defer close(b.stopped)
+	if b.failure != nil {
+		return b.failure
+	}
+	<-ctx.Done()
+	return nil
+}
+
+func TestServeOwnsExposureWorker(t *testing.T) {
+	for _, failure := range []error{nil, errors.New("exposure unavailable")} {
+		t.Run(fmt.Sprint(failure), func(t *testing.T) {
+			b := &exposureBackend{Infra: fake.New(), started: make(chan struct{}), stopped: make(chan struct{}), failure: failure}
+			root := newRoot(func(string) (infra.Infra, error) { return b, nil })
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			root.SetArgs([]string{"serve", "--data-dir", t.TempDir(), "--api", "127.0.0.1:0", "--grpc", "127.0.0.1:0"})
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- root.ExecuteContext(ctx) }()
+			select {
+			case <-b.started:
+			case <-time.After(time.Second):
+				t.Fatal("worker was not started")
+			}
+			select {
+			case err := <-done:
+				t.Fatalf("worker stopped daemon: %v", err)
+			case <-time.After(20 * time.Millisecond):
+			}
+			cancel()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("daemon did not stop")
+			}
+			select {
+			case <-b.stopped:
+			default:
+				t.Fatal("worker outlived daemon")
+			}
+		})
 	}
 }

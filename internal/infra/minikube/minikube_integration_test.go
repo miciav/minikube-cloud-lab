@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	mkconfig "k8s.io/minikube/pkg/minikube/config"
 )
 
 // Mark this as an integration run so upstream permits real binary downloads.
@@ -58,7 +59,7 @@ func TestClusterLifecycle(t *testing.T) {
 		"topology.kubernetes.io/region":    "lab-region-1",
 		"topology.kubernetes.io/zone":      "lab-region-1-a",
 	}
-	if err := inf.CreateCluster(ctx, infra.ClusterSpec{Name: name, KubernetesVersion: "v1.35.6", Shape: infra.MachineShape{CPUs: 2, MemoryMiB: 4096}, NodeLabels: labels}); err != nil {
+	if err := inf.CreateCluster(ctx, infra.ClusterSpec{Name: name, KubernetesVersion: "v1.35.6", Shape: infra.MachineShape{CPUs: 2, MemoryMiB: 2048}, NodeLabels: labels}); err != nil {
 		t.Fatal(err)
 	}
 	machines, err := inf.Machines(ctx, name)
@@ -91,6 +92,29 @@ func TestClusterLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := client.AppsV1().Deployments("yakd-dashboard").Get(ctx, "yakd-dashboard", metav1.GetOptions{}); err != nil {
+		t.Fatalf("YAKD must be installed automatically: %v", err)
+	}
+	profile, err := mkconfig.Load(name)
+	if err != nil || !profile.Addons["yakd"] {
+		t.Fatalf("YAKD not recorded as enabled: %+v, %v", profile, err)
+	}
+	yakdDeadline := time.Now().Add(5 * time.Minute)
+	for {
+		deploy, err := client.AppsV1().Deployments("yakd-dashboard").Get(ctx, "yakd-dashboard", metav1.GetOptions{})
+		if err == nil && deploy.Status.AvailableReplicas == 1 {
+			break
+		}
+		if time.Now().After(yakdDeadline) || ctx.Err() != nil {
+			t.Fatalf("YAKD never became available: %+v, %v", deploy, err)
+		}
+		time.Sleep(time.Second)
+	}
+	page, err := client.CoreV1().Services("yakd-dashboard").ProxyGet("http", "yakd-dashboard", "80", "", nil).DoRaw(ctx)
+	if err != nil || !strings.Contains(strings.ToLower(string(page)), "<html") {
+		t.Fatalf("YAKD dashboard did not serve HTML: %v", err)
+	}
+	t.Log("automatic YAKD addon available; dashboard serves HTML")
 	var capacity int64
 	assertNodes := func(want int) {
 		t.Helper()
@@ -112,7 +136,7 @@ func TestClusterLifecycle(t *testing.T) {
 						t.Fatalf("different node CPU capacities: %s", n.Name)
 					}
 					t.Logf("node %s capacity=%v allocatable=%v", n.Name, n.Status.Capacity, n.Status.Allocatable)
-					if n.Status.Allocatable.Memory().Value() != 4294967296 {
+					if n.Status.Allocatable.Memory().Value() != 2147483648 {
 						t.Fatalf("node %s allocatable memory: %s", n.Name, n.Status.Allocatable.Memory())
 					}
 					if n.Status.Allocatable.Cpu().Value() != 2 {
@@ -145,7 +169,7 @@ func TestClusterLifecycle(t *testing.T) {
 		if err := json.Unmarshal(data, &config); err != nil {
 			t.Fatal(err)
 		}
-		if config.NanoCpus != 2000000000 || config.Memory != 4294967296 {
+		if config.NanoCpus != 2000000000 || config.Memory != 2147483648 {
 			t.Fatalf("container shape: %+v", config)
 		}
 	}

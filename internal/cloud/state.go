@@ -70,7 +70,7 @@ var (
 
 // MachineTypes returns the fixed cloud catalog.
 func MachineTypes() []MachineType {
-	return []MachineType{{Name: "lab-small", CPUs: 2, MemoryMiB: 4096}, {Name: "lab-medium", CPUs: 4, MemoryMiB: 8192}}
+	return []MachineType{{Name: "lab-small", CPUs: 2, MemoryMiB: 2048}, {Name: "lab-medium", CPUs: 4, MemoryMiB: 8192}}
 }
 
 // NodeLabels returns the standard labels applied during machine bootstrap.
