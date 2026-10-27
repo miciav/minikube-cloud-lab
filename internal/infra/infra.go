@@ -22,6 +22,7 @@ type Machine struct {
 
 // Infra manages cluster and machine lifecycles.
 type Infra interface {
+	RunServiceExposure(context.Context) error
 	CreateCluster(context.Context, ClusterSpec) error
 	DeleteCluster(context.Context, string) error
 	AddMachine(context.Context, string) (Machine, error)
