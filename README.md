@@ -222,24 +222,26 @@ API at `127.0.0.1:8080`. Externalgrpc port 9090 stays inside the dedicated Docke
 network: nodes resolve `host.minikube.internal` to the cloud container's stable
 address. The MVP has no management authentication or TLS; use a trusted lab host.
 
-The default network is `172.30.0.0/24`; cloud uses `172.30.0.254`, outside
+The default network is `172.30.0.0/23`; cloud uses `172.30.0.254`, outside
 minikube's automatic node-address range. If that subnet conflicts with another
 network, delete the cluster and run `docker compose down`, then set a matching
 subnet, gateway, and cloud address in `.env`, for example:
 
 ```dotenv
-CLOUD_DOCKER_SUBNET=172.29.240.0/24
+CLOUD_DOCKER_SUBNET=172.29.240.0/23
 CLOUD_DOCKER_GATEWAY=172.29.240.1
 CLOUD_DOCKER_IP=172.29.240.254
 ```
 
-Use a private `/24` subnet with its gateway ending in `.1` and the cloud address
-ending in `.254`; update all three values together. The explicit gateway is
+Use an aligned private `/23`: gateway `.1` and cloud `.254` in its first `/24`,
+with the second `/24` reserved for Service relays. Update all three values together. The explicit gateway is
 required for the minikube network API on Linux as well as Docker Desktop. Start
 Compose again and create a new cluster. Before upgrading an older host-network
 installation, delete its cluster with the old cloud, run `docker compose down`,
 pull the updated images, and run `docker compose up -d cloud` before recreating
-the cluster. Existing clusters do not migrate between networks automatically.
+the cluster. Existing clusters do not migrate between networks automatically. The Service
+exposure network expands older `/24` installations to `/23`: delete the old
+cluster before `docker compose down`, then recreate it using the updated network.
 Older versions could leave worker volumes after scale-down. Before reusing a
 cluster name, inspect any volume named `NAME-mNN` with `docker volume inspect`.
 Remove it only after confirming it belongs to the deleted lab and no container

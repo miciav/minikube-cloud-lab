@@ -33,5 +33,5 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: ${CLOUD_DOCKER_SUBNET:-172.30.0.0/24}
+        - subnet: ${CLOUD_DOCKER_SUBNET:-172.30.0.0/23}
           gateway: ${CLOUD_DOCKER_GATEWAY:-172.30.0.1}
