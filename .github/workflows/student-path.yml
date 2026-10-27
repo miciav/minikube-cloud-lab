@@ -41,6 +41,19 @@ jobs:
           cloud clusters get-credentials demo
           [[ "$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')" == https://127.0.0.1:* ]]
           kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
+          export TEST_CLUSTER=demo TEST_NETWORK=minikube-cloud-lab
+          export TEST_CLOUD_CONTAINER
+          TEST_CLOUD_CONTAINER=$(docker compose ps -q cloud)
+          export TEST_ARTIFACT_DIR="$RUNNER_TEMP/service-exposure"
+          bash tests/service-exposure.sh prepare
+          lab services
+          docker compose up -d --force-recreate cloud
+          for _ in $(seq 1 60); do
+            if cloud machine-types list; then break; fi
+            sleep 2
+          done
+          TEST_CLOUD_CONTAINER=$(docker compose ps -q cloud)
+          bash tests/service-exposure.sh check
           kubectl get nodes -L node.kubernetes.io/instance-type,topology.kubernetes.io/zone
           # The cloud image must work without either host Kubernetes CLI binary.
           docker compose exec -T cloud sh -c '! command -v minikube && ! command -v kubectl'
@@ -66,6 +79,8 @@ jobs:
           cloud machines list
           cloud operations list
           kubectl get pods -l app=lab-load
+          test "$(kubectl get pods -l app=lab-load -o json | jq '[.items[] | select(.status.phase == "Running")] | length')" = 4
+          bash tests/service-exposure.sh check
           lab load stop
           wait_nodes 1
           # Kubernetes can remove the Node before the cloud finishes Docker teardown.
@@ -78,7 +93,10 @@ jobs:
           for machine in demo-m02 demo-m03; do
             test -z "$(docker volume ls --filter "label=name.minikube.sigs.k8s.io=$machine" --format '{{.Name}}')"
           done
+          bash tests/service-exposure.sh check
+          bash tests/service-exposure.sh mutate-cleanup
           cloud clusters delete demo
+          bash tests/service-exposure.sh deleted
       - name: Diagnostics
         if: failure() || cancelled()
         run: |
