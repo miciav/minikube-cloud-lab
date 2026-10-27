@@ -80,6 +80,12 @@ the group of Docker Desktop's root-owned VM socket. On Linux it reads the local
 socket group with GNU `stat`. Existing explicit `.env` values are preserved;
 correct copied UID/GID values if they belong to another machine.
 
+New cluster nodes use Google's `https://mirror.gcr.io` cache for public Docker Hub
+images, including workers added by the autoscaler. If an image is not cached,
+Docker falls back to Docker Hub and its rate limits still apply. The setting is
+applied when nodes are created; delete and recreate an existing cluster to use it.
+The Docker daemon on your computer is not configured by this project.
+
 Wait until `cloud machine-types list` responds before creating the cluster.
 The first start downloads node images and Kubernetes components and may take
 several minutes. The kubeconfig embeds its certificates, preserves other

@@ -39,6 +39,11 @@ jobs:
           done
           cloud clusters create demo
           cloud clusters get-credentials demo
+          check_node_mirror() {
+            docker exec "$1" docker info --format '{{json .RegistryConfig.Mirrors}}' |
+              jq -e 'map(rtrimstr("/")) | index("https://mirror.gcr.io") != null'
+          }
+          check_node_mirror demo
           [[ "$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')" == https://127.0.0.1:* ]]
           kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
           export TEST_CLUSTER=demo TEST_NETWORK=minikube-cloud-lab
@@ -75,6 +80,8 @@ jobs:
             return 1
           }
           wait_nodes 2
+          worker=$(kubectl get nodes -o json | jq -r '.items[] | select(.metadata.name != "demo") | .metadata.name' | head -n 1)
+          check_node_mirror "$worker"
           kubectl rollout status deployment/lab-load --timeout=5m
           cloud machines list
           cloud operations list

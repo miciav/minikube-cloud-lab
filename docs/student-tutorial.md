@@ -117,6 +117,12 @@ cloud machines list --cluster demo
 cloud operations list
 ```
 
+Each newly created node uses Google's `https://mirror.gcr.io` cache for public
+Docker Hub images, including nodes added by Autoscaler. An image missing from the
+cache falls back to Docker Hub, where the usual rate limit still applies. Existing
+clusters need to be deleted and recreated to receive the setting. This does not
+change Docker Desktop or the Docker daemon on your computer.
+
 New `lab-small` machines have 2 GiB of memory. A cluster created with an older
 4 GiB shape keeps its original limits: delete it through the cloud and recreate
 it with the updated images to use the smaller shape.
