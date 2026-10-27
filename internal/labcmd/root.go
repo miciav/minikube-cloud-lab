@@ -98,6 +98,6 @@ func newRoot(factory connector) *cobra.Command {
 	}}
 	start.Flags().Int32Var(&replicas, "replicas", 4, "Number of load pods")
 	load.AddCommand(start, &cobra.Command{Use: "stop", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return action(cmd, []string{"load.yaml"}, true, nil) }})
-	root.AddCommand(load)
+	root.AddCommand(load, servicesCommand(factory, &path, &context))
 	return root
 }
