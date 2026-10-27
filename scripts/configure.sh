@@ -26,7 +26,7 @@ _cloud_lab_configure() {
     else
         lab_script=${BASH_SOURCE[0]}
     fi
-    lab_root=$(CDPATH= cd -- "$(dirname -- "$lab_script")/.." && pwd -P) || return 1
+    lab_root=$(CDPATH= builtin cd -- "$(dirname -- "$lab_script")/.." >/dev/null && builtin pwd -P) || return 1
     lab_uid=$(id -u) || return 1
     lab_gid=$(id -g) || return 1
     socket_gid=$(stat "$socket_stat" '%g' /var/run/docker.sock) || {

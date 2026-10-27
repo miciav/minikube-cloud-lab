@@ -276,3 +276,33 @@ source scripts/configure.sh || exit
 		t.Fatalf("relative source with CDPATH: %s (%v)", out, err)
 	}
 }
+
+func TestConfigurationIgnoresShellDirectoryOutput(t *testing.T) {
+	for _, tc := range []struct{ name, shell, setup string }{
+		{"zsh-chpwd", "zsh", `function chpwd { print -r -- '~/cloud-lab'; }`},
+		{"zsh-cd-function", "zsh", `function cd { builtin cd "$@" || return; print -r -- 'cd output'; }`},
+		{"bash-cd-function", "bash", `function cd { builtin cd "$@" || return; printf 'cd output\n'; }`},
+		{"zsh-pwd-function", "zsh", `function pwd { print -r -- 'wrong path'; }`},
+		{"bash-pwd-function", "bash", `function pwd { printf 'wrong path\n'; }`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newConfigurationFixture(t)
+			body := tc.setup + `
+source "$CONFIG_TEST_SCRIPT" || exit
+[[ "$CLOUD_LAB_ROOT" == "$CONFIG_TEST_ROOT" ]] || exit 9
+cloud clusters list
+`
+			out, err := f.runShell(t, tc.shell, body, "CONFIG_TEST_ROOT="+f.root)
+			if err != nil {
+				t.Fatalf("configuration with shell customization failed: %s (%v)", out, err)
+			}
+			if _, err := os.Stat(filepath.Join(f.root, ".env")); err != nil {
+				t.Fatalf("configuration did not create .env in checkout: %v", err)
+			}
+			args, err := os.ReadFile(f.dockerLog)
+			if err != nil || !bytes.Contains(args, []byte(f.root+string(os.PathSeparator)+".env")) {
+				t.Fatalf("wrapper did not use checkout .env: %q (%v)", args, err)
+			}
+		})
+	}
+}
