@@ -10,9 +10,9 @@ require (
 	github.com/spf13/viper v1.21.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.37.0-rc.1
-	k8s.io/api v0.37.0
-	k8s.io/apimachinery v0.37.0
-	k8s.io/client-go v0.37.0
+	k8s.io/api v0.37.1
+	k8s.io/apimachinery v0.37.1
+	k8s.io/client-go v0.37.1
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/kubectl v0.37.0
 	k8s.io/minikube v1.39.0
