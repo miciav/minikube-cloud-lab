@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	dockerclient "github.com/docker/docker/client"
+	"k8s.io/minikube/pkg/minikube/config"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	clientapi "k8s.io/client-go/tools/clientcmd/api"
@@ -86,5 +89,50 @@ func TestDeleteExposureWithoutProfile(t *testing.T) {
 				t.Fatalf("cleanup removed=%v error=%v", removed, err)
 			}
 		})
+	}
+}
+
+func TestExposureFindsProfilesCreatedByMinikube(t *testing.T) {
+	b, _ := isolatedBackend(t)
+	b.network = "lab-net"
+	if err := config.SaveProfile("demo", &config.ClusterConfig{Name: "demo", Nodes: []config.Node{{ControlPlane: true, IP: "172.30.0.2"}}}); err != nil {
+		t.Fatal(err)
+	}
+	listed := false
+	inspected := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/v1/services":
+			listed = true
+			_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"ServiceList","items":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_, _ = w.Write([]byte(`[]`))
+		case strings.HasSuffix(r.URL.Path, "/json"):
+			inspected = true
+			_, _ = w.Write([]byte(`{"Id":"cloud","Image":"sha256:cloud"}`))
+		default:
+			t.Errorf("unexpected request %s", r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+	cfg := clientapi.NewConfig()
+	cfg.Clusters["demo"] = &clientapi.Cluster{Server: server.URL}
+	cfg.Contexts["demo"] = &clientapi.Context{Cluster: "demo"}
+	cfg.CurrentContext = "demo"
+	if err := clientcmd.WriteToFile(*cfg, filepath.Join(b.home, "kubeconfig")); err != nil {
+		t.Fatal(err)
+	}
+	client, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(strings.Replace(server.URL, "http://", "tcp://", 1)), dockerclient.WithVersion("1.51"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	if err := b.reconcileServices(t.Context(), client); err != nil {
+		t.Fatal(err)
+	}
+	if !listed || !inspected {
+		t.Fatalf("profile was ignored: listed=%v inspected=%v", listed, inspected)
 	}
 }

@@ -61,7 +61,10 @@ func (i *Infra) RunServiceExposure(ctx context.Context) error {
 }
 
 func (i *Infra) reconcileServices(ctx context.Context, client *dockerclient.Client) error {
-	entries, err := os.ReadDir(filepath.Join(i.home, "profiles"))
+	if err := i.selectCluster(""); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(config.ProfileFolderPath(""))
 	if err != nil {
 		return err
 	}
