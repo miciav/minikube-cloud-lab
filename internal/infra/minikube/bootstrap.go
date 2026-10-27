@@ -135,12 +135,17 @@ func configureRuntime(ctx context.Context, cc config.ClusterConfig, r cruntime.C
 	}
 	cfg.Type = "docker"
 	cfg.NetworkPlugin = cc.KubernetesConfig.NetworkPlugin
+	mirror := &dockerMirrorRunner{CommandRunner: r}
+	cfg.Runner = mirror
 	cr, err := cruntime.New(cfg)
 	if err != nil {
 		return nil, err
 	}
 	if err := cr.Enable(true, detect.CgroupDriver(), false); err != nil {
 		return nil, err
+	}
+	if !mirror.applied {
+		return nil, fmt.Errorf("minikube did not configure the Docker Hub mirror")
 	}
 	err = wait.PollUntilContextTimeout(ctx, time.Second, time.Minute, true, func(context.Context) (bool, error) { _, err := cr.Version(); return err == nil, nil })
 	return cr, err
