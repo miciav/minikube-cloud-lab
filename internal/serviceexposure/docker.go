@@ -75,15 +75,14 @@ func (m *Manager) Ensure(ctx context.Context, cluster string, svc *corev1.Servic
 		return Status{}, err
 	}
 	payload, _ := json.Marshal(forwards)
-	sum := sha256.Sum256(append([]byte(svc.Spec.Type+":"), payload...))
-	digest := fmt.Sprintf("%x", sum)
+	digest := forwardHash(svc.Spec.Type, forwards)
 	existing, err := m.owned(ctx, cluster, svc.UID)
 	if err != nil {
 		return Status{}, err
 	}
 	for _, c := range existing {
 		if c.Labels[hashLabel] == digest {
-			return m.activate(ctx, c.ID, svc)
+			return m.observe(ctx, c.ID, svc)
 		}
 		if err := m.remove(ctx, c.ID); err != nil {
 			return Status{}, err
@@ -299,4 +298,10 @@ func (m *Manager) Prune(ctx context.Context, cluster string, keep []types.UID) e
 // DeleteCluster does not require a Kubernetes API or minikube profile.
 func (m *Manager) DeleteCluster(ctx context.Context, cluster string) error {
 	return m.Prune(ctx, cluster, nil)
+}
+
+func forwardHash(kind corev1.ServiceType, forwards []Forward) string {
+	payload, _ := json.Marshal(forwards)
+	sum := sha256.Sum256(append([]byte(kind+":"), payload...))
+	return fmt.Sprintf("%x", sum)
 }
