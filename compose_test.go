@@ -41,11 +41,13 @@ func TestComposeConfiguration(t *testing.T) {
 				Published string
 				Target    int
 			}
-			User     string
-			Restart  string
-			GroupAdd []string `json:"group_add"`
-			Profiles []string
-			Volumes  []struct {
+			User        string
+			Restart     string
+			GroupAdd    []string `json:"group_add"`
+			Profiles    []string
+			CapAdd      []string `json:"cap_add"`
+			SecurityOpt []string `json:"security_opt"`
+			Volumes     []struct {
 				Source, Target string
 				ReadOnly       bool `json:"read_only"`
 			}
@@ -60,11 +62,18 @@ func TestComposeConfiguration(t *testing.T) {
 	if err := json.Unmarshal(output, &config); err != nil {
 		t.Fatal(err)
 	}
-	if len(config.Services) != 2 {
+	if len(config.Services) != 3 {
 		t.Fatalf("services: %+v", config.Services)
 	}
 	cloud := config.Services["cloud"]
 	lab := config.Services["lab"]
+	nfs := config.Services["nfs"]
+	if len(nfs.CapAdd) != 1 || nfs.CapAdd[0] != "DAC_READ_SEARCH" || len(nfs.SecurityOpt) != 0 {
+		t.Fatalf("excessive NFS privileges: %+v", nfs)
+	}
+	if nfs.Networks["lab"].IPv4Address != "172.30.0.253" || cloud.Environment["CLOUD_NFS_IP"] != "172.30.0.253" {
+		t.Fatal("NFS network mismatch")
+	}
 	if cloud.Image != "example/cloud:test" || lab.Image != "example/lab:test" {
 		t.Fatal("image overrides ignored")
 	}
@@ -84,14 +93,17 @@ func TestComposeConfiguration(t *testing.T) {
 	if strings.Join(cloud.Command, " ") != "serve --data-dir /data --api 0.0.0.0:8080" || len(cloud.Ports) != 1 || cloud.Ports[0].HostIP != "127.0.0.1" || cloud.Ports[0].Target != 8080 || cloud.Ports[0].Published != "8080" || len(lab.Ports) != 0 {
 		t.Fatalf("localhost publication: command=%v ports=%+v", cloud.Command, cloud.Ports)
 	}
+	if len(cloud.CapAdd) != 1 || cloud.CapAdd[0] != "DAC_OVERRIDE" {
+		t.Fatalf("cloud must safely clean files owned by workloads: %+v", cloud.CapAdd)
+	}
 	if cloud.Restart != "unless-stopped" || len(cloud.GroupAdd) != 1 || cloud.GroupAdd[0] != "998" {
 		t.Fatalf("cloud settings: %+v", cloud)
 	}
 	if len(lab.Profiles) != 1 || lab.Profiles[0] != "tools" {
 		t.Fatalf("tools profile: %+v", lab)
 	}
-	expected := map[string]string{"/data": "/tmp/cloud-lab-home/.minikube-cloud-lab", "/kube": "/tmp/cloud-lab-home/.kube", "/var/run/docker.sock": "/var/run/docker.sock"}
-	if len(cloud.Volumes) != 3 {
+	expected := map[string]string{"/data": "/tmp/cloud-lab-home/.minikube-cloud-lab", "/kube": "/tmp/cloud-lab-home/.kube", "/var/run/docker.sock": "/var/run/docker.sock", "/data/storage": "storage"}
+	if len(cloud.Volumes) != 4 {
 		t.Fatalf("cloud volumes: %+v", cloud.Volumes)
 	}
 	for _, volume := range cloud.Volumes {

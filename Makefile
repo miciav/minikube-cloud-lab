@@ -16,6 +16,7 @@ integration:
 	go test -count=1 -tags integration ./internal/infra/minikube -run TestClusterLifecycle -v -timeout 30m
 
 images:
+	docker build --target nfs -t minikube-cloud-lab/nfs:dev .
 	docker build --target cloud -t minikube-cloud-lab/cloud:dev .
 	docker build --target lab -t minikube-cloud-lab/lab:dev .
 

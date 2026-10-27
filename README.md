@@ -229,6 +229,7 @@ You can also apply those files directly with
 | `cloud clusters delete NAME` | Deletes the cluster and its machines; `--async` |
 | `cloud clusters get-credentials NAME` | Updates `$KUBECONFIG` or `~/.kube/config` |
 | `cloud machines list` | Optional `--cluster NAME` filter |
+| `cloud volumes list` / `cloud volumes delete ID` | List volumes or delete an available volume |
 | `cloud operations list` | Displays the request history, newest first |
 | `cloud operations describe ID` | Displays one operation |
 | `lab install autoscaler` / `lab uninstall autoscaler` | Installs / removes Autoscaler |
@@ -280,10 +281,11 @@ subnet, gateway, and cloud address in `.env`, for example:
 CLOUD_DOCKER_SUBNET=172.29.240.0/23
 CLOUD_DOCKER_GATEWAY=172.29.240.1
 CLOUD_DOCKER_IP=172.29.240.254
+CLOUD_NFS_IP=172.29.240.253
 ```
 
 Use an aligned private `/23`: gateway `.1` and cloud `.254` in its first `/24`,
-with the second `/24` reserved for Service relays. Update all three values together. The explicit gateway is
+with the second `/24` reserved for Service relays. Update all four values together; the NFS address must be unused in the same subnet. The explicit gateway is
 required for the minikube network API on Linux as well as Docker Desktop. Start
 Compose again and create a new cluster. Before upgrading an older host-network
 installation, delete its cluster with the old cloud, run `docker compose down`,
@@ -295,6 +297,12 @@ Older versions could leave worker volumes after scale-down. Before reusing a
 cluster name, inspect any volume named `NAME-mNN` with `docker volume inspect`.
 Remove it only after confirming it belongs to the deleted lab and no container
 uses it; the cloud does not automatically delete historical orphan volumes.
+
+## Cloud storage
+
+The cloud automatically installs storage classes for dynamically provisioned NFS volumes. `cloud-standard` deletes released volumes; `cloud-retain` preserves them for recovery. Deleting a cluster conservatively retains its remaining volumes, which can be removed explicitly. `cloud volumes list` displays their state. See the [storage tutorial](docs/storage-tutorial.md) for creation and recovery across clusters.
+
+The NFS data is stored in a persistent named Docker volume. `docker compose down` keeps it; `docker compose down -v` removes it and all stored data. Requested capacities are recorded, not enforced as quotas. The lab NFS export is for a trusted local network and is not a multi-tenant storage service.
 
 ## Development
 
@@ -329,6 +337,7 @@ To use locally built images on Linux or macOS, add these entries to `.env`:
 ```dotenv
 CLOUD_IMAGE=minikube-cloud-lab/cloud:dev
 LAB_IMAGE=minikube-cloud-lab/lab:dev
+NFS_IMAGE=minikube-cloud-lab/nfs:dev
 ```
 
 CI checks Go, manifests, Compose, and images on Ubuntu amd64, runs Trivy against

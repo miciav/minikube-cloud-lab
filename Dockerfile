@@ -23,9 +23,10 @@ LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-
 FROM base AS cloud
 # curl is used by the upstream minikube library for host connectivity checks.
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl libcap2-bin && rm -rf /var/lib/apt/lists/*
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=build /out/cloud /usr/local/bin/cloud
+RUN setcap cap_dac_override+ep /usr/local/bin/cloud
 USER 65532:65532
 ENTRYPOINT ["cloud"]
 CMD ["serve","--data-dir","/data"]
@@ -34,3 +35,12 @@ FROM base AS lab
 COPY --from=build /out/lab /usr/local/bin/lab
 USER 65532:65532
 ENTRYPOINT ["lab"]
+
+FROM debian:bookworm-slim AS nfs
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends nfs-ganesha nfs-ganesha-vfs rpcbind supervisor && \
+    rm -rf /var/lib/apt/lists/* && mkdir -p /var/run/ganesha /export && chmod 0777 /export
+COPY storage/ganesha.conf /etc/ganesha/ganesha.conf
+COPY storage/supervisord.conf /etc/supervisor/conf.d/nfs.conf
+LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-lab"
+ENTRYPOINT ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/nfs.conf"]

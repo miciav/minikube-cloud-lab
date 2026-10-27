@@ -12,6 +12,7 @@ concurrency:
 env:
   CLOUD_IMAGE: minikube-cloud-lab/cloud:dev
   LAB_IMAGE: minikube-cloud-lab/lab:dev
+  NFS_IMAGE: minikube-cloud-lab/nfs:dev
   KUBECTL_VERSION: v1.35.6
 jobs:
   student-path:
@@ -102,8 +103,10 @@ jobs:
           done
           bash tests/service-exposure.sh check
           bash tests/service-exposure.sh mutate-cleanup
+          bash tests/storage.sh prepare
           cloud clusters delete demo
           bash tests/service-exposure.sh deleted
+          bash tests/storage.sh recover
       - name: Diagnostics
         if: failure() || cancelled()
         run: |
