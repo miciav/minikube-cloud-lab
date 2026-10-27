@@ -2,8 +2,10 @@ package minikube
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -11,6 +13,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/drain"
+	"k8s.io/minikube/pkg/drivers/kic/oci"
 	"k8s.io/minikube/pkg/minikube/config"
 	"k8s.io/minikube/pkg/minikube/machine"
 )
@@ -28,11 +31,7 @@ func (i *Infra) removeWorker(ctx context.Context, cc *config.ClusterConfig, name
 	if cc.Nodes[index].ControlPlane {
 		return fmt.Errorf("cannot remove control plane")
 	}
-	data, err := i.Kubeconfig(ctx, cc.Name)
-	if err != nil {
-		return err
-	}
-	cfg, err := clientcmd.RESTConfigFromKubeConfig(data)
+	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: filepath.Join(i.home, "kubeconfig")}, &clientcmd.ConfigOverrides{CurrentContext: cc.Name}).ClientConfig()
 	if err != nil {
 		return err
 	}
@@ -62,6 +61,9 @@ func (i *Infra) removeWorker(ctx context.Context, cc *config.ClusterConfig, name
 	}
 	defer func() { _ = api.Close() }()
 	if err := removeMachine(ctx, api, name); err != nil {
+		return err
+	}
+	if err := errors.Join(oci.DeleteAllVolumesByLabel(ctx, "docker", oci.ProfileLabelKey+"="+name)...); err != nil {
 		return err
 	}
 	cc.Nodes = append(cc.Nodes[:index], cc.Nodes[index+1:]...)

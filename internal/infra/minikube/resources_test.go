@@ -29,7 +29,7 @@ func TestMachineResourcesReachDockerAPI(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&limits); err != nil {
 			t.Error(err)
 		}
-		if limits.NanoCpus != 2000000000 || limits.Memory != 4294967296 || limits.MemorySwap != 4294967296 {
+		if limits.NanoCpus != 2000000000 || limits.Memory != 2147483648 || limits.MemorySwap != 2147483648 {
 			t.Errorf("wrong machine limits: %+v", limits)
 		}
 		updated.Store(true)
@@ -41,7 +41,7 @@ func TestMachineResourcesReachDockerAPI(t *testing.T) {
 	t.Setenv("DOCKER_TLS_VERIFY", "")
 	t.Setenv("DOCKER_CERT_PATH", "")
 	t.Setenv("DOCKER_API_VERSION", "")
-	if err := setMachineResources(context.Background(), "demo-m02", infra.MachineShape{CPUs: 2, MemoryMiB: 4096}); err != nil {
+	if err := setMachineResources(context.Background(), "demo-m02", infra.MachineShape{CPUs: 2, MemoryMiB: 2048}); err != nil {
 		t.Fatal(err)
 	}
 	if !updated.Load() {
@@ -62,12 +62,12 @@ func TestMachineResourceFailuresPropagate(t *testing.T) {
 	t.Setenv("DOCKER_TLS_VERIFY", "")
 	t.Setenv("DOCKER_CERT_PATH", "")
 	t.Setenv("DOCKER_API_VERSION", "")
-	if err := setMachineResources(context.Background(), "demo", infra.MachineShape{CPUs: 2, MemoryMiB: 4096}); err == nil {
+	if err := setMachineResources(context.Background(), "demo", infra.MachineShape{CPUs: 2, MemoryMiB: 2048}); err == nil {
 		t.Fatal("resource failure swallowed")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := setMachineResources(ctx, "demo", infra.MachineShape{CPUs: 2, MemoryMiB: 4096}); !errors.Is(err, context.Canceled) {
+	if err := setMachineResources(ctx, "demo", infra.MachineShape{CPUs: 2, MemoryMiB: 2048}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation: %v", err)
 	}
 }

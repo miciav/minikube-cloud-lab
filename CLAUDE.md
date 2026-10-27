@@ -11,8 +11,9 @@ Leggere `README.md` per architettura, percorso studente e limiti operativi.
 - `make images`: immagini locali `minikube-cloud-lab/{cloud,lab}:dev`.
 - `go test -tags docker . -run TestComposeConfiguration -v`: configurazione Compose.
 
-Le prove reali richiedono Docker attivo, almeno 6 CPU e 12 GiB disponibili.
-Su macOS usare i binari nativi con Docker Desktop. Compose è per VM Linux.
+Le prove reali richiedono Docker attivo, almeno 6 CPU e 6 GiB disponibili.
+Su macOS e Linux usare Compose con rete bridge dedicata e porte localhost;
+non richiedere host networking o binari cloud/lab nativi agli studenti.
 
 ## Mappa dei pacchetti
 
@@ -40,6 +41,11 @@ Su macOS usare i binari nativi con Docker Desktop. Compose è per VM Linux.
   `machine.StartHost`: hanno percorsi `os.Exit`. Comporre le primitive Go verificate
   in `bootstrap.go` e mantenere gli errori al confine Infra. Driver Docker e indirizzi
   automatici soltanto; il caso fatal del driver KIC con StaticIP deve restare escluso.
+- `lab-small`: 2 CPU / 2048 MiB; `lab-medium`: 4 CPU / 8192 MiB.
+- Creazione cluster installa YAKD dagli asset minikube via client-go, senza helper addon fatal; il rollout resta osservabile via Kubernetes.
+- `source scripts/configure.sh` prepara soltanto directory/.env/comandi di sessione; non deve eseguire Docker o operazioni sul cluster.
+- Configurazione Bash/zsh su Linux/macOS; socket Docker Desktop GID0, GNUstat su Linux/BSDstat su Mac.
+- Compose usa rete condivisa con cloud .254, distinta dagli IP2..253 assegnati da minikube. Kubeconfig privato per cloud/lab, endpoint localhost pubblicato per kubectl host; gRPC non pubblicato.
 - Un solo cluster per servizio, un tipo per cluster, control plane incluso nei
   limiti min/max e protetto dalla cancellazione. Non introdurre supporto multi-cluster.
 - Requester: `student` per la CLI/API, `cluster-autoscaler` per externalgrpc,
@@ -57,7 +63,7 @@ Su macOS usare i binari nativi con Docker Desktop. Compose è per VM Linux.
   da leggere: non modificarlo.
 - `docs/superpowers/` e `.superpowers/` restano ignorati. Non committare spec, piani,
   log, credenziali, `.env` o report locali.
-- Repository e package GHCR privati. CI amd64; build multiarch tramite QEMU;
-  niente CodeQL o runner arm64 finché il progetto resta privato.
+- Repository e package GHCR pubblici: clonazione HTTPS e pull anonimo per gli studenti.
+  CI amd64; build multiarch tramite QEMU.
 - TDD per funzionalità e bugfix; commit piccoli con prefisso convenzionale e trailer
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` previsto dal piano.
