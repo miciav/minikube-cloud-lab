@@ -24,7 +24,7 @@ func newRoot(factory func(string) (infra.Infra, error)) *cobra.Command {
 		url = "http://127.0.0.1:8080"
 	}
 	root.PersistentFlags().String("api-url", url, "Cloud management API URL")
-	root.AddCommand(serveCommand(factory))
+	root.AddCommand(serveCommand(factory), proxyCommand())
 	addClusterCommands(root)
 	addMachineCommands(root)
 	addOperationCommands(root)

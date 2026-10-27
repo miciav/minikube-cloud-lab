@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -67,7 +68,9 @@ func (s *Service) reconcile() error {
 		c := &s.state.Clusters[ci]
 		observed, err := s.inf.Machines(context.Background(), c.Name)
 		if err != nil {
-			return fmt.Errorf("reconcile %s: %w", c.Name, err)
+			c.Status = "ERROR"
+			s.logger.Error("cannot reconcile cluster; ownership preserved for cleanup", "cluster", c.Name, "error", err)
+			continue
 		}
 		observedByName := make(map[string]infra.Machine, len(observed))
 		for _, m := range observed {
@@ -94,7 +97,7 @@ func (s *Service) reconcile() error {
 			kept = append(kept, fromInfra(m, *c, "cloud", now))
 		}
 		s.state.Machines = kept
-		if c.Status != "RUNNING" {
+		if c.Status != "RUNNING" || !slices.ContainsFunc(observed, func(m infra.Machine) bool { return m.ControlPlane && m.Running }) {
 			c.Status = "ERROR"
 		}
 	}
@@ -282,20 +285,42 @@ func (s *Service) AddMachines(name string, n int, requester string) ([]Operation
 	}
 	for _, op := range ops {
 		var added infra.Machine
-		s.launch(op.ID, func() error { var err error; added, err = s.inf.AddMachine(context.Background(), name); return err }, func(st *snapshot, err error) {
+		var observed []infra.Machine
+		var observationErr error
+		s.launch(op.ID, func() error {
+			var err error
+			added, err = s.inf.AddMachine(context.Background(), name)
 			if err != nil {
-				st.Machines = slices.DeleteFunc(st.Machines, func(m Machine) bool { return m.Name == op.Target })
+				observed, observationErr = s.inf.Machines(context.Background(), name)
+				return errors.Join(err, observationErr)
+			}
+			return nil
+		}, func(st *snapshot, err error) {
+			if err != nil {
+				// An unobservable failure must keep its capacity reservation.
+				if observationErr != nil {
+					if added.Name != "" {
+						st.recordAddedMachines(op, c, []infra.Machine{added})
+					}
+					return
+				}
+				st.recordAddedMachines(op, c, observed)
 				return
 			}
-			for i, m := range st.Machines {
-				if m.Name == op.Target {
-					st.Machines[i] = fromInfra(added, c, requester, m.CreatedAt)
-				}
-			}
-			st.operation(op.ID).Target = added.Name
+			st.recordAddedMachines(op, c, []infra.Machine{added})
 		})
 	}
 	return ops, nil
+}
+
+func (st *snapshot) recordAddedMachines(op Operation, c Cluster, observed []infra.Machine) {
+	st.Machines = slices.DeleteFunc(st.Machines, func(m Machine) bool { return m.Name == op.Target })
+	for _, actual := range observed {
+		if !slices.ContainsFunc(st.Machines, func(m Machine) bool { return m.Name == actual.Name }) {
+			st.Machines = append(st.Machines, fromInfra(actual, c, op.Requester, op.StartedAt))
+			st.operation(op.ID).Target = actual.Name
+		}
+	}
 }
 
 // DeleteMachine protects the control plane and the minimum ready capacity.
