@@ -43,6 +43,10 @@ func respond(w http.ResponseWriter, status int, value any, err error) {
 // NewServer routes management requests to the shared cloud service.
 func NewServer(svc *cloud.Service) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/volumes", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Volumes(), nil) })
+	mux.HandleFunc("DELETE /v1/volumes/{id}", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, 200, map[string]string{"status": "deleted"}, svc.DeleteVolume(r.PathValue("id")))
+	})
 	mux.HandleFunc("GET /v1/machine-types", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, cloud.MachineTypes(), nil) })
 	mux.HandleFunc("GET /v1/clusters", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Clusters(), nil) })
 	mux.HandleFunc("POST /v1/clusters", func(w http.ResponseWriter, r *http.Request) {

@@ -51,6 +51,7 @@ func NewService(inf infra.Infra, dataDir string, logger *slog.Logger) (*Service,
 	if err := s.reconcile(); err != nil {
 		return nil, err
 	}
+	s.retryVolumeDeletions()
 	return s, nil
 }
 
@@ -203,7 +204,19 @@ func (s *Service) DeleteCluster(name, requester string) (Operation, error) {
 	if err := s.store(next); err != nil {
 		return Operation{}, err
 	}
-	s.launch(op.ID, func() error { return s.inf.DeleteCluster(context.Background(), name) }, func(st *snapshot, err error) {
+	s.launch(op.ID, func() error {
+		if err := s.inf.DeleteCluster(context.Background(), name); err != nil {
+			return err
+		}
+		for _, volume := range s.Volumes() {
+			if volume.Cluster == name && volume.Status == "Bound" {
+				if err := s.releaseVolumeFor(volume.ID, volume.Cluster, volume.Claim, volume.ClaimUID, "Retain"); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}, func(st *snapshot, err error) {
 		if err == nil {
 			st.Clusters = []Cluster{}
 			st.Machines = []Machine{}

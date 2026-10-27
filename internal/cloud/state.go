@@ -87,14 +87,26 @@ func machineType(name string) (MachineType, error) {
 	return MachineType{}, fmt.Errorf("%w: unknown machine type %s", ErrInvalid, name)
 }
 
+// Volume records a persistent cloud storage allocation.
+type Volume struct {
+	ID       string `json:"id"`
+	Cluster  string `json:"cluster"`
+	Claim    string `json:"claim"`
+	ClaimUID string `json:"claimUID"`
+	Capacity string `json:"capacity"`
+	Policy   string `json:"policy"`
+	Status   string `json:"status"`
+}
+
 type snapshot struct {
+	Volumes    []Volume    `json:"volumes,omitempty"`
 	Clusters   []Cluster   `json:"clusters"`
 	Machines   []Machine   `json:"machines"`
 	Operations []Operation `json:"operations"`
 }
 
 func (st snapshot) clone() snapshot {
-	return snapshot{Clusters: slices.Clone(st.Clusters), Machines: slices.Clone(st.Machines), Operations: slices.Clone(st.Operations)}
+	return snapshot{Volumes: slices.Clone(st.Volumes), Clusters: slices.Clone(st.Clusters), Machines: slices.Clone(st.Machines), Operations: slices.Clone(st.Operations)}
 }
 
 func save(dir string, st snapshot) error {

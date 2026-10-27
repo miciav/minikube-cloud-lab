@@ -330,3 +330,40 @@ func TestServeOwnsExposureWorker(t *testing.T) {
 		})
 	}
 }
+
+func TestVolumeCommands(t *testing.T) {
+	s, url := setup(t, nil)
+	v, err := s.CreateVolume("pvc-cli", "demo", "default/data", "1Gi", "Retain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := execute(t, url, "volumes", "list")
+	if err != nil || !strings.Contains(out, v.ID) || !strings.Contains(out, "default/data") {
+		t.Fatalf("list: %q %v", out, err)
+	}
+	if _, err := execute(t, url, "volumes", "delete", v.ID); err == nil {
+		t.Fatal("deleted attached volume")
+	}
+	if err := s.ReleaseVolumeFor(v.ID, "demo", "default/data", strings.TrimPrefix(v.ID, "pvc-")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(t, url, "volumes", "delete", v.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Volumes()) != 0 {
+		t.Fatal("volume remains")
+	}
+}
+
+func TestServeRejectsInvalidStorageAddress(t *testing.T) {
+	t.Setenv("CLOUD_NFS_IP", "invalid")
+	root := newRoot(func(string) (infra.Infra, error) { return fake.New(), nil })
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{"serve", "--data-dir", t.TempDir(), "--api", "127.0.0.1:0", "--grpc", "127.0.0.1:0"})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := root.ExecuteContext(ctx); err == nil || !strings.Contains(err.Error(), "storage") {
+		t.Fatalf("invalid NFS address: %v", err)
+	}
+}

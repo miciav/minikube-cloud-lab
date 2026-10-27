@@ -135,3 +135,16 @@ func (c *Client) Operation(ctx context.Context, id string) (cloud.Operation, err
 	_, err := c.request(ctx, http.MethodGet, "/v1/operations/"+url.PathEscape(id), nil, &result)
 	return result, err
 }
+
+// Volumes lists cloud storage allocations.
+func (c *Client) Volumes(ctx context.Context) ([]cloud.Volume, error) {
+	var result []cloud.Volume
+	_, err := c.request(ctx, http.MethodGet, "/v1/volumes", nil, &result)
+	return result, err
+}
+
+// DeleteVolume removes an available volume.
+func (c *Client) DeleteVolume(ctx context.Context, id string) error {
+	_, err := c.request(ctx, http.MethodDelete, "/v1/volumes/"+url.PathEscape(id), nil, nil)
+	return err
+}

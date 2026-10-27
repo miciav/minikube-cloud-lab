@@ -27,6 +27,7 @@ func newRoot(factory func(string) (infra.Infra, error)) *cobra.Command {
 	root.AddCommand(serveCommand(factory), proxyCommand())
 	addClusterCommands(root)
 	addMachineCommands(root)
+	addVolumeCommands(root)
 	addOperationCommands(root)
 	return root
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -23,6 +24,10 @@ import (
 func serveCommand(factory func(string) (infra.Infra, error)) *cobra.Command {
 	var dataDir, apiAddr, grpcAddr string
 	command := &cobra.Command{Use: "serve", Short: "Run the cloud service", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		storageIP := os.Getenv("CLOUD_NFS_IP")
+		if storageIP != "" && net.ParseIP(storageIP) == nil {
+			return fmt.Errorf("invalid storage server address")
+		}
 		httpListener, err := (&net.ListenConfig{}).Listen(cmd.Context(), "tcp", apiAddr)
 		if err != nil {
 			return err
@@ -51,7 +56,18 @@ func serveCommand(factory func(string) (infra.Infra, error)) *cobra.Command {
 				logger.Error("service exposure stopped", "error", err)
 			}
 		}()
-		defer func() { stopWorker(); <-workerDone }()
+		storageDone := make(chan struct{})
+		if storageIP == "" {
+			close(storageDone)
+		} else {
+			go func() {
+				defer close(storageDone)
+				if err := svc.RunStorage(workerCtx, storageIP); err != nil && workerCtx.Err() == nil {
+					logger.Error("storage worker stopped", "error", err)
+				}
+			}()
+		}
+		defer func() { stopWorker(); <-workerDone; <-storageDone }()
 		management := &http.Server{Handler: api.NewServer(svc), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute}
 		rpc := grpc.NewServer()
 		protos.RegisterCloudProviderServer(rpc, externalgrpc.New(svc, logger))
