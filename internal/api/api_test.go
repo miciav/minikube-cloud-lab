@@ -236,3 +236,33 @@ func TestStaticPublicationRoutesValidateOwnership(t *testing.T) {
 	err = c.UnpublishVolume(context.Background(), "pvc-missing")
 	assertStatus(t, err, 404)
 }
+
+func TestStorageRequestsRejectMalformedBodies(t *testing.T) {
+	_, s, _, url := setup(t)
+	if err := s.ConfigureStorage(storageBackend{}, "1Gi", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct{ path, body string }{{"/v1/volumes", "{"}, {"/v1/volumes", `{"capacity":"64Mi","unknown":true}`}, {"/v1/volumes", `{"capacity":"64Mi"} {}`}, {"/v1/volumes", `{"capacity":"0"}`}, {"/v1/volumes/pvc-test/publish", `{}`}, {"/v1/volumes/pvc-test/publish", `{"cluster":"demo","unknown":true}`}} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url+item.path, strings.NewReader(item.body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("accepted malformed storage request %s: %d", item.body, resp.StatusCode)
+		}
+	}
+}
+
+func TestStorageAPIRequiresConfiguredBackend(t *testing.T) {
+	c, _, _, _ := setup(t)
+	_, err := c.Storage(t.Context())
+	assertStatus(t, err, 412)
+	_, err = c.CreateVolume(t.Context(), "64Mi")
+	assertStatus(t, err, 412)
+}

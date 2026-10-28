@@ -3,6 +3,8 @@ package cloud_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -160,5 +162,50 @@ func TestStorageCapacityRejectsLegacyAndInvalidQuantities(t *testing.T) {
 		if err := s.ConfigureStorage(&memoryStorage{}, q, "172.30.0.253"); err == nil {
 			t.Fatalf("invalid budget accepted %s", q)
 		}
+	}
+}
+
+func TestStorageCapacityRejectsInvalidAndConflictingRequests(t *testing.T) {
+	s, _, _ := newService(t)
+	if err := s.ConfigureStorage(&memoryStorage{}, "1Gi", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"0", "bad", "-1Gi", "2Ti"} {
+		if _, err := s.CreateAvailableVolume(q); !errors.Is(err, cloud.ErrInvalid) {
+			t.Fatalf("capacity %s: %v", q, err)
+		}
+	}
+	if _, err := s.CreateVolume("../escape", "demo", "default/data", "64Mi", "Retain"); !errors.Is(err, cloud.ErrInvalid) {
+		t.Fatalf("invalid ID %v", err)
+	}
+	if _, err := s.CreateVolume("pvc-valid", "demo", "", "64Mi", "Retain"); !errors.Is(err, cloud.ErrInvalid) {
+		t.Fatalf("invalid claim %v", err)
+	}
+	if _, err := s.CreateVolume("pvc-valid", "demo", "default/data", "64Mi", "Retain"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateVolume("pvc-valid", "demo", "default/data", "128Mi", "Retain"); !errors.Is(err, cloud.ErrConflict) {
+		t.Fatalf("conflicting retry %v", err)
+	}
+	if _, err := s.CreateVolume("pvc-valid", "demo", "default/data", "64Mi", "Retain"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStorageCapacityPersistsReservationBeforeAllocating(t *testing.T) {
+	s, _, dir := newService(t)
+	b := &memoryStorage{}
+	if err := s.ConfigureStorage(b, "1Gi", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "state.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateAvailableVolume("64Mi"); err == nil {
+		t.Fatal("allocation accepted failed reservation save")
+	}
+	status, err := s.StorageCapacity()
+	if err != nil || status.Allocated != "0" || len(b.images) != 0 {
+		t.Fatalf("non durable allocation %+v %v", status, err)
 	}
 }

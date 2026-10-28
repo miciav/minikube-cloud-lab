@@ -246,7 +246,7 @@ func TestCommandErrorsPropagate(t *testing.T) {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
-	for _, args := range [][]string{{"machine-types", "list"}, {"clusters", "list"}, {"clusters", "describe", "demo"}, {"clusters", "delete", "demo"}, {"clusters", "get-credentials", "demo"}, {"machines", "list"}, {"operations", "list"}, {"operations", "describe", "unknown"}} {
+	for _, args := range [][]string{{"machine-types", "list"}, {"clusters", "list"}, {"clusters", "describe", "demo"}, {"clusters", "delete", "demo"}, {"clusters", "get-credentials", "demo"}, {"machines", "list"}, {"operations", "list"}, {"operations", "describe", "unknown"}, {"storage", "status"}, {"volumes", "create", "--capacity", "1Gi"}, {"volumes", "list"}, {"volumes", "delete", "pvc-test"}, {"volumes", "publish", "pvc-test", "--cluster", "demo"}, {"volumes", "unpublish", "pvc-test"}} {
 		if _, err := execute(t, server.URL, args...); err == nil {
 			t.Fatalf("failure swallowed: %v", args)
 		}
@@ -398,5 +398,58 @@ func TestStaticCommandsRequireExplicitAdministratorInputs(t *testing.T) {
 	}
 	if _, err := execute(t, url, "volumes", "unpublish"); err == nil {
 		t.Fatal("missing volume accepted")
+	}
+}
+
+func TestStorageConfigurationDefaultsAndValidation(t *testing.T) {
+	s, _ := setup(t, nil)
+	t.Setenv("CLOUD_STORAGE_CAPACITY", "")
+	if err := configureStorage(s, t.TempDir(), "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	status, err := s.StorageCapacity()
+	if err != nil || status.Total != "20Gi" {
+		t.Fatalf("default budget %+v %v", status, err)
+	}
+	t.Setenv("CLOUD_STORAGE_CAPACITY", "wrong")
+	if err := configureStorage(s, t.TempDir(), "172.30.0.253"); err == nil {
+		t.Fatal("invalid budget accepted")
+	}
+}
+
+func TestStaticCLICommandsReportSuccessfulAdministration(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/publish") {
+			data, err := io.ReadAll(r.Body)
+			if err != nil || !strings.Contains(string(data), `"cluster":"demo"`) {
+				http.Error(w, "missing target cluster", http.StatusBadRequest)
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"status":"done"}`)
+	}))
+	defer server.Close()
+	for _, args := range [][]string{{"volumes", "publish", "pvc-test", "--cluster", "demo"}, {"volumes", "unpublish", "pvc-test"}} {
+		out, err := execute(t, server.URL, args...)
+		if err != nil || !strings.Contains(out, "pvc-test") {
+			t.Fatalf("administration %q %v", out, err)
+		}
+	}
+}
+
+func TestServeRejectsInvalidStorageBudget(t *testing.T) {
+	t.Setenv("CLOUD_NFS_IP", "172.30.0.253")
+	t.Setenv("CLOUD_STORAGE_CAPACITY", "invalid")
+	root := newRoot(func(string) (infra.Infra, error) { return fake.New(), nil })
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{"serve", "--data-dir", t.TempDir(), "--api", "127.0.0.1:0", "--grpc", "127.0.0.1:0"})
+	if err := root.ExecuteContext(t.Context()); err == nil || !strings.Contains(err.Error(), "storage capacity") {
+		t.Fatalf("invalid storage budget: %v", err)
 	}
 }
