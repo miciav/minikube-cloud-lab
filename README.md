@@ -302,7 +302,18 @@ uses it; the cloud does not automatically delete historical orphan volumes.
 
 The cloud automatically installs storage classes for dynamically provisioned NFS volumes. `cloud-standard` deletes released volumes; `cloud-retain` preserves them for recovery. Deleting a cluster conservatively retains its remaining volumes, which can be removed explicitly. `cloud volumes list` displays their state. See the [storage tutorial](docs/storage-tutorial.md) for creation and recovery across clusters.
 
-The NFS data is stored in a persistent named Docker volume. `docker compose down` keeps it; `docker compose down -v` removes it and all stored data. Requested capacities are recorded, not enforced as quotas. The lab NFS export is for a trusted local network and is not a multi-tenant storage service.
+The NFS data is stored in a persistent named Docker volume. `docker compose down` keeps it; `docker compose down -v` removes it and all stored data. Each new volume has a separate bounded ext4 filesystem exported over NFS. Writes stop with a disk-full error when its virtual disk is full. Capacity includes filesystem overhead, is rounded up to MiB, and has a 16Mi minimum. `cloud storage status` reports the global allocation budget (default `20Gi`, configurable with `CLOUD_STORAGE_CAPACITY` in `.env`). Allocated and retained volumes count until permanently deleted; unused capacity inside a volume is still allocated. The budget does not reserve physical host disk space.
+
+Administrators can use `cloud volumes create --capacity 2Gi`, `cloud volumes publish ID --cluster demo`, and `cloud volumes unpublish ID` for static provisioning with `cloud-static`. Publishing prevents deletion or use by another cluster; unpublishing preserves the data.
+
+The NFS container needs `SYS_ADMIN`, `DAC_READ_SEARCH`, and loop-device access to mount the backing filesystems. It does not use privileged mode or change host settings. The lab NFS export is for a trusted local network and is not a multi-tenant storage service.
+
+Existing directory-backed volumes remain legacy storage: `ENFORCED=false`. They
+are not migrated or reformatted automatically. Inventory and cleanup remain
+available, but new allocations are blocked until an explicit offline migration
+or removal of the old volumes. If you choose to delete all legacy volumes,
+restart NFS afterward with `docker compose restart nfs`. Keep backups; do not use
+`down -v` as a migration tool.
 
 ## Development
 
@@ -315,12 +326,14 @@ make test
 make verify
 make integration
 make images
+make storage-integration
 ```
 
 `make verify` runs lint, module checks, vulnerability analysis, the 90% coverage
 gate, and the race detector. Coverage includes all handwritten packages and the
-command entry points. It excludes the minikube adapter covered by integration
-tests and the generated protocol bindings.
+command entry points. It excludes the minikube and NFS runtime adapters covered by integration
+tests and the generated protocol bindings. `make storage-integration` runs real
+Linux filesystem/mount tests inside an isolated Docker container.
 
 The complete `vuln-report.json` is ignored by Git. The gate applies exact
 ID/module/version triage to three advisories that do not apply to our usage
