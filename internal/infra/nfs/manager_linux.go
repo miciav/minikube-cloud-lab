@@ -1,4 +1,4 @@
-package storage
+package nfs
 
 import (
 	"context"
@@ -132,6 +132,26 @@ func (m *manager) Ensure(ctx context.Context, id string, size int64) error {
 }
 
 func (m *manager) createImage(id string, size int64, n int) error {
+	d, err := m.root.Open(".")
+	if err != nil {
+		return err
+	}
+	var stat unix.Statfs_t
+	err = unix.Fstatfs(int(d.Fd()), &stat)
+	_ = d.Close()
+	if err != nil {
+		return err
+	}
+	if stat.Bsize <= 0 {
+		return fmt.Errorf("invalid backing storage block size")
+	}
+	// #nosec G115 -- Ensure validates 16Mi <= size <= 1Ti before creating an image.
+	needed := uint64(size) + (8 << 20)
+	block := uint64(stat.Bsize)
+	if (needed+block-1)/block > stat.Bavail {
+		return fmt.Errorf("insufficient free backing storage for volume and metadata")
+	}
+
 	name := fmt.Sprintf("%05d-%s.img", n, id)
 	// Incomplete images are never published; retries replace only this private temporary file.
 	temp := ".creating-" + id
@@ -161,7 +181,7 @@ func (m *manager) createImage(id string, size int64, n int) error {
 		return err
 	}
 	m.volumes[id] = &image{name: name, export: n, size: size}
-	d, err := m.root.Open(".")
+	d, err = m.root.Open(".")
 	if err != nil {
 		return err
 	}
@@ -184,15 +204,36 @@ func (m *manager) Delete(ctx context.Context, id string) error {
 	}
 	v := m.volumes[id]
 	if v == nil {
-		return nil
+		temp := ".creating-" + id
+		st, err := m.root.Lstat(temp)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !st.Mode().IsRegular() {
+			return fmt.Errorf("unsafe temporary image")
+		}
+		if err := m.root.Remove(temp); err != nil {
+			return err
+		}
+		d, err := m.root.Open(".")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = d.Close() }()
+		return d.Sync()
 	}
+
 	v.deleting = true
 	if err := m.reload(); err != nil {
 		return err
 	}
-	if err := unix.Unmount(filepath.Join(m.mounts, id), 0); err != nil && !errors.Is(err, unix.EINVAL) && !errors.Is(err, unix.ENOENT) {
-		return fmt.Errorf("volume export is still in use: %w", err)
+	if err := unmountReleased(ctx, filepath.Join(m.mounts, id)); err != nil {
+		return err
 	}
+
 	if err := m.root.Remove(v.name); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -427,4 +468,25 @@ func prepareStorageDirs(backing, mounts string) error {
 		}
 	}
 	return nil
+}
+
+func unmountReleased(ctx context.Context, path string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		err := unix.Unmount(path, 0)
+		if err == nil || errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOENT) {
+			return nil
+		}
+		if !errors.Is(err, unix.EBUSY) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("volume export is still in use: %w", ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }

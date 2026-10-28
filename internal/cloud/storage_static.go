@@ -11,6 +11,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -187,12 +188,20 @@ func (s *Service) unpublishVolume(ctx context.Context, client kubernetes.Interfa
 	if err = client.CoreV1().PersistentVolumes().Delete(ctx, id, options); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
-	if _, err = client.CoreV1().PersistentVolumes().Get(ctx, id, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
-		if err != nil {
-			return err
+	err = wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 5*time.Second, true, func(ctx context.Context) (bool, error) {
+		_, err := client.CoreV1().PersistentVolumes().Get(ctx, id, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return true, nil
 		}
-		return fmt.Errorf("%w: waiting for persistent volume removal", ErrFailedPrecondition)
+		return false, err
+	})
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("%w: waiting for persistent volume removal", ErrFailedPrecondition)
+		}
+		return err
 	}
+
 	return s.finishUnpublish(v)
 }
 

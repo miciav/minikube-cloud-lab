@@ -1,3 +1,4 @@
+// Package storage provides the private NFS control client and backend contract.
 package storage
 
 import (

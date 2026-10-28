@@ -42,7 +42,6 @@ FROM debian:bookworm-slim AS nfs
 RUN apt-get update && apt-get install -y --no-install-recommends nfs-ganesha nfs-ganesha-vfs rpcbind supervisor && \
     rm -rf /var/lib/apt/lists/* && mkdir -p /var/run/ganesha /export && chmod 0777 /export
 COPY --from=build /out/storage-nfs /usr/local/bin/storage-nfs
-COPY storage/ganesha.conf /etc/ganesha/ganesha.conf
 COPY storage/supervisord.conf /etc/supervisor/conf.d/nfs.conf
 LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-lab"
 ENTRYPOINT ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/nfs.conf"]

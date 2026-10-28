@@ -1,5 +1,5 @@
-// Package storage manages bounded NFS backing filesystems.
-package storage
+// Package nfs manages bounded NFS backing filesystems.
+package nfs
 
 import (
 	"fmt"
