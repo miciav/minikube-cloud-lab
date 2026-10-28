@@ -7,6 +7,7 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       CLOUD_NFS_IP: ${CLOUD_NFS_IP:-172.30.0.253}
+      CLOUD_STORAGE_CAPACITY: ${CLOUD_STORAGE_CAPACITY:-20Gi}
       CLOUD_DOCKER_NETWORK: minikube-cloud-lab
       CLOUD_DOCKER_IP: ${CLOUD_DOCKER_IP:-172.30.0.254}
     networks:
@@ -24,7 +25,10 @@ services:
     restart: unless-stopped
   nfs:
     image: ${NFS_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/nfs:latest}
-    cap_add: [DAC_READ_SEARCH]
+    cap_add: [DAC_READ_SEARCH, SYS_ADMIN]
+    device_cgroup_rules:
+      - "b 7:* rwm"
+      - "c 10:237 rwm"
     networks:
       lab:
         ipv4_address: ${CLOUD_NFS_IP:-172.30.0.253}
