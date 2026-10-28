@@ -181,6 +181,9 @@ func (i *Infra) CreateCluster(ctx context.Context, spec infra.ClusterSpec) error
 	if err := os.WriteFile(filepath.Join(i.home, spec.Name+".kubeconfig"), data, 0o600); err != nil {
 		return err
 	}
+	if err := enableMetrics(ctx, cc); err != nil {
+		return fmt.Errorf("enable Metrics Server: %w", err)
+	}
 	if err := enableYAKD(ctx, cc); err != nil {
 		return fmt.Errorf("enable YAKD addon: %w", err)
 	}
