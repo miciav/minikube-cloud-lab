@@ -97,7 +97,7 @@ Pull the images, then start the cloud service yourself:
 ```sh
 cd ~/cloud-lab
 docker compose --profile tools pull
-docker compose up -d cloud
+docker compose up -d
 docker compose ps
 cloud machine-types list
 ```
@@ -164,6 +164,23 @@ system Pods already consume part of that budget through their requests.
 The backend shares the host kernel, so the raw Capacity field may reflect the
 host. Use Allocatable when reasoning about scheduling this experiment.
 
+### Optional: observe your cloud in the portal
+
+Open <http://localhost:3000>. Compose starts the separate portal container alongside
+cloud and NFS. The portal manages the same cloud resources as your terminal commands;
+it does not install Autoscaler or generate load for you. Keep using the terminal for
+the exercises below.
+
+Select your cluster and open **Monitoring** to compare actual CPU/memory usage with
+requests and allocatable capacity. The view also shows Ready nodes, Pending/unhealthy
+Pods and allocated cloud storage. Measurements refresh every 15 seconds; unavailable
+metrics are not zero. There is no stored history. The **Kubernetes** tab embeds YAKD
+for workload details and logs, and can open it in a separate tab.
+
+Downloading kubeconfig from the portal does not update your terminal configuration.
+Continue using `cloud clusters get-credentials demo` for the tutorial's terminal,
+or pass the downloaded file explicitly with `kubectl --kubeconfig PATH`.
+
 ### Open the dashboard installed by the cloud
 
 The cloud automatically installs the YAKD addon in new clusters. No separate
@@ -187,8 +204,11 @@ shown port and USER@VM with your login, then open that localhost URL.
 The dashboard can administer the entire cluster; keep it private.
 
 Use YAKD to inspect Nodes, Deployments, Pods and events during the experiment.
-It requests 128 MiB of the scheduling budget. Live CPU/memory graphs require
-metrics-server, which this lab does not install. A temporary alternative is
+It requests 128 MiB of the scheduling budget. The cloud also installs Metrics Server
+in new clusters, enabling live Pod CPU/memory usage in YAKD and cluster/node usage in
+the portal. Allow a short interval for the first readings. Existing clusters need
+to be recreated to receive Metrics Server. Minikube's kubelet certificates require
+an internal lab-only TLS exception; see the [portal notes](../README.md#cloud-portal). A temporary alternative is
 `kubectl -n yakd-dashboard port-forward --address 127.0.0.1 service/yakd-dashboard 8081:80`;
 then open <http://127.0.0.1:8081> and keep that forwarding command running.
 

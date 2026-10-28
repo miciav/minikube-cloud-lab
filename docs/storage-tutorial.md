@@ -1,6 +1,10 @@
 # Student tutorial: persistent storage and the cloud
 
-This lab uses the same Docker Compose cloud as the [autoscaling tutorial](student-tutorial.md). Start it with `source scripts/configure.sh` and `docker compose up -d cloud`, then create a cluster and configure credentials:
+This lab uses the same Docker Compose cloud as the [autoscaling tutorial](student-tutorial.md). Start it with `source scripts/configure.sh` and `docker compose up -d`, then create a cluster and configure credentials. The optional portal at
+<http://localhost:3000> shows the same volumes and allocation budget in **Volumes**;
+allocated capacity is not measured disk usage. Keep running the Kubernetes/PVC
+exercises from the terminal:
+
 
 ```sh
 cloud clusters create demo

@@ -59,7 +59,7 @@ git clone https://github.com/miciav/minikube-cloud-lab.git ~/cloud-lab
 cd ~/cloud-lab
 source scripts/configure.sh
 docker compose --profile tools pull
-docker compose up -d cloud
+docker compose up -d
 docker compose ps
 
 cloud machine-types list
@@ -112,10 +112,49 @@ Open the `127.0.0.1:PORT` shown for `yakd-dashboard` on the computer running
 Docker. No forwarding terminal is needed. On a remote VM, use an SSH tunnel
 (`ssh -L PORT:127.0.0.1:PORT USER@VM`) with that port.
 YAKD uses a cluster-admin service account: keep this local UI private. It requests
-128 MiB and is capped at 256 MiB. Metrics-server is not installed, so live usage
-metrics are unavailable. Existing clusters are not modified; recreate them to
-obtain YAKD. An API error installing YAKD fails the create operation and leaves
+128 MiB and is capped at 256 MiB. New clusters also include Metrics Server 0.9.0,
+so YAKD can show live Pod CPU and memory usage. Existing clusters are not modified;
+recreate them to obtain the new addons. An API error installing YAKD fails the create operation and leaves
 the partial cluster available for inspection or deletion through `cloud`.
+
+### Cloud portal
+
+Open <http://localhost:3000> after `docker compose up -d`. The separate `portal`
+container serves an Azure-inspired interface for the existing cloud API. It has
+no Docker socket, kubeconfig mount or extra privileges. Both the portal and
+management API are published only on localhost.
+
+Use it to create/delete clusters, download kubeconfig, inspect machine types and
+machines, create/publish/unpublish/delete cloud volumes, view the allocation budget,
+and follow cloud operations. Destructive actions require confirmation. A downloaded
+kubeconfig is a file: the browser does not merge it into `~/.kube/config`. Use
+`kubectl --kubeconfig /path/to/cloud-demo.yaml get nodes` or the existing
+`cloud clusters get-credentials demo` command when you want to merge credentials.
+
+A cluster's **Monitoring** tab shows Ready nodes, actual CPU/memory usage, resource
+requests versus allocatable capacity, Pending/unhealthy Pod counts and the cloud
+storage allocation budget. Allocated storage is reserved capacity, not bytes written.
+Metrics refresh every 15 seconds while the page is visible. Missing, partial or stale
+measurements are labelled; there is no persistent history or alerting service.
+
+The **Kubernetes** tab embeds the automatically installed YAKD dashboard using its
+existing localhost Service endpoint. YAKD provides workload details and logs; it is
+not rewritten or proxied under a different URL path. A separate link opens the same
+dashboard in a new tab. On a remote Linux VM, forward port 3000 and the dashboard's
+reported localhost port with SSH, preserving the dashboard port number.
+
+Autoscaler installation and load-generation exercises remain terminal operations:
+the portal has no `lab` controls. CLI and portal changes affect the same resources.
+The interface is intended for a trusted local teaching environment, without multiuser
+login or public network exposure.
+
+Metrics Server is pinned by image digest and installed by the cloud through the
+Kubernetes API. Minikube's generated kubelet certificates lack IP SANs, so this lab
+uses `--kubelet-insecure-tls` for **internal kubelet scraping only**. This is a lab
+limit, not a production configuration; it does not disable certificate checking
+for the cloud API or your kubeconfig. Allow a short startup interval for the first
+measurements. A manifest installation error fails cluster creation; an initially
+empty Metrics API is shown as unavailable until observations arrive.
 
 ### Local NodePort and LoadBalancer services
 
@@ -289,7 +328,7 @@ with the second `/24` reserved for Service relays. Update all four values togeth
 required for the minikube network API on Linux as well as Docker Desktop. Start
 Compose again and create a new cluster. Before upgrading an older host-network
 installation, delete its cluster with the old cloud, run `docker compose down`,
-pull the updated images, and run `docker compose up -d cloud` before recreating
+pull the updated images, and run `docker compose up -d` before recreating
 the cluster. Existing clusters do not migrate between networks automatically. The Service
 exposure network expands older `/24` installations to `/23`: delete the old
 cluster before `docker compose down`, then recreate it using the updated network.
@@ -318,7 +357,8 @@ restart NFS afterward with `docker compose restart nfs`. Keep backups; do not us
 ## Development
 
 You need Go 1.27.3, Bash and zsh for the configuration tests, `uv` for pre-commit,
-and Docker for real infrastructure tests.
+and Docker for real infrastructure tests. Frontend development/tests also require
+Node.js 26.12.1 and `npm --prefix web ci`; students need neither Node nor Go.
 
 ```sh
 make build
@@ -327,6 +367,10 @@ make verify
 make integration
 make images
 make storage-integration
+make portal-test
+npx --prefix web playwright install chromium
+npm --prefix web run test:e2e
+make portal-smoke
 ```
 
 `make verify` runs lint, module checks, vulnerability analysis, the 90% coverage
@@ -351,10 +395,15 @@ To use locally built images on Linux or macOS, add these entries to `.env`:
 CLOUD_IMAGE=minikube-cloud-lab/cloud:dev
 LAB_IMAGE=minikube-cloud-lab/lab:dev
 NFS_IMAGE=minikube-cloud-lab/nfs:dev
+PORTAL_IMAGE=minikube-cloud-lab/portal:dev
 ```
 
-CI checks Go, manifests, Compose, and images on Ubuntu amd64, runs Trivy against
+CI checks Go, TypeScript, UI/browser tests, manifests, a live portal-to-cloud image
+smoke test, Compose, and images on Ubuntu amd64. It runs Trivy against
 fixable CRITICAL/HIGH findings, and publishes amd64/arm64 images to GHCR.
+The opt-in browser test `PORTAL_REAL_URL=http://localhost:3000 npm --prefix web run test:e2e -- real.spec.ts`
+creates and deletes a real cluster and volume: run it only against a disposable
+cloud with dedicated state/storage, never a student cloud containing work.
 The manually triggered `Student path` workflow runs the complete Compose
 1→2→1 cycle.
 
