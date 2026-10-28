@@ -41,3 +41,12 @@ cover:
 # Mount/loop operations run only inside an isolated Linux container.
 storage-integration:
 	bash tests/storage-backend.sh
+
+.PHONY: portal-test portal-build
+portal-test:
+	npm --prefix web run typecheck
+	npm --prefix web test -- --run
+
+portal-build:
+	npm --prefix web run build
+	docker build --target portal -t minikube-cloud-lab/portal:dev .

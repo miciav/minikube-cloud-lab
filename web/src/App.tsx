@@ -1,0 +1,4 @@
+import {useEffect,useState} from 'react';
+import {Button,FluentProvider,webLightTheme,Title1} from '@fluentui/react-components';
+import {request} from './api';
+export function App(){const[error,setError]=useState('');const[count,setCount]=useState<number|null>(null);const[retry,setRetry]=useState(0);useEffect(()=>{const controller=new AbortController();request<unknown[]>('clusters',{signal:controller.signal}).then(v=>{setCount(v.length);setError('')}).catch(e=>{if(!controller.signal.aborted)setError(e.message)});return()=>controller.abort()},[retry]);return <FluentProvider theme={webLightTheme}><header><strong>Cloud Lab</strong></header><main><Title1>Overview</Title1>{error?<div role="alert">{error} <Button onClick={()=>setRetry(v=>v+1)}>Retry</Button></div>:<p>{count===null?'Loading cloud resources…':`${count} clusters`}</p>}</main></FluentProvider>}

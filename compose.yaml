@@ -11,6 +11,7 @@ services:
       CLOUD_DOCKER_NETWORK: minikube-cloud-lab
       CLOUD_DOCKER_IP: ${CLOUD_DOCKER_IP:-172.30.0.254}
     networks:
+      portal: {}
       lab:
         ipv4_address: ${CLOUD_DOCKER_IP:-172.30.0.254}
     user: "${UID:?set UID in .env}:${GID:?set GID in .env}"
@@ -36,6 +37,12 @@ services:
     volumes:
       - storage:/export
     restart: unless-stopped
+  portal:
+    image: ${PORTAL_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/portal:latest}
+    depends_on: [cloud]
+    ports: ["127.0.0.1:3000:3000"]
+    networks: [portal]
+    restart: unless-stopped
   lab:
     image: ${LAB_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/lab:latest}
     profiles: [tools]
@@ -46,6 +53,7 @@ services:
     volumes:
       - ${HOME}/.minikube-cloud-lab:/data:ro
 networks:
+  portal: {}
   lab:
     name: minikube-cloud-lab
     driver: bridge
