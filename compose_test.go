@@ -13,7 +13,7 @@ import (
 
 func TestComposeConfiguration(t *testing.T) {
 	envPath := filepath.Join(t.TempDir(), "sample.env")
-	if err := os.WriteFile(envPath, []byte("UID=1001\nGID=1001\nDOCKER_GID=998\nHOME=/tmp/cloud-lab-home\nCLOUD_IMAGE=example/cloud:test\nLAB_IMAGE=example/lab:test\n"), 0o600); err != nil {
+	if err := os.WriteFile(envPath, []byte("UID=1001\nGID=1001\nDOCKER_GID=998\nHOME=/tmp/cloud-lab-home\nCLOUD_IMAGE=example/cloud:test\nLAB_IMAGE=example/lab:test\nPORTAL_IMAGE=example/portal:test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("docker", "compose", "--env-file", envPath, "-f", "compose.yaml", "--profile", "tools", "config", "--format", "json")
@@ -62,8 +62,18 @@ func TestComposeConfiguration(t *testing.T) {
 	if err := json.Unmarshal(output, &config); err != nil {
 		t.Fatal(err)
 	}
-	if len(config.Services) != 3 {
+	if len(config.Services) != 4 {
 		t.Fatalf("services: %+v", config.Services)
+	}
+	portal := config.Services["portal"]
+	if portal.Image != "example/portal:test" || len(portal.Networks) != 1 || len(portal.Volumes) != 0 || len(portal.CapAdd) != 0 || len(portal.Ports) != 1 || portal.Ports[0].HostIP != "127.0.0.1" || portal.Ports[0].Target != 3000 || portal.Ports[0].Published != "3000" {
+		t.Fatalf("portal isolation: %+v", portal)
+	}
+	if _, ok := portal.Networks["portal"]; !ok {
+		t.Fatal("portal shares minikube node network")
+	}
+	if _, ok := config.Services["cloud"].Networks["portal"]; !ok {
+		t.Fatal("cloud missing portal network")
 	}
 	cloud := config.Services["cloud"]
 	lab := config.Services["lab"]
@@ -84,7 +94,7 @@ func TestComposeConfiguration(t *testing.T) {
 	if network.Name != "minikube-cloud-lab" || network.Driver != "bridge" || len(network.IPAM.Config) != 1 || network.IPAM.Config[0].Subnet != "172.30.0.0/23" || network.IPAM.Config[0].Gateway != "172.30.0.1" {
 		t.Fatalf("bridge IPAM: %+v", network)
 	}
-	if len(cloud.Networks) != 1 || cloud.Networks["lab"].IPv4Address != "172.30.0.254" || len(lab.Networks) != 0 {
+	if len(cloud.Networks) != 2 || cloud.Networks["lab"].IPv4Address != "172.30.0.254" || len(lab.Networks) != 0 {
 		t.Fatalf("shared network: cloud=%+v lab=%+v", cloud.Networks, lab.Networks)
 	}
 	if cloud.Environment["CLOUD_DOCKER_NETWORK"] != "minikube-cloud-lab" || cloud.Environment["CLOUD_DOCKER_IP"] != "172.30.0.254" || lab.Environment["KUBECONFIG"] != "/data/minikube/kubeconfig" {
