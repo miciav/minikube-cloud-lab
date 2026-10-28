@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/miciav/minikube-cloud-lab/internal/cloud"
 )
@@ -74,7 +76,12 @@ func NewServer(svc *cloud.Service) http.Handler {
 			respond(w, 400, nil, cloud.ErrInvalid)
 			return
 		}
-		respond(w, 200, map[string]string{"status": "published"}, svc.PublishVolume(r.Context(), r.PathValue("id"), request.Cluster))
+		expected, err := clusterGeneration(r)
+		if err != nil {
+			respond(w, 400, nil, err)
+			return
+		}
+		respond(w, 200, map[string]string{"status": "published"}, svc.PublishVolumeIfUnchanged(r.Context(), r.PathValue("id"), request.Cluster, expected))
 	})
 	mux.HandleFunc("POST /v1/volumes/{id}/unpublish", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]string{"status": "unpublished"}, svc.UnpublishVolume(r.Context(), r.PathValue("id")))
@@ -102,10 +109,18 @@ func NewServer(svc *cloud.Service) http.Handler {
 	})
 	mux.HandleFunc("GET /v1/clusters/{name}", func(w http.ResponseWriter, r *http.Request) {
 		c, err := svc.Cluster(r.PathValue("name"))
+		if err == nil {
+			w.Header().Set("ETag", strconv.Quote(c.CreatedAt.Format(time.RFC3339Nano)))
+		}
 		respond(w, 200, c, err)
 	})
 	mux.HandleFunc("DELETE /v1/clusters/{name}", func(w http.ResponseWriter, r *http.Request) {
-		op, err := svc.DeleteCluster(r.PathValue("name"), "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		expected, err := clusterGeneration(r)
+		if err != nil {
+			respond(w, 400, nil, err)
+			return
+		}
+		op, err := svc.DeleteClusterIfUnchanged(r.PathValue("name"), "student", expected) //nolint:contextcheck // accepted work must survive HTTP request cancellation.
 		respond(w, http.StatusAccepted, op, err)
 	})
 	mux.HandleFunc("GET /v1/clusters/{name}/kubeconfig", func(w http.ResponseWriter, r *http.Request) {

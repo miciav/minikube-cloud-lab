@@ -62,7 +62,7 @@ func TestStaticPublicationBindingRetentionAndUnpublish(t *testing.T) {
 	s, v := staticService(t)
 	ctx := context.Background()
 	client := staticClient()
-	if err := s.reservePublication(v.ID, "demo"); err != nil {
+	if err := s.reservePublication(v.ID, "demo", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.syncPublication(ctx, client, v.ID); err != nil {
@@ -136,7 +136,7 @@ func TestStaticClaimDoesNotAllocateAndForeignPVIsProtected(t *testing.T) {
 	if len(s.Volumes()) != 1 {
 		t.Fatal("static claim dynamically allocated")
 	}
-	if err := s.reservePublication(v.ID, "demo"); err != nil {
+	if err := s.reservePublication(v.ID, "demo", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.CoreV1().PersistentVolumes().Create(ctx, &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: v.ID, UID: "foreign"}}, metav1.CreateOptions{}); err != nil {
@@ -152,7 +152,7 @@ func TestStaticClaimDoesNotAllocateAndForeignPVIsProtected(t *testing.T) {
 
 func TestStaticClusterDeletionReleasesUnboundPublication(t *testing.T) {
 	s, v := staticService(t)
-	if err := s.reservePublication(v.ID, "demo"); err != nil {
+	if err := s.reservePublication(v.ID, "demo", nil); err != nil {
 		t.Fatal(err)
 	}
 	op, err := s.DeleteCluster("demo", "test")
@@ -257,7 +257,7 @@ func TestStaticUnpublishWaitsForProtectionController(t *testing.T) {
 	s, v := staticService(t)
 	client := staticClient()
 	ctx := context.Background()
-	if err := s.reservePublication(v.ID, "demo"); err != nil {
+	if err := s.reservePublication(v.ID, "demo", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.syncPublication(ctx, client, v.ID); err != nil {
@@ -282,7 +282,7 @@ func TestStaticUnpublishRejectsReplacedIdentityAndUnavailableAPI(t *testing.T) {
 	s, v := staticService(t)
 	client := staticClient()
 	ctx := context.Background()
-	if err := s.reservePublication(v.ID, "demo"); err != nil {
+	if err := s.reservePublication(v.ID, "demo", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.syncPublication(ctx, client, v.ID); err != nil {
@@ -344,7 +344,7 @@ func TestStaticPublishCannotRecreatePreviouslyOwnedPV(t *testing.T) {
 	s, v := staticService(t)
 	client := staticClient()
 	ctx := context.Background()
-	if err := s.reservePublication(v.ID, "demo"); err != nil {
+	if err := s.reservePublication(v.ID, "demo", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.syncPublication(ctx, client, v.ID); err != nil {

@@ -189,10 +189,19 @@ func (s *Service) CreateCluster(name, kind string, minM, maxM int, requester str
 
 // DeleteCluster accepts teardown of a stable cluster, including a failed creation.
 func (s *Service) DeleteCluster(name, requester string) (Operation, error) {
+	return s.DeleteClusterIfUnchanged(name, requester, nil)
+}
+
+// DeleteClusterIfUnchanged atomically checks the selected generation before accepting teardown.
+func (s *Service) DeleteClusterIfUnchanged(name, requester string, expected *time.Time) (Operation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.state.cluster(name); err != nil {
+	current, err := s.state.cluster(name)
+	if err != nil {
 		return Operation{}, err
+	}
+	if expected != nil && !current.CreatedAt.Equal(*expected) {
+		return Operation{}, fmt.Errorf("%w: cluster changed; refresh before deleting", ErrFailedPrecondition)
 	}
 	for _, op := range s.state.Operations {
 		if op.Status == "RUNNING" {

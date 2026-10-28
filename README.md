@@ -126,7 +126,9 @@ management API are published only on localhost.
 
 Use it to create/delete clusters, download kubeconfig, inspect machine types and
 machines, create/publish/unpublish/delete cloud volumes, view the allocation budget,
-and follow cloud operations. Destructive actions require confirmation. A downloaded
+and follow cloud operations. Destructive actions require confirmation. Cluster deletion and volume publication
+also check the selected cluster generation, so a cluster recreated under the same
+name is not affected by an old dialog. A downloaded
 kubeconfig is a file: the browser does not merge it into `~/.kube/config`. Use
 `kubectl --kubeconfig /path/to/cloud-demo.yaml get nodes` or the existing
 `cloud clusters get-credentials demo` command when you want to merge credentials.
@@ -273,6 +275,11 @@ You can also apply those files directly with
 | `cloud operations describe ID` | Displays one operation |
 | `lab install autoscaler` / `lab uninstall autoscaler` | Installs / removes Autoscaler |
 | `lab load start` / `lab load stop` | Creates / deletes the workload; `start --replicas N` |
+
+The management API returns the cluster generation as an ETag on
+`GET /v1/clusters/{name}`. Portal mutations send it as a single strong `If-Match`
+header on cluster DELETE and volume publish; a mismatch returns 412. Existing
+CLI/API clients without this optional header retain their current behavior.
 
 The cloud CLI uses `--api-url` or `CLOUD_API_URL` (default
 `http://127.0.0.1:8080`). `lab` accepts `--kubeconfig` and `--context`.

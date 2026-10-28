@@ -41,6 +41,7 @@ type Action = {
     | "publish"
     | "unpublish";
   target?: string;
+  generation?: string;
 };
 const headings = {
   createCluster: "Create cluster",
@@ -127,6 +128,7 @@ function CloudApp() {
     maxNodes: "3",
     capacity: "1Gi",
     cluster: "",
+    clusterGeneration: "",
     confirm: "",
   });
   const clusterData = useResource<Cluster[]>("clusters", refresh),
@@ -151,6 +153,36 @@ function CloudApp() {
     window.addEventListener("hashchange", change);
     return () => window.removeEventListener("hashchange", change);
   }, []);
+  useEffect(() => {
+    if (!dialogOpen || !action || clusterData.data === null) return;
+    const name =
+      action.kind === "deleteCluster"
+        ? action.target
+        : action.kind === "publish"
+          ? form.cluster
+          : undefined;
+    const generation =
+      action.kind === "deleteCluster"
+        ? action.generation
+        : form.clusterGeneration;
+    if (
+      name &&
+      !clusterData.data.some(
+        (c) => c.name === name && c.createdAt === generation,
+      )
+    ) {
+      setDialogOpen(false);
+      setNotice(
+        "Cluster changed or was deleted. Review the current resource before continuing.",
+      );
+    }
+  }, [
+    clusterData.data,
+    dialogOpen,
+    action,
+    form.cluster,
+    form.clusterGeneration,
+  ]);
   const section = route.split("/")[0],
     selected = clusters.find((c) => route === `clusters/${c.name}`);
   function open(next: Action) {
@@ -161,14 +193,31 @@ function CloudApp() {
       maxNodes: "3",
       capacity: "1Gi",
       cluster: clusters.find((c) => c.status === "RUNNING")?.name ?? "",
+      clusterGeneration:
+        clusters.find((c) => c.status === "RUNNING")?.createdAt ?? "",
       confirm: "",
     });
     setActionError("");
-    setAction(next);
+    setAction({
+      ...next,
+      generation:
+        next.kind === "deleteCluster"
+          ? clusters.find((c) => c.name === next.target)?.createdAt
+          : undefined,
+    });
     setDialogOpen(true);
   }
   function field(name: keyof typeof form, value: string) {
-    setForm((v) => ({ ...v, [name]: value }));
+    setForm((v) => ({
+      ...v,
+      [name]: value,
+      ...(name === "cluster"
+        ? {
+            clusterGeneration:
+              clusters.find((c) => c.name === value)?.createdAt ?? "",
+          }
+        : {}),
+    }));
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -177,6 +226,19 @@ function CloudApp() {
     setActionError("");
     const id = encodeURIComponent(action.target ?? "");
     try {
+      const generation =
+        action.kind === "deleteCluster"
+          ? action.generation
+          : action.kind === "publish"
+            ? form.clusterGeneration
+            : undefined;
+      if (
+        (action.kind === "deleteCluster" || action.kind === "publish") &&
+        !generation
+      )
+        throw Error(
+          "Cluster generation unavailable; refresh before continuing.",
+        );
       switch (action.kind) {
         case "createCluster": {
           const op = await request<Operation>("clusters", {
@@ -194,6 +256,7 @@ function CloudApp() {
         case "deleteCluster": {
           const op = await request<Operation>(`clusters/${id}`, {
             method: "DELETE",
+            headers: { "If-Match": JSON.stringify(generation) },
           });
           setNotice(`Operation ${op.id} accepted.`);
           if (route === `clusters/${action.target}`)
@@ -216,6 +279,7 @@ function CloudApp() {
           await request(`volumes/${id}/publish`, {
             method: "POST",
             body: JSON.stringify({ cluster: form.cluster }),
+            headers: { "If-Match": JSON.stringify(generation) },
           });
           setNotice("Volume published.");
           break;

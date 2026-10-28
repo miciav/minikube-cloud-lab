@@ -177,13 +177,11 @@ it("downloads kubeconfig without storing credentials", async () => {
   const { downloadKubeconfig } = await import("./api");
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockResolvedValue(
-        new Response("SECRET-TEST-CONFIG", {
-          headers: { "Content-Type": "application/yaml" },
-        }),
-      ),
+    vi.fn().mockResolvedValue(
+      new Response("SECRET-TEST-CONFIG", {
+        headers: { "Content-Type": "application/yaml" },
+      }),
+    ),
   );
   const create = vi.fn().mockReturnValue("blob:test");
   const revoke = vi.fn();
@@ -245,4 +243,87 @@ it("prevents double submission and preserves capacity form on failure", async ()
     "storage capacity exhausted",
   );
   expect(capacity).toHaveProperty("value", "5Gi");
+});
+
+it("invalidates a destructive confirmation when the selected cluster is recreated", async () => {
+  const { act, waitFor } = await import("@testing-library/react");
+  const u = userEvent.setup();
+  let generation = cluster.createdAt;
+  const fetch = fixture((path, init) =>
+    path === "/v1/clusters" && init.method !== "POST"
+      ? new Response(JSON.stringify([{ ...cluster, createdAt: generation }]))
+      : undefined,
+  );
+  vi.stubGlobal("fetch", fetch);
+  render(<App />);
+  await u.click(screen.getByRole("link", { name: "Clusters" }));
+  await u.click(await screen.findByRole("button", { name: "Delete" }));
+  const d = screen.getByRole("dialog");
+  await u.type(within(d).getByLabelText("Confirm resource name"), "demo");
+  generation = "2026-10-28T01:00:00Z";
+  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(
+    fetch.mock.calls.filter(
+      ([p, i]) => p === "/v1/clusters/demo" && i?.method === "DELETE",
+    ),
+  ).toHaveLength(0);
+});
+it("sends the confirmed generation when deleting a cluster and publishing a volume", async () => {
+  const u = userEvent.setup();
+  const fetch = fixture((p, i) =>
+    p === "/v1/clusters/demo" && i.method === "DELETE"
+      ? new Response(JSON.stringify({ id: "op-delete" }), { status: 202 })
+      : undefined,
+  );
+  vi.stubGlobal("fetch", fetch);
+  render(<App />);
+  await u.click(screen.getByRole("link", { name: "Clusters" }));
+  await u.click(await screen.findByRole("button", { name: "Delete" }));
+  const d = screen.getByRole("dialog");
+  await u.type(within(d).getByLabelText("Confirm resource name"), "demo");
+  await u.click(within(d).getByRole("button", { name: "Delete" }));
+  expect(fetch).toHaveBeenCalledWith(
+    "/v1/clusters/demo",
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        "If-Match": JSON.stringify(cluster.createdAt),
+      }),
+    }),
+  );
+  await u.click(screen.getByRole("link", { name: "Volumes" }));
+  await u.click(await screen.findByRole("button", { name: "Publish" }));
+  await u.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Publish" }),
+  );
+  expect(fetch).toHaveBeenCalledWith(
+    "/v1/volumes/pvc-test/publish",
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        "If-Match": JSON.stringify(cluster.createdAt),
+      }),
+    }),
+  );
+});
+it("invalidates publication when its selected cluster is replaced", async () => {
+  const { act, waitFor } = await import("@testing-library/react");
+  const u = userEvent.setup();
+  let generation = cluster.createdAt;
+  const fetch = fixture((p, i) =>
+    p === "/v1/clusters" && i.method !== "POST"
+      ? new Response(JSON.stringify([{ ...cluster, createdAt: generation }]))
+      : undefined,
+  );
+  vi.stubGlobal("fetch", fetch);
+  render(<App />);
+  await u.click(screen.getByRole("link", { name: "Volumes" }));
+  await u.click(await screen.findByRole("button", { name: "Publish" }));
+  generation = "2026-10-28T02:00:00Z";
+  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(
+    fetch.mock.calls.filter(
+      ([p, i]) => String(p).endsWith("/publish") && i?.method === "POST",
+    ),
+  ).toHaveLength(0);
 });
