@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -13,7 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 func (s *Service) volume(id string) (Volume, error) {
@@ -45,9 +43,14 @@ func (s *Service) replaceVolume(old, next Volume) error {
 
 // PublishVolume reserves a volume exclusively and publishes an unbound static PV.
 func (s *Service) PublishVolume(ctx context.Context, id, cluster string) error {
+	return s.PublishVolumeIfUnchanged(ctx, id, cluster, nil)
+}
+
+// PublishVolumeIfUnchanged checks the selected cluster generation before reserving the volume.
+func (s *Service) PublishVolumeIfUnchanged(ctx context.Context, id, cluster string, expected *time.Time) error {
 	s.workMu.Lock()
 	defer s.workMu.Unlock()
-	if err := s.reservePublication(id, cluster); err != nil {
+	if err := s.reservePublication(id, cluster, expected); err != nil {
 		return err
 	}
 	client, err := s.clusterStorageClient(cluster)
@@ -57,11 +60,15 @@ func (s *Service) PublishVolume(ctx context.Context, id, cluster string) error {
 	return s.syncPublication(ctx, client, id)
 }
 
-func (s *Service) reservePublication(id, cluster string) error {
+func (s *Service) reservePublication(id, cluster string, expected *time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.ready(cluster); err != nil {
+	c, err := s.ready(cluster)
+	if err != nil {
 		return err
+	}
+	if expected != nil && !c.CreatedAt.Equal(*expected) {
+		return fmt.Errorf("%w: cluster changed; refresh before publishing", ErrFailedPrecondition)
 	}
 	for i, v := range s.state.Volumes {
 		if v.ID == id {
@@ -278,7 +285,7 @@ func (s *Service) reconcileStaticVolume(ctx context.Context, client kubernetes.I
 }
 
 func (s *Service) clusterStorageClient(cluster string) (kubernetes.Interface, error) {
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: filepath.Join(s.dir, "minikube", "kubeconfig")}, &clientcmd.ConfigOverrides{CurrentContext: cluster}).ClientConfig()
+	cfg, err := s.clusterRESTConfig(cluster)
 	if err != nil {
 		return nil, err
 	}

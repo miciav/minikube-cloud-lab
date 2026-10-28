@@ -64,7 +64,7 @@ _cloud_lab_configure() {
     unalias cloud lab 2>/dev/null || true
     export KUBECONFIG="$HOME/.kube/config"
     printf 'Lab configuration ready. Existing .env values were preserved.\n'
-    printf 'Start the cloud yourself with docker compose up -d cloud from %s.\n' "$CLOUD_LAB_ROOT"
+    printf 'Start the cloud and portal yourself with docker compose up -d from %s.\n' "$CLOUD_LAB_ROOT"
 }
 
 if _cloud_lab_configure; then

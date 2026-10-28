@@ -9,7 +9,8 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/cloud ./cmd/cloud && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/lab ./cmd/lab && \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/storage-nfs ./cmd/storage-nfs
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/storage-nfs ./cmd/storage-nfs && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/portal ./cmd/portal
 
 FROM docker:29.9.2-cli AS docker-cli
 
@@ -45,3 +46,16 @@ COPY --from=build /out/storage-nfs /usr/local/bin/storage-nfs
 COPY storage/supervisord.conf /etc/supervisor/conf.d/nfs.conf
 LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-lab"
 ENTRYPOINT ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/nfs.conf"]
+
+FROM --platform=$BUILDPLATFORM node:26.12.1-bookworm-slim AS web-build
+WORKDIR /src/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
+
+FROM base AS portal
+COPY --from=build /out/portal /usr/local/bin/portal
+COPY --from=web-build /src/web/dist /app/web
+USER 65532:65532
+ENTRYPOINT ["portal"]

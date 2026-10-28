@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"net/http"
-	"net/url"
-	"strings"
+	"strconv"
+	"time"
 
 	"github.com/miciav/minikube-cloud-lab/internal/cloud"
 )
@@ -24,6 +23,8 @@ func respond(w http.ResponseWriter, status int, value any, err error) {
 	if err != nil {
 		status = http.StatusInternalServerError
 		switch {
+		case errors.Is(err, cloud.ErrUnavailable):
+			status = http.StatusServiceUnavailable
 		case errors.Is(err, cloud.ErrInvalid):
 			status = http.StatusBadRequest
 		case errors.Is(err, cloud.ErrNotFound):
@@ -43,6 +44,14 @@ func respond(w http.ResponseWriter, status int, value any, err error) {
 // NewServer routes management requests to the shared cloud service.
 func NewServer(svc *cloud.Service) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/clusters/{name}/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		v, err := svc.Dashboard(r.Context(), r.PathValue("name"))
+		respond(w, 200, v, err)
+	})
+	mux.HandleFunc("GET /v1/clusters/{name}/monitoring", func(w http.ResponseWriter, r *http.Request) {
+		v, err := svc.Monitoring(r.Context(), r.PathValue("name"))
+		respond(w, 200, v, err)
+	})
 	mux.HandleFunc("GET /v1/storage", func(w http.ResponseWriter, _ *http.Request) { v, err := svc.StorageCapacity(); respond(w, 200, v, err) })
 	mux.HandleFunc("POST /v1/volumes", func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
@@ -67,7 +76,12 @@ func NewServer(svc *cloud.Service) http.Handler {
 			respond(w, 400, nil, cloud.ErrInvalid)
 			return
 		}
-		respond(w, 200, map[string]string{"status": "published"}, svc.PublishVolume(r.Context(), r.PathValue("id"), request.Cluster))
+		expected, err := clusterGeneration(r)
+		if err != nil {
+			respond(w, 400, nil, err)
+			return
+		}
+		respond(w, 200, map[string]string{"status": "published"}, svc.PublishVolumeIfUnchanged(r.Context(), r.PathValue("id"), request.Cluster, expected))
 	})
 	mux.HandleFunc("POST /v1/volumes/{id}/unpublish", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]string{"status": "unpublished"}, svc.UnpublishVolume(r.Context(), r.PathValue("id")))
@@ -95,10 +109,18 @@ func NewServer(svc *cloud.Service) http.Handler {
 	})
 	mux.HandleFunc("GET /v1/clusters/{name}", func(w http.ResponseWriter, r *http.Request) {
 		c, err := svc.Cluster(r.PathValue("name"))
+		if err == nil {
+			w.Header().Set("ETag", strconv.Quote(c.CreatedAt.Format(time.RFC3339Nano)))
+		}
 		respond(w, 200, c, err)
 	})
 	mux.HandleFunc("DELETE /v1/clusters/{name}", func(w http.ResponseWriter, r *http.Request) {
-		op, err := svc.DeleteCluster(r.PathValue("name"), "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		expected, err := clusterGeneration(r)
+		if err != nil {
+			respond(w, 400, nil, err)
+			return
+		}
+		op, err := svc.DeleteClusterIfUnchanged(r.PathValue("name"), "student", expected) //nolint:contextcheck // accepted work must survive HTTP request cancellation.
 		respond(w, http.StatusAccepted, op, err)
 	})
 	mux.HandleFunc("GET /v1/clusters/{name}/kubeconfig", func(w http.ResponseWriter, r *http.Request) {
@@ -120,26 +142,7 @@ func NewServer(svc *cloud.Service) http.Handler {
 		op, err := svc.Operation(r.PathValue("id"))
 		respond(w, 200, op, err)
 	})
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host := r.Host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
-		}
-		trusted := strings.EqualFold(host, "localhost") || net.ParseIP(host).IsLoopback()
-		if origin := r.Header.Get("Origin"); origin != "" {
-			u, err := url.Parse(origin)
-			scheme := "http"
-			if r.TLS != nil {
-				scheme = "https"
-			}
-			trusted = trusted && err == nil && u.Scheme == scheme && strings.EqualFold(u.Host, r.Host) && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == ""
-		}
-		if !trusted || r.Header.Get("Sec-Fetch-Site") == "cross-site" {
-			respond(w, http.StatusForbidden, map[string]string{"error": "untrusted management request"}, nil)
-			return
-		}
-		mux.ServeHTTP(w, r)
-	})
+	return Management(mux)
 }
 
 func decodeStorageRequest(w http.ResponseWriter, r *http.Request, value any) error {

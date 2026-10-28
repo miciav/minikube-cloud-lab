@@ -48,8 +48,31 @@ jobs:
             coverage.out
             vuln-report.json
           if-no-files-found: ignore
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.12.1"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm --prefix web ci
+      - run: make portal-test
+      - run: npm --prefix web run build
+      - run: npm --prefix web audit --audit-level=high
+      - name: Verify preinstalled browser
+        run: google-chrome --version
+      - run: npm --prefix web run test:e2e
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: portal-browser-failures
+          path: web/test-results/
+          if-no-files-found: ignore
   images:
-    needs: [pre-commit, go]
+    needs: [pre-commit, go, frontend]
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -57,7 +80,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
-      - run: make images storage-integration
+      - run: make images storage-integration portal-smoke
       - name: Image and Compose smoke tests
         run: |
           docker run --rm minikube-cloud-lab/cloud:dev --help
@@ -82,6 +105,13 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: minikube-cloud-lab/lab:dev
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Scan portal image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: minikube-cloud-lab/portal:dev
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
@@ -136,5 +166,17 @@ jobs:
           tags: |
             ghcr.io/miciav/minikube-cloud-lab/nfs:latest
             ghcr.io/miciav/minikube-cloud-lab/nfs:sha-${{ github.sha }}
+          cache-from: type=gha,scope=images
+          cache-to: type=gha,scope=images,mode=max
+      - name: Publish portal
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: portal
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/miciav/minikube-cloud-lab/portal:latest
+            ghcr.io/miciav/minikube-cloud-lab/portal:sha-${{ github.sha }}
           cache-from: type=gha,scope=images
           cache-to: type=gha,scope=images,mode=max
