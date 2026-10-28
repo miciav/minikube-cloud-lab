@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   Button,
+  useRestoreFocusTarget,
   TabList,
   Tab,
   Dialog,
@@ -102,11 +103,20 @@ function Empty() {
 }
 
 export function App() {
+  return (
+    <FluentProvider theme={webLightTheme} className="portal">
+      <CloudApp />
+    </FluentProvider>
+  );
+}
+function CloudApp() {
+  const restoreFocusTarget = useRestoreFocusTarget();
   const [route, setRoute] = useState(
     () => window.location.hash.slice(2) || "overview",
   );
   const [refresh, setRefresh] = useState(0);
   const [action, setAction] = useState<Action | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
@@ -155,6 +165,7 @@ export function App() {
     });
     setActionError("");
     setAction(next);
+    setDialogOpen(true);
   }
   function field(name: keyof typeof form, value: string) {
     setForm((v) => ({ ...v, [name]: value }));
@@ -213,7 +224,7 @@ export function App() {
           setNotice("Volume unpublished; data retained in the cloud.");
           break;
       }
-      setAction(null);
+      setDialogOpen(false);
       setRefresh((v) => v + 1);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Request failed");
@@ -234,7 +245,7 @@ export function App() {
   const deleting =
     action?.kind === "deleteCluster" || action?.kind === "deleteVolume";
   return (
-    <FluentProvider theme={webLightTheme} className="portal">
+    <>
       <header>
         <a href="#/" className="brand">
           <span className="brand-icon" aria-hidden="true">
@@ -289,6 +300,7 @@ export function App() {
             <div className="notice" role="status">
               {notice}
               <Button
+                {...restoreFocusTarget}
                 size="small"
                 appearance="transparent"
                 onClick={() => setNotice("")}
@@ -301,7 +313,12 @@ export function App() {
           {error && (
             <div className="error" role="alert">
               {error}{" "}
-              <Button onClick={() => setRefresh((v) => v + 1)}>Retry</Button>
+              <Button
+                {...restoreFocusTarget}
+                onClick={() => setRefresh((v) => v + 1)}
+              >
+                Retry
+              </Button>
             </div>
           )}
           <div className="page-heading">
@@ -323,7 +340,12 @@ export function App() {
                   : "Manage your cloud infrastructure and follow its operations."}
               </p>
             </div>
-            <Button onClick={() => setRefresh((v) => v + 1)}>Refresh</Button>
+            <Button
+              {...restoreFocusTarget}
+              onClick={() => setRefresh((v) => v + 1)}
+            >
+              Refresh
+            </Button>
           </div>
           {section === "overview" && (
             <>
@@ -358,6 +380,7 @@ export function App() {
                   inspect cluster health.
                 </p>
                 <Button
+                  {...restoreFocusTarget}
                   appearance="primary"
                   onClick={() => open({ kind: "createCluster" })}
                 >
@@ -387,6 +410,7 @@ export function App() {
             <>
               <div className="toolbar">
                 <Button
+                  {...restoreFocusTarget}
                   appearance="primary"
                   onClick={() => open({ kind: "createCluster" })}
                 >
@@ -421,6 +445,7 @@ export function App() {
                         </td>
                         <td>
                           <Button
+                            {...restoreFocusTarget}
                             onClick={() =>
                               open({ kind: "deleteCluster", target: c.name })
                             }
@@ -504,6 +529,7 @@ export function App() {
             <>
               <div className="toolbar">
                 <Button
+                  {...restoreFocusTarget}
                   appearance="primary"
                   onClick={() => open({ kind: "createVolume" })}
                 >
@@ -571,6 +597,7 @@ export function App() {
                           <div className="row-actions">
                             {!v.cluster ? (
                               <Button
+                                {...restoreFocusTarget}
                                 onClick={() =>
                                   open({ kind: "publish", target: v.id })
                                 }
@@ -579,6 +606,7 @@ export function App() {
                               </Button>
                             ) : (
                               <Button
+                                {...restoreFocusTarget}
                                 onClick={() =>
                                   open({ kind: "unpublish", target: v.id })
                                 }
@@ -587,6 +615,7 @@ export function App() {
                               </Button>
                             )}
                             <Button
+                              {...restoreFocusTarget}
                               onClick={() =>
                                 open({ kind: "deleteVolume", target: v.id })
                               }
@@ -631,9 +660,9 @@ export function App() {
         </main>
       </div>
       <Dialog
-        open={action !== null}
+        open={dialogOpen}
         onOpenChange={(_, v) => {
-          if (!v.open && !busy) setAction(null);
+          if (!v.open && !busy) setDialogOpen(false);
         }}
       >
         <DialogSurface>
@@ -767,7 +796,7 @@ export function App() {
                 )}
               </DialogContent>
               <DialogActions>
-                <Button disabled={busy} onClick={() => setAction(null)}>
+                <Button disabled={busy} onClick={() => setDialogOpen(false)}>
                   Cancel
                 </Button>
                 <Button
@@ -786,7 +815,7 @@ export function App() {
           </form>
         </DialogSurface>
       </Dialog>
-    </FluentProvider>
+    </>
   );
 }
 
@@ -805,14 +834,21 @@ function ClusterDetails({
   onCredentials: () => void;
   onDelete: () => void;
 }) {
+  const restoreFocusTarget = useRestoreFocusTarget();
   const [tab, setTab] = useState("Overview");
   return (
     <>
       <div className="toolbar">
-        <Button onClick={onCredentials} disabled={cluster.status !== "RUNNING"}>
+        <Button
+          {...restoreFocusTarget}
+          onClick={onCredentials}
+          disabled={cluster.status !== "RUNNING"}
+        >
           Download kubeconfig
         </Button>
-        <Button onClick={onDelete}>Delete cluster</Button>
+        <Button {...restoreFocusTarget} onClick={onDelete}>
+          Delete cluster
+        </Button>
       </div>
       <TabList
         className="tabs"
