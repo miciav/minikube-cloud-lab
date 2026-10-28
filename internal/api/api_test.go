@@ -189,3 +189,50 @@ func TestClientTransportAndDecodeErrors(t *testing.T) {
 		t.Fatalf("cancellation: %v", err)
 	}
 }
+
+type storageBackend struct{}
+
+func (storageBackend) Ensure(context.Context, string, int64) error { return nil }
+func (storageBackend) Delete(context.Context, string) error        { return nil }
+
+func TestStorageBudgetAndManualAllocationThroughAPI(t *testing.T) {
+	c, s, _, _ := setup(t)
+	if err := s.ConfigureStorage(storageBackend{}, "1Gi", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	v, err := c.CreateVolume(context.Background(), "1Gi")
+	if err != nil || v.Status != "Available" || v.Policy != "Retain" || !v.Enforced {
+		t.Fatalf("volume %+v %v", v, err)
+	}
+	st, err := c.Storage(context.Background())
+	if err != nil || st.Total != "1Gi" || st.Allocated != "1Gi" || st.Available != "0" {
+		t.Fatalf("capacity %+v %v", st, err)
+	}
+	_, err = c.CreateVolume(context.Background(), "16Mi")
+	assertStatus(t, err, 409)
+	if err = c.DeleteVolume(context.Background(), v.ID); err != nil {
+		t.Fatal(err)
+	}
+	st, err = c.Storage(context.Background())
+	if err != nil || st.Available != "1Gi" {
+		t.Fatalf("released %+v %v", st, err)
+	}
+}
+
+func TestStaticPublicationRoutesValidateOwnership(t *testing.T) {
+	c, s, _, _ := setup(t)
+	if err := s.ConfigureStorage(storageBackend{}, "1Gi", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	v, err := c.CreateVolume(context.Background(), "64Mi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.PublishVolume(context.Background(), v.ID, "missing")
+	assertStatus(t, err, 404)
+	if err = c.UnpublishVolume(context.Background(), v.ID); err != nil {
+		t.Fatal(err)
+	}
+	err = c.UnpublishVolume(context.Background(), "pvc-missing")
+	assertStatus(t, err, 404)
+}

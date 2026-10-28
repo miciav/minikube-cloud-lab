@@ -367,3 +367,36 @@ func TestServeRejectsInvalidStorageAddress(t *testing.T) {
 		t.Fatalf("invalid NFS address: %v", err)
 	}
 }
+
+type storageBackend struct{}
+
+func (storageBackend) Ensure(context.Context, string, int64) error { return nil }
+func (storageBackend) Delete(context.Context, string) error        { return nil }
+func TestStorageCommands(t *testing.T) {
+	s, url := setup(t, nil)
+	if err := s.ConfigureStorage(storageBackend{}, "1Gi", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execute(t, url, "volumes", "create", "--capacity", "64Mi")
+	if err != nil || !strings.Contains(out, "pvc-") {
+		t.Fatalf("create %q %v", out, err)
+	}
+	out, err = execute(t, url, "storage", "status")
+	if err != nil || !strings.Contains(out, "64Mi") || !strings.Contains(out, "960Mi") {
+		t.Fatalf("status %q %v", out, err)
+	}
+	out, err = execute(t, url, "volumes", "list")
+	if err != nil || !strings.Contains(out, "Available") {
+		t.Fatalf("list %q %v", out, err)
+	}
+}
+
+func TestStaticCommandsRequireExplicitAdministratorInputs(t *testing.T) {
+	_, url := setup(t, nil)
+	if _, err := execute(t, url, "volumes", "publish", "pvc-test"); err == nil {
+		t.Fatal("missing cluster accepted")
+	}
+	if _, err := execute(t, url, "volumes", "unpublish"); err == nil {
+		t.Fatal("missing volume accepted")
+	}
+}

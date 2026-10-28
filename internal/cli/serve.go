@@ -18,6 +18,7 @@ import (
 	"github.com/miciav/minikube-cloud-lab/internal/cloud"
 	"github.com/miciav/minikube-cloud-lab/internal/externalgrpc"
 	"github.com/miciav/minikube-cloud-lab/internal/infra"
+	"github.com/miciav/minikube-cloud-lab/internal/storage"
 	protos "github.com/miciav/minikube-cloud-lab/proto"
 )
 
@@ -48,6 +49,10 @@ func serveCommand(factory func(string) (infra.Infra, error)) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if err := configureStorage(svc, dataDir, storageIP); err != nil {
+			return err
+		}
+
 		workerCtx, stopWorker := context.WithCancel(cmd.Context())
 		workerDone := make(chan struct{})
 		go func() {
@@ -93,4 +98,15 @@ func serveCommand(factory func(string) (infra.Infra, error)) *cobra.Command {
 	command.Flags().StringVar(&apiAddr, "api", "127.0.0.1:8080", "Management HTTP listen address")
 	command.Flags().StringVar(&grpcAddr, "grpc", "0.0.0.0:9090", "Cluster Autoscaler gRPC listen address")
 	return command
+}
+
+func configureStorage(svc *cloud.Service, dataDir, server string) error {
+	if server == "" {
+		return nil
+	}
+	total := os.Getenv("CLOUD_STORAGE_CAPACITY")
+	if total == "" {
+		total = "20Gi"
+	}
+	return svc.ConfigureStorage(storage.NewClient(filepath.Join(dataDir, "storage", "control.sock")), total, server)
 }
