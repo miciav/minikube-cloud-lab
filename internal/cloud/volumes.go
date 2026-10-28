@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,12 @@ func (s *Service) Volumes() []Volume {
 
 // CreateVolume allocates a volume for a Kubernetes claim.
 func (s *Service) CreateVolume(id, cluster, claim, capacity, policy string) (Volume, error) {
+	s.mu.Lock()
+	bounded := s.storage != nil
+	s.mu.Unlock()
+	if bounded {
+		return s.allocateVolume(id, cluster, claim, capacity, policy)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !validVolumeRequest(id, cluster, claim, capacity, policy) {
@@ -90,6 +97,8 @@ func (s *Service) ReleaseVolumeFor(id, cluster, claim, uid string) error {
 }
 
 func (s *Service) releaseVolumeFor(id, cluster, claim, uid, policy string) error {
+	s.volumeMu.Lock()
+	defer s.volumeMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, v := range s.state.Volumes {
@@ -145,13 +154,15 @@ func (s *Service) AttachVolume(id, cluster, claim, uid string) error {
 
 // DeleteVolume removes an available volume and its data.
 func (s *Service) DeleteVolume(id string) error {
+	s.volumeMu.Lock()
+	defer s.volumeMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, v := range s.state.Volumes {
 		if v.ID != id {
 			continue
 		}
-		if v.Status != "Available" && v.Status != "Deleting" {
+		if v.Status != "Available" && v.Status != "Deleting" && v.Status != "Creating" {
 			return ErrFailedPrecondition
 		}
 		return s.deleteVolume(i)
@@ -170,6 +181,23 @@ func (s *Service) deleteVolume(i int) error {
 		if err := s.store(next); err != nil {
 			return err
 		}
+	}
+	if v.Enforced {
+		if s.storage == nil {
+			return fmt.Errorf("%w: storage backend unavailable", ErrFailedPrecondition)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), storageOperationTimeout)
+		defer cancel()
+		backend := s.storage
+		s.mu.Unlock()
+		err := backend.Delete(ctx, v.ID)
+		s.mu.Lock()
+		if err != nil {
+			return err
+		}
+		next := s.state.clone()
+		next.Volumes = append(next.Volumes[:i], next.Volumes[i+1:]...)
+		return s.store(next)
 	}
 	root, err := s.volumeRoot()
 	if err != nil {
@@ -214,6 +242,8 @@ func (s *Service) volumeRoot() (*os.Root, error) {
 }
 
 func (s *Service) retryVolumeDeletions() {
+	s.volumeMu.Lock()
+	defer s.volumeMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := 0; i < len(s.state.Volumes); {

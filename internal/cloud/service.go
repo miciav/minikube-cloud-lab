@@ -16,17 +16,22 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/miciav/minikube-cloud-lab/internal/infra"
+	"github.com/miciav/minikube-cloud-lab/internal/storage"
 )
 
 // Service serializes infrastructure mutations and owns the durable cloud state.
 type Service struct {
-	mu      sync.Mutex
-	workMu  sync.Mutex
-	state   snapshot
-	inf     infra.Infra
-	dir     string
-	logger  *slog.Logger
-	changed chan struct{}
+	storage       storage.Backend
+	storageTotal  int64
+	storageServer string
+	volumeMu      sync.Mutex
+	mu            sync.Mutex
+	workMu        sync.Mutex
+	state         snapshot
+	inf           infra.Infra
+	dir           string
+	logger        *slog.Logger
+	changed       chan struct{}
 }
 
 // NewService loads state and reconciles requests interrupted by a previous process.
