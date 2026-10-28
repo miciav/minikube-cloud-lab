@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"path/filepath"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -14,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 // ReconcileStorage provisions cloud volumes requested by cluster claims.
@@ -30,7 +28,7 @@ func (s *Service) ReconcileStorage(ctx context.Context, client kubernetes.Interf
 		return err
 	}
 	provisionErr := s.provisionClaims(ctx, client, cluster, server, claims.Items)
-	return errors.Join(provisionErr, s.releaseClaims(ctx, client, cluster, server, claims.Items))
+	return errors.Join(provisionErr, s.releaseClaims(ctx, client, cluster, server, claims.Items), s.reconcileStatic(ctx, client, cluster, claims.Items))
 }
 
 func ensureStorageClasses(ctx context.Context, client kubernetes.Interface) error {
@@ -57,7 +55,19 @@ func ensureStorageClasses(ctx context.Context, client kubernetes.Interface) erro
 			}
 		}
 	}
-	return nil
+	policy := corev1.PersistentVolumeReclaimRetain
+	_, err := client.StorageV1().StorageClasses().Create(ctx, &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: "cloud-static"}, Provisioner: "kubernetes.io/no-provisioner", ReclaimPolicy: &policy}, metav1.CreateOptions{})
+	if apierrors.IsAlreadyExists(err) {
+		sc, e := client.StorageV1().StorageClasses().Get(ctx, "cloud-static", metav1.GetOptions{})
+		if e != nil {
+			return e
+		}
+		if sc.Provisioner != "kubernetes.io/no-provisioner" {
+			return ErrConflict
+		}
+		return nil
+	}
+	return err
 }
 
 func (s *Service) provisionClaims(ctx context.Context, client kubernetes.Interface, cluster, server string, claims []corev1.PersistentVolumeClaim) error {
@@ -84,7 +94,7 @@ func (s *Service) provisionClaim(ctx context.Context, client kubernetes.Interfac
 	var volume Volume
 	if claim.Spec.VolumeName == "" {
 		var err error
-		volume, err = s.CreateVolume(id, cluster, claim.Namespace+"/"+claim.Name, size.String(), policy)
+		volume, err = s.createClaimVolume(ctx, client, claim, id, cluster, size.String(), policy)
 		if err != nil {
 			return err
 		}
@@ -116,6 +126,7 @@ func (s *Service) provisionClaim(ctx context.Context, client kubernetes.Interfac
 		}
 		size = capacity
 	}
+	size = resource.MustParse(volume.Capacity)
 	reclaim := corev1.PersistentVolumeReclaimPolicy(volume.Policy)
 	pv := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: volume.ID}, Spec: corev1.PersistentVolumeSpec{
 		Capacity: corev1.ResourceList{corev1.ResourceStorage: size}, AccessModes: claim.Spec.AccessModes, PersistentVolumeReclaimPolicy: reclaim,
@@ -178,7 +189,7 @@ func (s *Service) releaseClaims(ctx context.Context, client kubernetes.Interface
 }
 
 func (s *Service) releaseClaim(ctx context.Context, client kubernetes.Interface, cluster, server string, claims []corev1.PersistentVolumeClaim, volume Volume) error {
-	if volume.Cluster != cluster || volume.Status != "Bound" {
+	if volume.Static || volume.Cluster != cluster || volume.Status != "Bound" {
 		return nil
 	}
 	found := false
@@ -195,7 +206,7 @@ func (s *Service) releaseClaim(ctx context.Context, client kubernetes.Interface,
 	if err != nil || !ready {
 		return err
 	}
-	if err := s.releaseVolumeFor(volume.ID, volume.Cluster, volume.Claim, volume.ClaimUID, policy); err != nil {
+	if err := s.releaseVolumeFor(volume.ID, volume.Cluster, volume.Claim, volume.ClaimUID, policy); err != nil { //nolint:contextcheck // durable deletion intent survives worker shutdown.
 		return err
 	}
 	return nil
@@ -251,7 +262,7 @@ func (s *Service) RunStorage(ctx context.Context, server string) error {
 			return nil
 		case <-ticker.C:
 		}
-		s.retryVolumeDeletions()
+		s.retryVolumeDeletions() //nolint:contextcheck // pending deletion recovery has its own bounded context.
 		for _, cluster := range s.Clusters() {
 			if cluster.Status != "RUNNING" {
 				continue
@@ -259,15 +270,11 @@ func (s *Service) RunStorage(ctx context.Context, server string) error {
 			s.workMu.Lock()
 			current, err := s.Cluster(cluster.Name)
 			if err == nil && current.Status == "RUNNING" {
-				cfg, cfgErr := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: filepath.Join(s.dir, "minikube", "kubeconfig")}, &clientcmd.ConfigOverrides{CurrentContext: cluster.Name}).ClientConfig()
+				client, cfgErr := s.clusterStorageClient(cluster.Name)
 				if cfgErr == nil {
-					cfg.Timeout = 5 * time.Second
-					var client *kubernetes.Clientset
-					client, cfgErr = kubernetes.NewForConfig(cfg)
-					if cfgErr == nil {
-						cfgErr = s.ReconcileStorage(ctx, client, cluster.Name, server)
-					}
+					cfgErr = s.ReconcileStorage(ctx, client, cluster.Name, server)
 				}
+
 				if cfgErr != nil && ctx.Err() == nil {
 					s.logger.Error("storage reconciliation failed", "cluster", cluster.Name, "error", cfgErr)
 				}
@@ -275,4 +282,22 @@ func (s *Service) RunStorage(ctx context.Context, server string) error {
 			s.workMu.Unlock()
 		}
 	}
+}
+
+func storageCapacityEvent(ctx context.Context, client kubernetes.Interface, claim *corev1.PersistentVolumeClaim) error {
+	now := metav1.Now()
+	event := &corev1.Event{ObjectMeta: metav1.ObjectMeta{Name: "storagecapacity-" + string(claim.UID), Namespace: claim.Namespace}, InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: claim.Namespace, Name: claim.Name, UID: claim.UID, APIVersion: "v1"}, Type: corev1.EventTypeWarning, Reason: "StorageCapacityExceeded", Message: "The cloud storage allocation budget is exhausted; delete unused cloud volumes or increase CLOUD_STORAGE_CAPACITY.", Source: corev1.EventSource{Component: "cloud.minikube.local/nfs"}, FirstTimestamp: now, LastTimestamp: now, Count: 1}
+	_, err := client.CoreV1().Events(claim.Namespace).Create(ctx, event, metav1.CreateOptions{})
+	if apierrors.IsAlreadyExists(err) {
+		return nil
+	}
+	return err
+}
+
+func (s *Service) createClaimVolume(ctx context.Context, client kubernetes.Interface, claim *corev1.PersistentVolumeClaim, id, cluster, capacity, policy string) (Volume, error) {
+	volume, err := s.CreateVolume(id, cluster, claim.Namespace+"/"+claim.Name, capacity, policy) //nolint:contextcheck // durable allocation must survive reconciliation cancellation.
+	if errors.Is(err, ErrStorageCapacity) {
+		err = errors.Join(err, storageCapacityEvent(ctx, client, claim))
+	}
+	return volume, err
 }

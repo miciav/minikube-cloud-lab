@@ -214,13 +214,14 @@ func (s *Service) DeleteCluster(name, requester string) (Operation, error) {
 			return err
 		}
 		for _, volume := range s.Volumes() {
-			if volume.Cluster == name && volume.Status == "Bound" {
+			if !volume.Static && volume.Cluster == name && volume.Status == "Bound" {
 				if err := s.releaseVolumeFor(volume.ID, volume.Cluster, volume.Claim, volume.ClaimUID, "Retain"); err != nil {
 					return err
 				}
 			}
 		}
-		return nil
+
+		return s.clearClusterPublications(name)
 	}, func(st *snapshot, err error) {
 		if err == nil {
 			st.Clusters = []Cluster{}
