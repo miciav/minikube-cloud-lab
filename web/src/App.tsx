@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   Button,
+  TabList,
+  Tab,
   Dialog,
   DialogSurface,
   DialogBody,
@@ -17,6 +19,7 @@ import {
   Spinner,
 } from "@fluentui/react-components";
 import { request, downloadKubeconfig } from "./api";
+import { Monitoring } from "./Monitoring";
 import { useResource } from "./useResource";
 import type {
   Cluster,
@@ -438,6 +441,8 @@ export function App() {
                 key={`${selected.name}:${selected.createdAt}`}
                 cluster={selected}
                 machines={machines.filter((m) => m.cluster === selected.name)}
+                storage={storageData.data}
+                refresh={refresh}
                 onCredentials={() => void credentials(selected.name)}
                 onDelete={() =>
                   open({ kind: "deleteCluster", target: selected.name })
@@ -787,14 +792,19 @@ export function App() {
 function ClusterDetails({
   cluster,
   machines,
+  storage,
+  refresh,
   onCredentials,
   onDelete,
 }: {
   cluster: Cluster;
   machines: Machine[];
+  storage: StorageCapacity | null;
+  refresh: number;
   onCredentials: () => void;
   onDelete: () => void;
 }) {
+  const [tab, setTab] = useState("Overview");
   return (
     <>
       <div className="toolbar">
@@ -803,31 +813,51 @@ function ClusterDetails({
         </Button>
         <Button onClick={onDelete}>Delete cluster</Button>
       </div>
-      <section className="panel">
-        <Title2>Cluster overview</Title2>
-        <dl className="details">
-          <div>
-            <dt>Status</dt>
-            <dd>
-              <Status value={cluster.status} />
-            </dd>
-          </div>
-          <div>
-            <dt>Machine type</dt>
-            <dd>{cluster.machineType}</dd>
-          </div>
-          <div>
-            <dt>Node range</dt>
-            <dd>
-              {cluster.minMachines}–{cluster.maxMachines}
-            </dd>
-          </div>
-          <div>
-            <dt>Machines</dt>
-            <dd>{machines.length}</dd>
-          </div>
-        </dl>
-      </section>
+      <TabList
+        className="tabs"
+        aria-label="Cluster views"
+        selectedValue={tab}
+        onTabSelect={(_, data) => setTab(String(data.value))}
+      >
+        {["Overview", "Monitoring"].map((t) => (
+          <Tab key={t} value={t}>
+            {t}
+          </Tab>
+        ))}
+      </TabList>
+      {tab === "Monitoring" ? (
+        <Monitoring
+          cluster={cluster.name}
+          storage={storage}
+          refresh={refresh}
+        />
+      ) : (
+        <section className="panel">
+          <Title2>Cluster overview</Title2>
+          <dl className="details">
+            <div>
+              <dt>Status</dt>
+              <dd>
+                <Status value={cluster.status} />
+              </dd>
+            </div>
+            <div>
+              <dt>Machine type</dt>
+              <dd>{cluster.machineType}</dd>
+            </div>
+            <div>
+              <dt>Node range</dt>
+              <dd>
+                {cluster.minMachines}–{cluster.maxMachines}
+              </dd>
+            </div>
+            <div>
+              <dt>Machines</dt>
+              <dd>{machines.length}</dd>
+            </div>
+          </dl>
+        </section>
+      )}
     </>
   );
 }
