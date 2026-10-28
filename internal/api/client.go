@@ -148,3 +148,29 @@ func (c *Client) DeleteVolume(ctx context.Context, id string) error {
 	_, err := c.request(ctx, http.MethodDelete, "/v1/volumes/"+url.PathEscape(id), nil, nil)
 	return err
 }
+
+// Storage reports the global storage allocation budget.
+func (c *Client) Storage(ctx context.Context) (cloud.StorageCapacity, error) {
+	var v cloud.StorageCapacity
+	_, err := c.request(ctx, http.MethodGet, "/v1/storage", nil, &v)
+	return v, err
+}
+
+// CreateVolume allocates unclaimed persistent storage.
+func (c *Client) CreateVolume(ctx context.Context, capacity string) (cloud.Volume, error) {
+	var v cloud.Volume
+	_, err := c.request(ctx, http.MethodPost, "/v1/volumes", map[string]string{"capacity": capacity}, &v)
+	return v, err
+}
+
+// PublishVolume creates an unbound static PV in a managed cluster.
+func (c *Client) PublishVolume(ctx context.Context, id, cluster string) error {
+	_, err := c.request(ctx, http.MethodPost, "/v1/volumes/"+url.PathEscape(id)+"/publish", map[string]string{"cluster": cluster}, nil)
+	return err
+}
+
+// UnpublishVolume removes an unused PV while retaining its cloud volume.
+func (c *Client) UnpublishVolume(ctx context.Context, id string) error {
+	_, err := c.request(ctx, http.MethodPost, "/v1/volumes/"+url.PathEscape(id)+"/unpublish", nil, nil)
+	return err
+}

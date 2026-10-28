@@ -189,3 +189,80 @@ func TestClientTransportAndDecodeErrors(t *testing.T) {
 		t.Fatalf("cancellation: %v", err)
 	}
 }
+
+type storageBackend struct{}
+
+func (storageBackend) Ensure(context.Context, string, int64) error { return nil }
+func (storageBackend) Delete(context.Context, string) error        { return nil }
+
+func TestStorageBudgetAndManualAllocationThroughAPI(t *testing.T) {
+	c, s, _, _ := setup(t)
+	if err := s.ConfigureStorage(storageBackend{}, "1Gi", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	v, err := c.CreateVolume(context.Background(), "1Gi")
+	if err != nil || v.Status != "Available" || v.Policy != "Retain" || !v.Enforced {
+		t.Fatalf("volume %+v %v", v, err)
+	}
+	st, err := c.Storage(context.Background())
+	if err != nil || st.Total != "1Gi" || st.Allocated != "1Gi" || st.Available != "0" {
+		t.Fatalf("capacity %+v %v", st, err)
+	}
+	_, err = c.CreateVolume(context.Background(), "16Mi")
+	assertStatus(t, err, 409)
+	if err = c.DeleteVolume(context.Background(), v.ID); err != nil {
+		t.Fatal(err)
+	}
+	st, err = c.Storage(context.Background())
+	if err != nil || st.Available != "1Gi" {
+		t.Fatalf("released %+v %v", st, err)
+	}
+}
+
+func TestStaticPublicationRoutesValidateOwnership(t *testing.T) {
+	c, s, _, _ := setup(t)
+	if err := s.ConfigureStorage(storageBackend{}, "1Gi", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	v, err := c.CreateVolume(context.Background(), "64Mi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.PublishVolume(context.Background(), v.ID, "missing")
+	assertStatus(t, err, 404)
+	if err = c.UnpublishVolume(context.Background(), v.ID); err != nil {
+		t.Fatal(err)
+	}
+	err = c.UnpublishVolume(context.Background(), "pvc-missing")
+	assertStatus(t, err, 404)
+}
+
+func TestStorageRequestsRejectMalformedBodies(t *testing.T) {
+	_, s, _, url := setup(t)
+	if err := s.ConfigureStorage(storageBackend{}, "1Gi", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct{ path, body string }{{"/v1/volumes", "{"}, {"/v1/volumes", `{"capacity":"64Mi","unknown":true}`}, {"/v1/volumes", `{"capacity":"64Mi"} {}`}, {"/v1/volumes", `{"capacity":"0"}`}, {"/v1/volumes/pvc-test/publish", `{}`}, {"/v1/volumes/pvc-test/publish", `{"cluster":"demo","unknown":true}`}} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url+item.path, strings.NewReader(item.body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("accepted malformed storage request %s: %d", item.body, resp.StatusCode)
+		}
+	}
+}
+
+func TestStorageAPIRequiresConfiguredBackend(t *testing.T) {
+	c, _, _, _ := setup(t)
+	_, err := c.Storage(t.Context())
+	assertStatus(t, err, 412)
+	_, err = c.CreateVolume(t.Context(), "64Mi")
+	assertStatus(t, err, 412)
+}

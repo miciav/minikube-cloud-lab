@@ -57,7 +57,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
-      - run: make images
+      - run: make images storage-integration
       - name: Image and Compose smoke tests
         run: |
           docker run --rm minikube-cloud-lab/cloud:dev --help

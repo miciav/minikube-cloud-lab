@@ -28,7 +28,7 @@ func respond(w http.ResponseWriter, status int, value any, err error) {
 			status = http.StatusBadRequest
 		case errors.Is(err, cloud.ErrNotFound):
 			status = http.StatusNotFound
-		case errors.Is(err, cloud.ErrConflict):
+		case errors.Is(err, cloud.ErrConflict), errors.Is(err, cloud.ErrStorageCapacity):
 			status = http.StatusConflict
 		case errors.Is(err, cloud.ErrFailedPrecondition):
 			status = http.StatusPreconditionFailed
@@ -43,9 +43,38 @@ func respond(w http.ResponseWriter, status int, value any, err error) {
 // NewServer routes management requests to the shared cloud service.
 func NewServer(svc *cloud.Service) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/storage", func(w http.ResponseWriter, _ *http.Request) { v, err := svc.StorageCapacity(); respond(w, 200, v, err) })
+	mux.HandleFunc("POST /v1/volumes", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Capacity string `json:"capacity"`
+		}
+		if err := decodeStorageRequest(w, r, &request); err != nil {
+			respond(w, 400, nil, cloud.ErrInvalid)
+			return
+		}
+		v, err := svc.CreateAvailableVolume(request.Capacity) //nolint:contextcheck // durable allocation survives request cancellation.
+		respond(w, 201, v, err)
+	})
+	mux.HandleFunc("POST /v1/volumes/{id}/publish", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Cluster string `json:"cluster"`
+		}
+		if err := decodeStorageRequest(w, r, &request); err != nil {
+			respond(w, 400, nil, cloud.ErrInvalid)
+			return
+		}
+		if request.Cluster == "" {
+			respond(w, 400, nil, cloud.ErrInvalid)
+			return
+		}
+		respond(w, 200, map[string]string{"status": "published"}, svc.PublishVolume(r.Context(), r.PathValue("id"), request.Cluster))
+	})
+	mux.HandleFunc("POST /v1/volumes/{id}/unpublish", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, 200, map[string]string{"status": "unpublished"}, svc.UnpublishVolume(r.Context(), r.PathValue("id")))
+	})
 	mux.HandleFunc("GET /v1/volumes", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Volumes(), nil) })
 	mux.HandleFunc("DELETE /v1/volumes/{id}", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, map[string]string{"status": "deleted"}, svc.DeleteVolume(r.PathValue("id")))
+		respond(w, 200, map[string]string{"status": "deleted"}, svc.DeleteVolume(r.PathValue("id"))) //nolint:contextcheck // durable deletion intent must survive request cancellation.
 	})
 	mux.HandleFunc("GET /v1/machine-types", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, cloud.MachineTypes(), nil) })
 	mux.HandleFunc("GET /v1/clusters", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Clusters(), nil) })
@@ -111,4 +140,16 @@ func NewServer(svc *cloud.Service) http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func decodeStorageRequest(w http.ResponseWriter, r *http.Request, value any) error {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(value); err != nil {
+		return err
+	}
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return cloud.ErrInvalid
+	}
+	return nil
 }

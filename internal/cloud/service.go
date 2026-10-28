@@ -16,17 +16,22 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/miciav/minikube-cloud-lab/internal/infra"
+	"github.com/miciav/minikube-cloud-lab/internal/storage"
 )
 
 // Service serializes infrastructure mutations and owns the durable cloud state.
 type Service struct {
-	mu      sync.Mutex
-	workMu  sync.Mutex
-	state   snapshot
-	inf     infra.Infra
-	dir     string
-	logger  *slog.Logger
-	changed chan struct{}
+	storage       storage.Backend
+	storageTotal  int64
+	storageServer string
+	volumeMu      sync.Mutex
+	mu            sync.Mutex
+	workMu        sync.Mutex
+	state         snapshot
+	inf           infra.Infra
+	dir           string
+	logger        *slog.Logger
+	changed       chan struct{}
 }
 
 // NewService loads state and reconciles requests interrupted by a previous process.
@@ -209,13 +214,14 @@ func (s *Service) DeleteCluster(name, requester string) (Operation, error) {
 			return err
 		}
 		for _, volume := range s.Volumes() {
-			if volume.Cluster == name && volume.Status == "Bound" {
+			if !volume.Static && volume.Cluster == name && volume.Status == "Bound" {
 				if err := s.releaseVolumeFor(volume.ID, volume.Cluster, volume.Claim, volume.ClaimUID, "Retain"); err != nil {
 					return err
 				}
 			}
 		}
-		return nil
+
+		return s.clearClusterPublications(name)
 	}, func(st *snapshot, err error) {
 		if err == nil {
 			st.Clusters = []Cluster{}

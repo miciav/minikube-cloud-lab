@@ -35,5 +35,9 @@ race:
 
 cover:
 	# Generated protocol bindings follow the reference project coverage scope.
-	go test -coverprofile=coverage.out $$(go list ./... | grep -v -E '/internal/infra/minikube$$|/proto$$')
+	go test -coverprofile=coverage.out $$(go list ./... | grep -v -E '/internal/infra/(minikube|nfs)$$|/proto$$')
 	go tool cover -func=coverage.out | awk '/^total:/ { sub(/%/, "", $$3); print "Go coverage " $$3 "% (minimum 90%)"; exit ($$3 + 0 < 90) }'
+
+# Mount/loop operations run only inside an isolated Linux container.
+storage-integration:
+	bash tests/storage-backend.sh

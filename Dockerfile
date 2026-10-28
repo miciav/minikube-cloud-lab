@@ -8,7 +8,8 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/cloud ./cmd/cloud && \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/lab ./cmd/lab
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/lab ./cmd/lab && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/storage-nfs ./cmd/storage-nfs
 
 FROM docker:29.9.2-cli AS docker-cli
 
@@ -40,7 +41,7 @@ FROM debian:bookworm-slim AS nfs
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends nfs-ganesha nfs-ganesha-vfs rpcbind supervisor && \
     rm -rf /var/lib/apt/lists/* && mkdir -p /var/run/ganesha /export && chmod 0777 /export
-COPY storage/ganesha.conf /etc/ganesha/ganesha.conf
+COPY --from=build /out/storage-nfs /usr/local/bin/storage-nfs
 COPY storage/supervisord.conf /etc/supervisor/conf.d/nfs.conf
 LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-lab"
 ENTRYPOINT ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/nfs.conf"]

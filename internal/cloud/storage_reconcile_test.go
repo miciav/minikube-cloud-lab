@@ -457,3 +457,43 @@ func TestRecoveryRefusesForeignReleasedPV(t *testing.T) {
 		t.Fatalf("volume wrongly attached: %+v", got)
 	}
 }
+
+func TestStorageBudgetLeavesClaimPendingWithOneWarning(t *testing.T) {
+	s, _, _ := newService(t)
+	if err := s.ConfigureStorage(&memoryStorage{}, "16Mi", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.CreateAvailableVolume("16Mi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "cloud-standard"
+	claim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "data", Namespace: "default", UID: "budget"}, Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &name, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Mi")}}}}
+	client := kfake.NewSimpleClientset(claim)
+	for i := 0; i < 2; i++ {
+		if err := s.ReconcileStorage(context.Background(), client, "demo", "172.30.0.253"); err == nil {
+			t.Fatal("budget ignored")
+		}
+	}
+	events, err := client.CoreV1().Events("default").List(context.Background(), metav1.ListOptions{})
+	if err != nil || len(events.Items) != 1 || events.Items[0].Reason != "StorageCapacityExceeded" {
+		t.Fatalf("warnings %+v %v", events, err)
+	}
+	pvs, _ := client.CoreV1().PersistentVolumes().List(context.Background(), metav1.ListOptions{})
+	if len(pvs.Items) != 0 {
+		t.Fatal("PV allocated over budget")
+	}
+	if err := s.DeleteVolume(v.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReconcileStorage(context.Background(), client, "demo", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	pv, err := client.CoreV1().PersistentVolumes().Get(context.Background(), "pvc-budget", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pv.Spec.Capacity.Storage().Cmp(resource.MustParse("16Mi")) != 0 {
+		t.Fatalf("effective capacity not advertised: %+v", pv.Spec.Capacity)
+	}
+}
