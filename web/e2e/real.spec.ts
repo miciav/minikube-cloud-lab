@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import { waitForOperation } from "./operations";
+import type { Operation } from "../src/types";
 test.skip(
   !process.env.PORTAL_REAL_URL,
   "Opt-in: use only a disposable cloud with isolated state and storage.",
@@ -9,32 +11,37 @@ test("real Docker portal creates a small cluster, monitors it and manages storag
   test.setTimeout(12 * 60 * 1000);
   const name = `portal-ui-${Date.now()}`;
   const base = process.env.PORTAL_REAL_URL!;
-  async function completed() {
+  let latest: Operation | undefined;
+  async function absent() {
     await expect
       .poll(
         async () => {
-          const r = await page.request.get(`${base}/v1/operations`);
-          const ops = await r.json();
-          const op = ops
-            .filter((o: { target: string }) => o.target === name)
-            .at(-1);
-          if (op?.status === "ERROR") throw Error(op.error);
-          return op?.status;
+          const r = await page.request.get(`${base}/v1/clusters`);
+          expect(r.ok()).toBe(true);
+          return (await r.json()).some(
+            (c: { name: string }) => c.name === name,
+          );
         },
-        { timeout: 6 * 60 * 1000, intervals: [1000, 2000] },
+        { timeout: 60000, intervals: [1000] },
       )
-      .toBe("DONE");
+      .toBe(false);
   }
   try {
     await page.goto(base);
     await page.getByRole("button", { name: "Create cluster" }).click();
     const d = page.getByRole("dialog");
     await d.getByLabel("Cluster name").fill(name);
+    const creating = page.waitForResponse(
+      (r) =>
+        r.request().method() === "POST" &&
+        new URL(r.url()).pathname === "/v1/clusters",
+    );
     await d.getByRole("button", { name: "Create", exact: true }).click();
+    latest = await (await creating).json();
     await expect(
       page.getByRole("status").filter({ hasText: "accepted." }),
     ).toBeVisible();
-    await completed();
+    await waitForOperation(page.request, base, latest!);
     await page.getByRole("link", { name: "Clusters", exact: true }).click();
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await page.getByRole("link", { name, exact: true }).click();
@@ -107,21 +114,34 @@ test("real Docker portal creates a small cluster, monitors it and manages storag
       .getByRole("dialog")
       .getByLabel("Confirm resource name")
       .fill(name);
+    const deleting = page.waitForResponse(
+      (r) =>
+        r.request().method() === "DELETE" &&
+        new URL(r.url()).pathname === `/v1/clusters/${name}`,
+    );
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "Delete", exact: true })
       .click();
-    await completed();
-    console.log("REAL CLOUD/SMALL/METRICS/YAKD/STORAGE/DELETE PASS", name);
+    latest = await (await deleting).json();
+    await waitForOperation(page.request, base, latest!);
+    await absent();
+    console.log(
+      "REAL CLOUD/SMALL/METRICS/YAKD/STORAGE/DELETE ID+ABSENCE VERIFIED PASS",
+      name,
+    );
   } finally {
     const r = await page.request.get(`${base}/v1/clusters`);
     if (
       r.ok() &&
       (await r.json()).some((c: { name: string }) => c.name === name)
     ) {
-      await completed();
+      if (latest)
+        await waitForOperation(page.request, base, latest).catch(() => {});
       const deletion = await page.request.delete(`${base}/v1/clusters/${name}`);
-      if (deletion.ok()) await completed();
+      expect(deletion.ok()).toBe(true);
+      await waitForOperation(page.request, base, await deletion.json());
+      await absent();
     }
   }
 });
