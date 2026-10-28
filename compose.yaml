@@ -26,6 +26,7 @@ services:
   nfs:
     image: ${NFS_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/nfs:latest}
     cap_add: [DAC_READ_SEARCH, SYS_ADMIN]
+    security_opt: [apparmor=unconfined]
     device_cgroup_rules:
       - "b 7:* rwm"
       - "c 10:237 rwm"

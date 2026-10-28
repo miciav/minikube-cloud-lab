@@ -67,6 +67,22 @@ kubectl exec capacity-proof -- sh -c '
     echo "ERROR: writes exceeded volume capacity" >&2; exit 1
   fi
   rm /data/full
+  # Unlinking an open file must not bypass the filesystem limit.
+  exec 3>/data/unlinked
+  dd if=/dev/zero bs=1048576 count=40 conv=fsync >&3
+  rm /data/unlinked
+  if dd if=/dev/zero of=/data/other bs=1048576 count=40 conv=fsync; then
+    echo "ERROR: unlinked open data escaped capacity accounting" >&2; exit 1
+  fi
+  exec 3>&-
+  rm /data/other
+  for attempt in 1 2 3 4 5; do
+    if dd if=/dev/zero of=/data/after-close bs=1048576 count=40 conv=fsync; then break; fi
+    rm /data/after-close
+    sleep 1
+  done
+  test "$(wc -c < /data/after-close)" -eq 41943040
+  rm /data/after-close
   printf capacity-survives > /data/message
   sync
 '

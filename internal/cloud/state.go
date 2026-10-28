@@ -133,5 +133,14 @@ func save(dir string, st snapshot) error {
 	if err = f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), filepath.Join(dir, "state.json"))
+	if err := os.Rename(f.Name(), filepath.Join(dir, "state.json")); err != nil {
+		return err
+	}
+	// #nosec G304 -- dir is the operator-selected cloud state directory.
+	directory, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	syncErr := directory.Sync()
+	return errors.Join(syncErr, directory.Close())
 }

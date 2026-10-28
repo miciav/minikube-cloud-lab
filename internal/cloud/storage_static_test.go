@@ -13,6 +13,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -336,5 +337,33 @@ func TestStaticOperatorFailuresPreserveAllocation(t *testing.T) {
 	}
 	if got := s.Volumes()[0]; got.Status != "Publishing" {
 		t.Fatalf("lost exclusive allocation %+v", got)
+	}
+}
+
+func TestStaticPublishCannotRecreatePreviouslyOwnedPV(t *testing.T) {
+	s, v := staticService(t)
+	client := staticClient()
+	ctx := context.Background()
+	if err := s.reservePublication(v.ID, "demo"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.syncPublication(ctx, client, v.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.CoreV1().PersistentVolumes().Delete(ctx, v.ID, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	client.PrependReactor("create", "persistentvolumes", func(a ktesting.Action) (bool, runtime.Object, error) {
+		pv := a.(ktesting.CreateAction).GetObject().(*corev1.PersistentVolume)
+		pv.UID = "replacement"
+		pv.ResourceVersion = "2"
+		err := client.Tracker().Create(corev1.SchemeGroupVersion.WithResource("persistentvolumes"), pv, "")
+		return true, pv, err
+	})
+	if err := s.syncPublication(ctx, client, v.ID); err == nil {
+		t.Fatal("accepted deleted PV identity")
+	}
+	if _, err := client.CoreV1().PersistentVolumes().Get(ctx, v.ID, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("retry created an unmanaged bindable PV: %v", err)
 	}
 }

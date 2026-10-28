@@ -68,7 +68,7 @@ func TestComposeConfiguration(t *testing.T) {
 	cloud := config.Services["cloud"]
 	lab := config.Services["lab"]
 	nfs := config.Services["nfs"]
-	if len(nfs.CapAdd) != 2 || nfs.CapAdd[0] != "DAC_READ_SEARCH" || nfs.CapAdd[1] != "SYS_ADMIN" || len(nfs.SecurityOpt) != 0 {
+	if len(nfs.CapAdd) != 2 || nfs.CapAdd[0] != "DAC_READ_SEARCH" || nfs.CapAdd[1] != "SYS_ADMIN" || len(nfs.SecurityOpt) != 1 || nfs.SecurityOpt[0] != "apparmor=unconfined" {
 		t.Fatalf("excessive NFS privileges: %+v", nfs)
 	}
 	if nfs.Networks["lab"].IPv4Address != "172.30.0.253" || cloud.Environment["CLOUD_NFS_IP"] != "172.30.0.253" {

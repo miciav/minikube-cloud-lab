@@ -96,10 +96,16 @@ func (s *Service) syncPublication(ctx context.Context, client kubernetes.Interfa
 	pv := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: v.ID, Labels: map[string]string{"cloud.minikube.local/volume": v.ID}}, Spec: corev1.PersistentVolumeSpec{
 		Capacity: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(v.Capacity)}, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain, StorageClassName: "cloud-static", MountOptions: []string{"nfsvers=4.1"}, PersistentVolumeSource: corev1.PersistentVolumeSource{NFS: &corev1.NFSVolumeSource{Server: s.storageServer, Path: "/data/volumes/" + v.ID}},
 	}}
-	current, err := client.CoreV1().PersistentVolumes().Create(ctx, pv, metav1.CreateOptions{})
-	if apierrors.IsAlreadyExists(err) {
+	var current *corev1.PersistentVolume
+	if v.Status == "Publishing" && v.PVUID == "" {
+		current, err = client.CoreV1().PersistentVolumes().Create(ctx, pv, metav1.CreateOptions{})
+		if apierrors.IsAlreadyExists(err) {
+			current, err = client.CoreV1().PersistentVolumes().Get(ctx, id, metav1.GetOptions{})
+		}
+	} else {
 		current, err = client.CoreV1().PersistentVolumes().Get(ctx, id, metav1.GetOptions{})
 	}
+
 	if err != nil {
 		return err
 	}

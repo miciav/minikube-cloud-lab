@@ -306,7 +306,7 @@ The NFS data is stored in a persistent named Docker volume. `docker compose down
 
 Administrators can use `cloud volumes create --capacity 2Gi`, `cloud volumes publish ID --cluster demo`, and `cloud volumes unpublish ID` for static provisioning with `cloud-static`. Publishing prevents deletion or use by another cluster; unpublishing preserves the data.
 
-The NFS container needs `SYS_ADMIN`, `DAC_READ_SEARCH`, and loop-device access to mount the backing filesystems. It does not use privileged mode or change host settings. The lab NFS export is for a trusted local network and is not a multi-tenant storage service.
+The NFS container needs `SYS_ADMIN`, `DAC_READ_SEARCH`, and loop-device access to mount the backing filesystems. AppArmor confinement is disabled only for that NFS container so Ubuntu permits the mounts; the default seccomp policy remains active. It does not use privileged mode or change host settings. The lab NFS export is for a trusted local network and is not a multi-tenant storage service.
 
 Existing directory-backed volumes remain legacy storage: `ENFORCED=false`. They
 are not migrated or reformatted automatically. Inventory and cleanup remain

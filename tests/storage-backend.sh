@@ -6,6 +6,7 @@ storage_test_arch=$(docker version --format '{{.Server.Arch}}')
 GOOS=linux GOARCH="$storage_test_arch" go test -c ./internal/infra/nfs -o "$storage_test_dir/backend.test"
 docker run --rm --network none \
   --cap-add SYS_ADMIN \
+  --security-opt apparmor=unconfined \
   --device-cgroup-rule 'b 7:* rwm' \
   --device-cgroup-rule 'c 10:237 rwm' \
   -e CLOUD_STORAGE_MOUNT_TEST=1 \
