@@ -19,6 +19,7 @@ images:
 	docker build --target nfs -t minikube-cloud-lab/nfs:dev .
 	docker build --target cloud -t minikube-cloud-lab/cloud:dev .
 	docker build --target lab -t minikube-cloud-lab/lab:dev .
+	docker build --target portal -t minikube-cloud-lab/portal:dev .
 
 verify: lint tidy-check vuln cover race
 
@@ -50,3 +51,7 @@ portal-test:
 portal-build:
 	npm --prefix web run build
 	docker build --target portal -t minikube-cloud-lab/portal:dev .
+
+.PHONY: portal-smoke
+portal-smoke:
+	bash tests/portal-smoke.sh
