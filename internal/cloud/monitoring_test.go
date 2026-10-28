@@ -50,7 +50,7 @@ func TestMonitoringQuantitiesAndRequests(t *testing.T) {
 
 func TestMonitoringMissingPartialStaleMetrics(t *testing.T) {
 	now := time.Now()
-	for _, mode := range []string{"missing", "partial", "stale", "zero", "future"} {
+	for _, mode := range []string{"missing", "partial", "stale", "zero", "future", "empty", "missing-cpu", "missing-memory"} {
 		t.Run(mode, func(t *testing.T) {
 			k := kfake.NewSimpleClientset(monitoringNode("one"), monitoringNode("two"))
 			m := mfake.NewSimpleClientset()
@@ -64,8 +64,14 @@ func TestMonitoringMissingPartialStaleMetrics(t *testing.T) {
 				metric.Timestamp = metav1.NewTime(now.Add(-61 * time.Second))
 			case "future":
 				metric.Timestamp = metav1.NewTime(now.Add(61 * time.Second))
-			case "zero":
+			case "empty":
 				metric.Usage = corev1.ResourceList{}
+			case "missing-cpu":
+				delete(metric.Usage, corev1.ResourceCPU)
+			case "missing-memory":
+				delete(metric.Usage, corev1.ResourceMemory)
+			case "zero":
+				metric.Usage = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("0"), corev1.ResourceMemory: resource.MustParse("0")}
 				k = kfake.NewSimpleClientset(monitoringNode("one"))
 			}
 			if mode != "missing" {

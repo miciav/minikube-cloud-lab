@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Badge, Spinner, Title2 } from "@fluentui/react-components";
 import { useResource } from "./useResource";
 import type { StorageCapacity } from "./types";
@@ -34,6 +35,16 @@ export function Monitoring({
   storage: StorageCapacity | null;
   refresh?: number;
 }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const update = () => setNow(Date.now());
+    const timer = window.setInterval(update, 5000);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
   const { data, error } = useResource<Snapshot>(
     `clusters/${encodeURIComponent(cluster)}/monitoring`,
     refresh,
@@ -46,19 +57,31 @@ export function Monitoring({
     ) : (
       <Spinner label="Loading live monitoring…" size="small" />
     );
-  const stale = Date.now() - Date.parse(data.observedAt) > 60000;
+  const stale =
+    now - Date.parse(data.observedAt) > 60000 ||
+    data.nodes.some(
+      (n) => n.usage && now - Date.parse(n.usage.timestamp) > 60000,
+    );
   return (
     <>
       <div className="monitor-meta">
         <Badge
           appearance="tint"
-          color={data.metricsStatus === "available" ? "success" : "warning"}
+          color={
+            !stale && !error && data.metricsStatus === "available"
+              ? "success"
+              : "warning"
+          }
         >
-          {data.metricsStatus === "available"
-            ? "Live metrics"
-            : data.metricsStatus === "partial"
-              ? "Partial metrics"
-              : "Metrics unavailable"}
+          {stale
+            ? "Stale metrics"
+            : error
+              ? "Previous metrics"
+              : data.metricsStatus === "available"
+                ? "Live metrics"
+                : data.metricsStatus === "partial"
+                  ? "Partial metrics"
+                  : "Metrics unavailable"}
         </Badge>
         <span>
           {stale ? "Stale snapshot · " : ""}Observed{" "}
@@ -86,14 +109,18 @@ export function Monitoring({
           <small>Observed Kubernetes health</small>
         </section>
         <section className="stat">
-          <span>Actual CPU usage</span>
+          <span>
+            {stale || error ? "Last known CPU usage" : "Actual CPU usage"}
+          </span>
           <strong>
             {data.usage ? cpu(data.usage.cpuMillicores) : "Unavailable"}
           </strong>
           <small>Measured across all nodes</small>
         </section>
         <section className="stat">
-          <span>Actual memory usage</span>
+          <span>
+            {stale || error ? "Last known memory usage" : "Actual memory usage"}
+          </span>
           <strong>
             {data.usage ? memory(data.usage.memoryBytes) : "Unavailable"}
           </strong>

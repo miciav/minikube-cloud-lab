@@ -159,6 +159,11 @@ func collectMonitoring(ctx context.Context, k kubernetes.Interface, m metrics.In
 func mergeNodeMetrics(s *MonitoringSnapshot, items []metricsv1.NodeMetrics, now time.Time) {
 	measured := map[string]*Usage{}
 	for _, v := range items {
+		cpu, cpuOK := v.Usage[corev1.ResourceCPU]
+		memory, memoryOK := v.Usage[corev1.ResourceMemory]
+		if !cpuOK || !memoryOK || cpu.Sign() < 0 || memory.Sign() < 0 {
+			continue
+		}
 		age := now.Sub(v.Timestamp.Time)
 		if age > 60*time.Second || age < -30*time.Second || v.Window.Duration <= 0 {
 			continue

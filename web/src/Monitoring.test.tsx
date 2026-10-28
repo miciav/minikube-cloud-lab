@@ -77,13 +77,11 @@ it("renders unavailable partial stale and zero distinctly", async () => {
 it("shows a recoverable cluster error instead of invented measurements", async () => {
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ error: "cluster data unavailable" }), {
-          status: 503,
-        }),
-      ),
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "cluster data unavailable" }), {
+        status: 503,
+      }),
+    ),
   );
   render(<Monitoring cluster="demo" storage={storage} />);
   expect(await screen.findByRole("alert")).toHaveProperty(
@@ -91,4 +89,45 @@ it("shows a recoverable cluster error instead of invented measurements", async (
     "cluster data unavailable",
   );
   expect(screen.queryByText("0.00 cores")).toBeNull();
+});
+it("ages a previously valid snapshot despite repeated identical failures", async () => {
+  const { act } = await import("@testing-library/react");
+  vi.useFakeTimers();
+  try {
+    const data = snapshot();
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(data)))
+      .mockRejectedValue(Error("cluster disconnected"));
+    vi.stubGlobal("fetch", fetch);
+    render(<Monitoring cluster="demo" storage={storage} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.getByText("Live metrics")).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(16000);
+    });
+    expect(screen.queryByText("Live metrics")).toBeNull();
+    expect(screen.getByText("Previous metrics")).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(105000);
+    });
+    expect(screen.getByText(/Stale snapshot/)).toBeTruthy();
+    expect(screen.getByText("Stale metrics")).toBeTruthy();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("does not call old node observations live even when the snapshot envelope is new", async () => {
+  const data = snapshot();
+  data.nodes[0].usage.timestamp = new Date(Date.now() - 90000).toISOString();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(new Response(JSON.stringify(data))),
+  );
+  render(<Monitoring cluster="demo" storage={storage} />);
+  expect(await screen.findByText("node-one")).toBeTruthy();
+  expect(screen.queryByText("Live metrics")).toBeNull();
+  expect(screen.getByText("Stale metrics")).toBeTruthy();
 });
