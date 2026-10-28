@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build images
-        run: make images
+        run: make images storage-integration
       - name: Install matching kubectl
         run: |
           curl -fsSLo /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
@@ -103,6 +103,7 @@ jobs:
           done
           bash tests/service-exposure.sh check
           bash tests/service-exposure.sh mutate-cleanup
+          bash tests/storage-capacity.sh
           bash tests/storage.sh prepare
           cloud clusters delete demo
           bash tests/service-exposure.sh deleted
