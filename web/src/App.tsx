@@ -20,6 +20,7 @@ import {
 } from "@fluentui/react-components";
 import { request, downloadKubeconfig } from "./api";
 import { Monitoring } from "./Monitoring";
+import { Dashboard } from "./Dashboard";
 import { useResource } from "./useResource";
 import type {
   Cluster,
@@ -819,13 +820,15 @@ function ClusterDetails({
         selectedValue={tab}
         onTabSelect={(_, data) => setTab(String(data.value))}
       >
-        {["Overview", "Monitoring"].map((t) => (
+        {["Overview", "Monitoring", "Kubernetes"].map((t) => (
           <Tab key={t} value={t}>
             {t}
           </Tab>
         ))}
       </TabList>
-      {tab === "Monitoring" ? (
+      {tab === "Kubernetes" ? (
+        <Dashboard cluster={cluster.name} refresh={refresh} />
+      ) : tab === "Monitoring" ? (
         <Monitoring
           cluster={cluster.name}
           storage={storage}

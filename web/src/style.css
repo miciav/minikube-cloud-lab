@@ -345,3 +345,12 @@ select:focus-visible {
   font-size: 12px;
   flex-wrap: wrap;
 }
+.dashboard iframe {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 310px);
+  min-height: 600px;
+  border: 1px solid #dbe2ec;
+  border-radius: 4px;
+  background: white;
+}
