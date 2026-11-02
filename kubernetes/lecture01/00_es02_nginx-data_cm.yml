@@ -1,0 +1,20 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-data
+  namespace: default
+  labels:
+    app.kubernetes.io/name: nginx
+data:
+  index.html: |-
+    <!DOCTYPE html>
+    <html lang="en" dir="ltr">
+      <head>
+        <meta charset="utf-8">
+        <title>Cloud Computing</title>
+      </head>
+      <body>
+        <p><strong>K8s rocks!</strong></p>
+      </body>
+    </html>
