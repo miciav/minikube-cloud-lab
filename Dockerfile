@@ -47,7 +47,7 @@ COPY storage/supervisord.conf /etc/supervisor/conf.d/nfs.conf
 LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-lab"
 ENTRYPOINT ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/nfs.conf"]
 
-FROM --platform=$BUILDPLATFORM node:26.12.1-bookworm-slim AS web-build
+FROM --platform=$BUILDPLATFORM node:26.13.0-bookworm-slim AS web-build
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
