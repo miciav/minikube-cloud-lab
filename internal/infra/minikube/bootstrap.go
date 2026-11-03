@@ -79,6 +79,11 @@ func provisionNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node
 	if err := api.Create(h); err != nil {
 		return api, h, nil, err
 	}
+	if strings.Contains(cc.KubernetesConfig.FeatureGates, "KubeletInUserNamespace=true") && cc.Network != "" {
+		if err := restoreRootlessMAC(ctx, config.MachineName(*cc, *n), cc.Network); err != nil {
+			return api, h, nil, fmt.Errorf("preserve rootless node MAC: %w", err)
+		}
+	}
 	r, err := machine.CommandRunner(h)
 	if err != nil {
 		return api, h, nil, err
@@ -130,8 +135,15 @@ func configureRuntime(ctx context.Context, cc config.ClusterConfig, r cruntime.C
 	if err != nil {
 		return nil, err
 	}
-	if err := containerd.Enable(false, detect.CgroupDriver(), false); err != nil {
+	if err := containerd.Enable(false, detect.CgroupDriver(), strings.Contains(cc.KubernetesConfig.FeatureGates, "KubeletInUserNamespace=true")); err != nil {
 		return nil, err
+	}
+	if cc.KubernetesConfig.ContainerRuntime == "containerd" {
+		if err := containerd.Enable(true, detect.CgroupDriver(), strings.Contains(cc.KubernetesConfig.FeatureGates, "KubeletInUserNamespace=true")); err != nil {
+			return nil, err
+		}
+		err := wait.PollUntilContextTimeout(ctx, time.Second, time.Minute, true, func(context.Context) (bool, error) { _, err := containerd.Version(); return err == nil, nil })
+		return containerd, err
 	}
 	cfg.Type = "docker"
 	cfg.NetworkPlugin = cc.KubernetesConfig.NetworkPlugin

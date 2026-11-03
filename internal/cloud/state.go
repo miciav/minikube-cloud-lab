@@ -89,6 +89,7 @@ func machineType(name string) (MachineType, error) {
 
 // Volume records a persistent cloud storage allocation.
 type Volume struct {
+	Backend  string `json:"backend,omitempty"`
 	Static   bool   `json:"static,omitempty"`
 	PVUID    string `json:"pvUID,omitempty"`
 	Enforced bool   `json:"enforced"`

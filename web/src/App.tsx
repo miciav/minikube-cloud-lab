@@ -644,7 +644,7 @@ function CloudApp() {
                           {v.id}
                           <small className="block">
                             {v.policy} ·{" "}
-                            {v.enforced ? "Enforced capacity" : "Legacy volume"}
+                            {v.enforced ? "Enforced capacity" : "No physical write quota"}
                           </small>
                         </td>
                         <td>{v.capacity}</td>
@@ -798,7 +798,7 @@ function CloudApp() {
                       onChange={(_, v) => field("capacity", v.value)}
                     />
                     <small>
-                      For example 1Gi. Capacity is enforced by the cloud.
+                      For example 1Gi. Allocation counts against the cloud budget; physical write quotas depend on the storage backend.
                     </small>
                   </Field>
                 )}

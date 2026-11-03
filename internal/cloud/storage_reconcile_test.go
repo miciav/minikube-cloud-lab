@@ -497,3 +497,54 @@ func TestStorageBudgetLeavesClaimPendingWithOneWarning(t *testing.T) {
 		t.Fatalf("effective capacity not advertised: %+v", pv.Spec.Capacity)
 	}
 }
+
+func TestDirectoryStorageBudgetAndPV(t *testing.T) {
+	s, _, _ := newService(t)
+	root := t.TempDir()
+	if err := s.ConfigureDirectoryStorage(root, "20Gi"); err != nil {
+		t.Fatal(err)
+	}
+	name := "cloud-standard"
+	claim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "data", Namespace: "default", UID: "directory"}, Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &name, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("100Gi")}}}}
+	client := kfake.NewSimpleClientset(claim)
+	if err := s.ReconcileStorage(context.Background(), client, "demo", "127.0.0.1"); err == nil {
+		t.Fatal("oversized claim accepted")
+	}
+	if len(s.Volumes()) != 0 {
+		t.Fatal("oversized reservation created")
+	}
+	claim.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("1Gi")
+	if _, err := client.CoreV1().PersistentVolumeClaims("default").Update(context.Background(), claim, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReconcileStorage(context.Background(), client, "demo", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	pv, err := client.CoreV1().PersistentVolumes().Get(context.Background(), "pvc-directory", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pv.Spec.NFS != nil || pv.Spec.HostPath == nil || pv.Spec.HostPath.Path != "/cloud-volumes/volumes/pvc-directory" {
+		t.Fatalf("wrong source: %+v", pv.Spec.PersistentVolumeSource)
+	}
+	v := s.Volumes()[0]
+	if v.Enforced || v.Backend != "directory" {
+		t.Fatalf("physical quota incorrectly advertised: %+v", v)
+	}
+	if _, err := os.Stat(filepath.Join(root, v.ID)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDirectoryStorageCannotSwitchToBoundedBackend(t *testing.T) {
+	s, _, _ := newService(t)
+	if err := s.ConfigureDirectoryStorage(t.TempDir(), "20Gi"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateAvailableVolume("32Mi"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfigureStorage(&memoryStorage{}, "20Gi", "127.0.0.1"); err == nil {
+		t.Fatal("accepted incompatible backend")
+	}
+}

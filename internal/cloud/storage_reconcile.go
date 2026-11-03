@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -134,6 +135,7 @@ func (s *Service) provisionClaim(ctx context.Context, client kubernetes.Interfac
 		PersistentVolumeSource: corev1.PersistentVolumeSource{NFS: &corev1.NFSVolumeSource{Server: server, Path: "/data/volumes/" + volume.ID}},
 		MountOptions:           []string{"nfsvers=4.1"},
 	}}
+	setDirectoryPV(pv, volume)
 	return ensurePersistentVolume(ctx, client, pv)
 }
 
@@ -146,7 +148,7 @@ func ensurePersistentVolume(ctx context.Context, client kubernetes.Interface, pv
 		if err != nil {
 			return err
 		}
-		if existing.Spec.NFS == nil || existing.Spec.NFS.Server != pv.Spec.NFS.Server || existing.Spec.NFS.Path != pv.Spec.NFS.Path || existing.Spec.ClaimRef == nil {
+		if !reflect.DeepEqual(existing.Spec.PersistentVolumeSource, pv.Spec.PersistentVolumeSource) || existing.Spec.ClaimRef == nil {
 			return fmt.Errorf("%w: persistent volume %s is not owned by cloud", ErrConflict, pv.Name)
 		}
 		if existing.Spec.ClaimRef.UID != pv.Spec.ClaimRef.UID {
@@ -164,7 +166,7 @@ func removeReleasedPV(ctx context.Context, client kubernetes.Interface, server s
 	if err != nil {
 		return false, err
 	}
-	if pv.Spec.NFS == nil || pv.Spec.NFS.Server != server || pv.Spec.NFS.Path != "/data/volumes/"+volume.ID || pv.Spec.ClaimRef == nil || string(pv.Spec.ClaimRef.UID) != volume.ClaimUID {
+	if !volumeSourceMatches(pv, server, volume) || pv.Spec.ClaimRef == nil || string(pv.Spec.ClaimRef.UID) != volume.ClaimUID {
 		return false, fmt.Errorf("%w: persistent volume is not owned by cloud", ErrConflict)
 	}
 	if (pv.Status.Phase != corev1.VolumeReleased && pv.Status.Phase != corev1.VolumeFailed) || pv.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimRetain {
@@ -229,7 +231,7 @@ func releasedVolumePolicy(ctx context.Context, client kubernetes.Interface, serv
 		if pv.Status.Phase != corev1.VolumeReleased && pv.Status.Phase != corev1.VolumeFailed {
 			return "", false, nil
 		}
-		if pv.Spec.NFS == nil || pv.Spec.NFS.Server != server || pv.Spec.NFS.Path != "/data/volumes/"+volume.ID || pv.Spec.ClaimRef == nil || string(pv.Spec.ClaimRef.UID) != volume.ClaimUID {
+		if !volumeSourceMatches(pv, server, volume) || pv.Spec.ClaimRef == nil || string(pv.Spec.ClaimRef.UID) != volume.ClaimUID {
 			return "", false, fmt.Errorf("%w: persistent volume %s is not owned by cloud", ErrConflict, volume.ID)
 		}
 		if policy == "Retain" {
@@ -300,4 +302,19 @@ func (s *Service) createClaimVolume(ctx context.Context, client kubernetes.Inter
 		err = errors.Join(err, storageCapacityEvent(ctx, client, claim))
 	}
 	return volume, err
+}
+
+func setDirectoryPV(pv *corev1.PersistentVolume, v Volume) {
+	if v.Backend != "directory" {
+		return
+	}
+	kind := corev1.HostPathDirectory
+	pv.Spec.PersistentVolumeSource = corev1.PersistentVolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/cloud-volumes/volumes/" + v.ID, Type: &kind}}
+	pv.Spec.MountOptions = nil
+}
+
+func volumeSourceMatches(pv *corev1.PersistentVolume, server string, v Volume) bool {
+	expected := &corev1.PersistentVolume{Spec: corev1.PersistentVolumeSpec{PersistentVolumeSource: corev1.PersistentVolumeSource{NFS: &corev1.NFSVolumeSource{Server: server, Path: "/data/volumes/" + v.ID}}}}
+	setDirectoryPV(expected, v)
+	return reflect.DeepEqual(pv.Spec.PersistentVolumeSource, expected.Spec.PersistentVolumeSource)
 }

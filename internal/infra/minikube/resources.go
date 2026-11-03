@@ -41,6 +41,34 @@ func setMachineResources(ctx context.Context, name string, shape infra.MachineSh
 	}
 	defer func() { _ = client.Close() }()
 	memory := int64(shape.MemoryMiB) * 1024 * 1024
-	_, err = client.ContainerUpdate(ctx, name, container.UpdateConfig{Resources: container.Resources{NanoCPUs: int64(shape.CPUs) * 1000000000, Memory: memory, MemorySwap: memory}})
-	return err
+	observed, err := client.ContainerInspect(ctx, name)
+	if err != nil {
+		return err
+	}
+	limits := container.Resources{CPUPeriod: 100000, CPUQuota: int64(shape.CPUs) * 100000, Memory: memory, MemorySwap: memory}
+	if observed.HostConfig != nil && observed.HostConfig.NanoCPUs > 0 {
+		limits.CPUPeriod = 0
+		limits.CPUQuota = 0
+		limits.NanoCPUs = int64(shape.CPUs) * 1000000000
+	}
+	result, err := client.ContainerUpdate(ctx, name, container.UpdateConfig{Resources: limits})
+	if err != nil {
+		return err
+	}
+	if len(result.Warnings) > 0 {
+		return fmt.Errorf("resource limits: %v", result.Warnings)
+	}
+	observed, err = client.ContainerInspect(ctx, name)
+	if err != nil {
+		return err
+	}
+	if observed.HostConfig == nil {
+		return fmt.Errorf("container has no resource configuration")
+	}
+	got := observed.HostConfig
+	cpuOK := got.NanoCPUs == int64(shape.CPUs)*1000000000 || (got.CPUPeriod == 100000 && got.CPUQuota == int64(shape.CPUs)*100000)
+	if !cpuOK || got.Memory != memory || got.MemorySwap != memory {
+		return fmt.Errorf("requested CPU/memory limits were not applied; check cgroups delegation")
+	}
+	return nil
 }

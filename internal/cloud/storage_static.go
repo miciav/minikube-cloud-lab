@@ -75,7 +75,7 @@ func (s *Service) reservePublication(id, cluster string, expected *time.Time) er
 			if v.Static && v.Cluster == cluster && (v.Status == "Publishing" || v.Status == "Published" || v.Status == "Bound" || v.Status == "Released") {
 				return nil
 			}
-			if !v.Enforced || v.Policy != "Retain" || v.Status != "Available" {
+			if (!v.Enforced && v.Backend != "directory") || v.Policy != "Retain" || v.Status != "Available" {
 				return ErrFailedPrecondition
 			}
 			next := s.state.clone()
@@ -103,6 +103,7 @@ func (s *Service) syncPublication(ctx context.Context, client kubernetes.Interfa
 	pv := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: v.ID, Labels: map[string]string{"cloud.minikube.local/volume": v.ID}}, Spec: corev1.PersistentVolumeSpec{
 		Capacity: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(v.Capacity)}, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain, StorageClassName: "cloud-static", MountOptions: []string{"nfsvers=4.1"}, PersistentVolumeSource: corev1.PersistentVolumeSource{NFS: &corev1.NFSVolumeSource{Server: s.storageServer, Path: "/data/volumes/" + v.ID}},
 	}}
+	setDirectoryPV(pv, v)
 	var current *corev1.PersistentVolume
 	if v.Status == "Publishing" && v.PVUID == "" {
 		current, err = client.CoreV1().PersistentVolumes().Create(ctx, pv, metav1.CreateOptions{})
@@ -129,7 +130,7 @@ func (s *Service) syncPublication(ctx context.Context, client kubernetes.Interfa
 }
 
 func (s *Service) checkStaticPV(v Volume, pv *corev1.PersistentVolume) error {
-	if pv.Labels["cloud.minikube.local/volume"] != v.ID || pv.Spec.NFS == nil || pv.Spec.NFS.Server != s.storageServer || pv.Spec.NFS.Path != "/data/volumes/"+v.ID || pv.Spec.StorageClassName != "cloud-static" || pv.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimRetain || pv.Spec.Capacity.Storage().Cmp(resource.MustParse(v.Capacity)) != 0 || len(pv.Spec.AccessModes) != 1 || pv.Spec.AccessModes[0] != corev1.ReadWriteOnce {
+	if pv.Labels["cloud.minikube.local/volume"] != v.ID || !volumeSourceMatches(pv, s.storageServer, v) || pv.Spec.StorageClassName != "cloud-static" || pv.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimRetain || pv.Spec.Capacity.Storage().Cmp(resource.MustParse(v.Capacity)) != 0 || len(pv.Spec.AccessModes) != 1 || pv.Spec.AccessModes[0] != corev1.ReadWriteOnce {
 		return fmt.Errorf("%w: static persistent volume identity differs", ErrConflict)
 	}
 	if v.PVUID != "" && string(pv.UID) != v.PVUID {

@@ -182,7 +182,7 @@ func (s *Service) deleteVolume(i int) error {
 			return err
 		}
 	}
-	if v.Enforced {
+	if v.Enforced || v.Backend == "directory" {
 		if s.storage == nil {
 			return fmt.Errorf("%w: storage backend unavailable", ErrFailedPrecondition)
 		}

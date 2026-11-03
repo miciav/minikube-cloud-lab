@@ -445,3 +445,7 @@ Node containers share the host kernel, so Kubernetes may report the host's raw
 capacity. Docker quotas enforce actual limits, and kubelet reservation makes
 **Allocatable** match the machine type and the template supplied to Autoscaler.
 Recreate the cluster after changing host resources.
+
+## Podman rootless
+
+See [the rootless VM instructions](docs/podman-rootless.md) for the separate configuration with persistent data and a simulated allocation budget.

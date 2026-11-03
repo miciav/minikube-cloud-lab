@@ -1,5 +1,7 @@
 # Student tutorial: persistent storage and the cloud
 
+For the Podman rootless VM variant, use [these setup instructions](podman-rootless.md). Its storage allocation budget is simulated and does not impose physical write quotas.
+
 This lab uses the same Docker Compose cloud as the [autoscaling tutorial](student-tutorial.md). Start it with `source scripts/configure.sh` and `docker compose up -d`, then create a cluster and configure credentials. The optional portal at
 <http://localhost:3000> shows the same volumes and allocation budget in **Volumes**;
 allocated capacity is not measured disk usage. Keep running the Kubernetes/PVC

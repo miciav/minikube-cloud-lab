@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +34,12 @@ func (s *Service) ConfigureStorage(backend storage.Backend, total, server string
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_, directory := backend.(*storage.Directory)
+	for _, v := range s.state.Volumes {
+		if (v.Backend == "directory") != directory {
+			return fmt.Errorf("%w: storage backend mismatch; use dedicated state", ErrFailedPrecondition)
+		}
+	}
 	s.storage = backend
 	s.storageTotal = q
 	s.storageServer = server
@@ -115,6 +122,10 @@ func (s *Service) allocateVolume(id, cluster, claim, capacity, policy string) (V
 		return Volume{}, fmt.Errorf("%w: bounded storage is not configured", ErrFailedPrecondition)
 	}
 	volume := Volume{ID: id, Cluster: cluster, Claim: claim, Capacity: storageQuantity(n), Policy: policy, Status: "Creating", Enforced: true}
+	if _, ok := backend.(*storage.Directory); ok {
+		volume.Backend = "directory"
+		volume.Enforced = false
+	}
 	if claim != "" {
 		volume.ClaimUID = id[4:]
 	}
@@ -162,8 +173,11 @@ func (s *Service) allocateVolume(id, cluster, claim, capacity, policy string) (V
 func (s *Service) reserveVolume(volume Volume, n int64) (Volume, error) {
 	index := -1
 	for i, v := range s.state.Volumes {
-		if !v.Enforced {
+		if !v.Enforced && v.Backend != "directory" {
 			return Volume{}, fmt.Errorf("%w: legacy volumes require an explicit offline migration", ErrFailedPrecondition)
+		}
+		if v.Backend != volume.Backend {
+			return Volume{}, fmt.Errorf("%w: storage backend mismatch", ErrFailedPrecondition)
 		}
 		if v.ID != volume.ID {
 			continue
@@ -189,4 +203,20 @@ func (s *Service) reserveVolume(volume Volume, n int64) (Volume, error) {
 		}
 	}
 	return volume, nil
+}
+
+// ConfigureDirectoryStorage enables persistent directories with an allocation budget.
+func (s *Service) ConfigureDirectoryStorage(root, total string) error {
+	if !filepath.IsAbs(root) {
+		return ErrInvalid
+	}
+	if err := s.ConfigureStorage(storage.NewDirectory(root), total, "127.0.0.1"); err != nil {
+		return err
+	}
+	for _, v := range s.Volumes() {
+		if v.Backend != "directory" {
+			return fmt.Errorf("%w: use dedicated rootless state", ErrFailedPrecondition)
+		}
+	}
+	return nil
 }

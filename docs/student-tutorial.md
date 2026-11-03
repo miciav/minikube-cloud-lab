@@ -1,5 +1,7 @@
 # Student tutorial: follow an autoscaling request from Pod to machine
 
+For the Podman rootless VM variant, use [these setup instructions](podman-rootless.md). Its storage allocation budget is simulated and does not impose physical write quotas.
+
 [Project overview and command reference](../README.md)
 
 In this lab you will ask a simulated cloud for a Kubernetes cluster, install

@@ -44,7 +44,7 @@ func TestMachineResourceCalibration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if observed.HostConfig.NanoCPUs != 2000000000 || observed.HostConfig.Memory != 2147483648 {
+	if observed.HostConfig.CPUPeriod != 100000 || observed.HostConfig.CPUQuota != 200000 || observed.HostConfig.Memory != 2147483648 {
 		t.Fatalf("runtime limits not applied: %+v", observed.HostConfig.Resources)
 	}
 }

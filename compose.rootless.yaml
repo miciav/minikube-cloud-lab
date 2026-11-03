@@ -1,0 +1,44 @@
+services:
+  cloud:
+    image: ${CLOUD_IMAGE:-minikube-cloud-lab/cloud:rootless}
+    command: [serve, --data-dir, /data, --api, '0.0.0.0:8080']
+    user: '0:0'
+    security_opt: [label=disable]
+    ports: ['127.0.0.1:8080:8080']
+    environment:
+      CLOUD_ROOTLESS: 'true'
+      CLOUD_STORAGE_VOLUME: minikube-cloud-lab-rootless-storage
+      CLOUD_STORAGE_CAPACITY: ${CLOUD_STORAGE_CAPACITY:-20Gi}
+      CLOUD_DOCKER_NETWORK: minikube-cloud-lab-rootless
+      CLOUD_DOCKER_IP: 172.30.0.254
+    networks:
+      lab:
+        ipv4_address: 172.30.0.254
+    volumes:
+      - ${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR must identify the student runtime directory}/podman/podman.sock:/var/run/docker.sock
+      - state:/data
+      - kube:/kube
+      - storage:/data/storage
+  lab:
+    image: ${LAB_IMAGE:-minikube-cloud-lab/lab:rootless}
+    profiles: [tools]
+    user: '0:0'
+    network_mode: service:cloud
+    environment:
+      KUBECONFIG: /data/minikube/kubeconfig
+    volumes: [state:/data:ro]
+networks:
+  lab:
+    name: minikube-cloud-lab-rootless
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/23
+          gateway: 172.30.0.1
+volumes:
+  state:
+    name: minikube-cloud-lab-rootless-state
+  kube:
+    name: minikube-cloud-lab-rootless-kube
+  storage:
+    name: minikube-cloud-lab-rootless-storage

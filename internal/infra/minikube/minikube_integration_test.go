@@ -165,11 +165,11 @@ func TestClusterLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var config struct{ NanoCpus, Memory int64 }
+		var config struct{ NanoCpus, CPUPeriod, CPUQuota, Memory int64 }
 		if err := json.Unmarshal(data, &config); err != nil {
 			t.Fatal(err)
 		}
-		if config.NanoCpus != 2000000000 || config.Memory != 2147483648 {
+		if (config.NanoCpus != 2000000000 && (config.CPUPeriod != 100000 || config.CPUQuota != 200000)) || config.Memory != 2147483648 {
 			t.Fatalf("container shape: %+v", config)
 		}
 	}

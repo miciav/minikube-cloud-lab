@@ -25,7 +25,7 @@ import (
 func serveCommand(factory func(string) (infra.Infra, error)) *cobra.Command {
 	var dataDir, apiAddr, grpcAddr string
 	command := &cobra.Command{Use: "serve", Short: "Run the cloud service", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		storageIP := os.Getenv("CLOUD_NFS_IP")
+		storageIP := configuredStorageServer()
 		if storageIP != "" && net.ParseIP(storageIP) == nil {
 			return fmt.Errorf("invalid storage server address")
 		}
@@ -108,5 +108,15 @@ func configureStorage(svc *cloud.Service, dataDir, server string) error {
 	if total == "" {
 		total = "20Gi"
 	}
+	if os.Getenv("CLOUD_STORAGE_VOLUME") != "" {
+		return svc.ConfigureDirectoryStorage(filepath.Join(dataDir, "storage", "volumes"), total)
+	}
 	return svc.ConfigureStorage(storage.NewClient(filepath.Join(dataDir, "storage", "control.sock")), total, server)
+}
+
+func configuredStorageServer() string {
+	if os.Getenv("CLOUD_STORAGE_VOLUME") != "" {
+		return "127.0.0.1"
+	}
+	return os.Getenv("CLOUD_NFS_IP")
 }
