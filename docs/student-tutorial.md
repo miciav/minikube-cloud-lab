@@ -31,7 +31,7 @@ Use the Linux VM or Mac approved by your instructor. It needs:
 | At least 6 CPUs and 6 GiB of available memory | Linux: `nproc` and `free -h`; Mac: Docker Desktop resource settings |
 | Docker Engine (Linux) or Docker Desktop (Mac) running, with local socket access | `docker info` |
 | Docker Compose v2 | `docker compose version` |
-| `kubectl` v1.35 | `kubectl version --client` |
+| `kubectl` v1.35.6 included in the tools image | After sourcing the helper: `kubectl version --client` |
 | Internet access to GitHub and GHCR | The VM can reach `github.com` and `ghcr.io` |
 
 The default two-node experiment uses machines capped at 2 GiB each (4 GiB
@@ -181,7 +181,7 @@ for workload details and logs, and can open it in a separate tab.
 
 Downloading kubeconfig from the portal does not update your terminal configuration.
 Continue using `cloud clusters get-credentials demo` for the tutorial's terminal,
-or pass the downloaded file explicitly with `kubectl --kubeconfig PATH`.
+or place the downloaded file in the current directory and use `kubectl --kubeconfig ./cloud-demo.yaml`.
 
 ### Open the dashboard installed by the cloud
 
@@ -496,7 +496,7 @@ needed to clean up its resources.
 | An image pull fails | Check the image name/tag and network access to `ghcr.io`; the default images are public and need no login |
 | Docker socket permission is denied | Check `docker info`, the socket's group, and `.env`; ask your instructor to correct access |
 | The cloud CLI cannot connect | Run `docker compose ps` and `docker compose logs cloud`; check the service has started |
-| `kubectl` uses the wrong cluster | Check `KUBECONFIG` and `kubectl config current-context`; repeat `cloud clusters get-credentials demo` |
+| `kubectl` uses the wrong cluster | Check `kubectl config current-context` and the managed cluster shown by `cloud clusters list`; the container wrapper uses the cloud private kubeconfig |
 | Another cluster already exists | List it and finish or clean up that earlier exercise before creating another |
 | Pods are Pending and no machine is added | Check the Pod's scheduling event, Autoscaler rollout/logs, size limits, and cloud operations |
 | A Node is Ready but a Pod stays ContainerCreating or ImagePullBackOff | Inspect that Pod's events; a new machine alone does not resolve image or network errors |

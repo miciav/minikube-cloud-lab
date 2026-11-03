@@ -32,10 +32,12 @@ func newConfigurationFixture(t *testing.T) configurationFixture {
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
-		"uname":  "printf '%s\\n' \"${CONFIG_TEST_OS:-Linux}\"",
-		"id":     "case \"$1\" in -u) printf '1001\\n';; -g) printf '1002\\n';; *) exit 1;; esac",
-		"stat":   "if [ \"${CONFIG_TEST_SOCKET_FAIL:-}\" = 1 ]; then exit 1; fi; case \"${CONFIG_TEST_OS:-Linux}\" in Linux) test \"$1\" = -c || exit 1;; Darwin) test \"$1\" = -f || exit 1;; esac; printf '999\\n'",
-		"docker": "printf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"",
+		"uname":   "printf '%s\\n' \"${CONFIG_TEST_OS:-Linux}\"",
+		"id":      "case \"$1\" in -u) printf '1001\\n';; -g) printf '1002\\n';; *) exit 1;; esac",
+		"stat":    "if [ \"${CONFIG_TEST_SOCKET_FAIL:-}\" = 1 ]; then exit 1; fi; case \"${CONFIG_TEST_OS:-Linux}\" in Linux) test \"$1\" = -c || exit 1;; Darwin) test \"$1\" = -f || exit 1;; esac; printf '999\\n'",
+		"kubectl": "exit 98",
+		"docker":  "printf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"; if [ -n \"${CONFIG_TEST_STDIN_LOG:-}\" ]; then cat > \"$CONFIG_TEST_STDIN_LOG\"; fi",
+		"podman":  "printf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"",
 	} {
 		if err := os.WriteFile(filepath.Join(f.bin, name), []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
 			t.Fatal(err)
@@ -304,5 +306,64 @@ cloud clusters list
 				t.Fatalf("wrapper did not use checkout .env: %q (%v)", args, err)
 			}
 		})
+	}
+}
+
+func TestContainerKubectlPreservesWorkingDirectoryArgumentsAndStdin(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh"} {
+		t.Run(shell, func(t *testing.T) {
+			f := newConfigurationFixture(t)
+			out, err := f.runShell(t, shell, `alias kubectl='echo wrong-kubectl'
+source "$CONFIG_TEST_SCRIPT" || exit
+printf 'manifest-input' | kubectl apply -f - --namespace 'name with spaces'
+`, "CONFIG_TEST_STDIN_LOG="+filepath.Join(f.taskHome, "stdin.log"))
+			if err != nil {
+				t.Fatalf("%s: %v", out, err)
+			}
+			data, err := os.ReadFile(f.dockerLog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input, err := os.ReadFile(filepath.Join(f.taskHome, "stdin.log"))
+			if err != nil || string(input) != "manifest-input" {
+				t.Fatalf("stdin lost: %q %v", input, err)
+			}
+			got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
+			want := []string{"compose", "--project-directory", f.root, "--env-file", filepath.Join(f.root, ".env"), "-f", filepath.Join(f.root, "compose.yaml"), "run", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "-", "--namespace", "name with spaces"}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("argv: %q want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestRootlessKubectlWrapperUsesPodman(t *testing.T) {
+	f := newConfigurationFixture(t)
+	script, err := os.ReadFile("scripts/configure-rootless.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wrapper string
+	for _, line := range strings.Split(string(script), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "function kubectl {") {
+			wrapper = line
+			break
+		}
+	}
+	if wrapper == "" {
+		t.Fatal("rootless kubectl wrapper missing")
+	}
+	out, err := f.run(t, "CLOUD_ROOTLESS_ROOT=\"$CONFIG_TEST_ROOT\"\n"+wrapper+"\nkubectl apply -f 'manifest with spaces.yaml'\n", "CONFIG_TEST_ROOT="+f.root)
+	if err != nil {
+		t.Fatalf("%s: %v", out, err)
+	}
+	data, err := os.ReadFile(f.dockerLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
+	want := []string{"compose", "-f", filepath.Join(f.root, "compose.rootless.yaml"), "run", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "manifest with spaces.yaml"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv: %q want %q", got, want)
 	}
 }

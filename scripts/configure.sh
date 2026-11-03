@@ -61,7 +61,12 @@ _cloud_lab_configure() {
         docker compose --project-directory "$CLOUD_LAB_ROOT" --env-file "$CLOUD_LAB_ROOT/.env" \
             -f "$CLOUD_LAB_ROOT/compose.yaml" run --rm lab "$@"
     }
-    unalias cloud lab 2>/dev/null || true
+    function kubectl {
+        docker compose --project-directory "$CLOUD_LAB_ROOT" --env-file "$CLOUD_LAB_ROOT/.env" \
+            -f "$CLOUD_LAB_ROOT/compose.yaml" run --rm --entrypoint kubectl \
+            --volume "$PWD:/workspace" --workdir /workspace lab "$@"
+    }
+    unalias cloud lab kubectl 2>/dev/null || true
     export KUBECONFIG="$HOME/.kube/config"
     printf 'Lab configuration ready. Existing .env values were preserved.\n'
     printf 'Start the cloud and portal yourself with docker compose up -d from %s.\n' "$CLOUD_LAB_ROOT"

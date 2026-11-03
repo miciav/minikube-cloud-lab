@@ -26,6 +26,8 @@ _cloud_rootless_configure() {
     CLOUD_ROOTLESS_ROOT=$root
     function cloud { podman compose -f "$CLOUD_ROOTLESS_ROOT/compose.rootless.yaml" exec cloud cloud "$@"; }
     function lab { podman compose -f "$CLOUD_ROOTLESS_ROOT/compose.rootless.yaml" run --rm lab "$@"; }
+    function kubectl { podman compose -f "$CLOUD_ROOTLESS_ROOT/compose.rootless.yaml" run --rm --entrypoint kubectl --volume "$PWD:/workspace" --workdir /workspace lab "$@"; }
+    unalias kubectl 2>/dev/null || true
     printf 'Ready. Start: podman compose -f %q up -d cloud\n' "$root/compose.rootless.yaml"
 }
 if _cloud_rootless_configure; then

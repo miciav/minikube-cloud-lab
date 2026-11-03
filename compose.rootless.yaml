@@ -20,6 +20,7 @@ services:
       - kube:/kube
       - storage:/data/storage
   lab:
+    security_opt: [label=disable]
     image: ${LAB_IMAGE:-minikube-cloud-lab/lab:rootless}
     profiles: [tools]
     user: '0:0'

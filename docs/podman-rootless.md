@@ -29,13 +29,7 @@ lab install autoscaler
 lab load start
 ```
 
-The helper supports Bash. To export credentials from the named kubeconfig volume without changing the host configuration:
-
-```sh
-podman compose -f compose.rootless.yaml cp cloud:/kube/config ./rootless-kubeconfig
-chmod 600 rootless-kubeconfig
-kubectl --kubeconfig ./rootless-kubeconfig get nodes
-```
+The helper supports Bash and defines `cloud`, `lab` and containerized `kubectl`. No host kubectl installation is required. The wrapper uses the private cluster kubeconfig and mounts the current directory at `/workspace`, so `kubectl apply -f manifest.yaml` works normally. Read and write files relative to the current directory. Host kubeconfig export is optional.
 
 `CLOUD_STORAGE_CAPACITY` defaults to `20Gi`. A claim requesting `100Gi` with StorageClass `cloud-standard` remains Pending and produces `StorageCapacityExceeded`. Valid claims use shared directory-backed PVs. Retain keeps both data and the capacity reservation; Delete returns the budget after deleting the volume. Test persistence by moving a pod between nodes. A directory volume's advertised capacity is an allocation request, not a limit on bytes written.
 
