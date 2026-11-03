@@ -1,6 +1,6 @@
 services:
   cloud:
-    image: ${CLOUD_IMAGE:-minikube-cloud-lab/cloud:rootless}
+    image: ${CLOUD_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/cloud:latest}
     command: [serve, --data-dir, /data, --api, '0.0.0.0:8080']
     user: '0:0'
     security_opt: [label=disable]
@@ -21,7 +21,7 @@ services:
       - storage:/data/storage
   lab:
     security_opt: [label=disable]
-    image: ${LAB_IMAGE:-minikube-cloud-lab/lab:rootless}
+    image: ${LAB_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/lab:latest}
     profiles: [tools]
     user: '0:0'
     network_mode: service:cloud

@@ -16,12 +16,11 @@ printf 'br_netfilter\nvxlan\n' | sudo tee /etc/modules-load.d/cloud-lab.conf
 
 Enable the user's API socket with `systemctl --user enable --now podman.socket`. Verify `podman info` reports rootless and cgroups v2.
 
-Build the current images before starting (the published images do not yet contain this feature):
+The CI builds and publishes the cloud and tools images to GHCR for amd64 and arm64 after checks pass on main. Once publication finishes, pull those images in the student VM:
 
 ```sh
-podman build --target cloud -t minikube-cloud-lab/cloud:rootless .
-podman build --target lab -t minikube-cloud-lab/lab:rootless .
 source scripts/configure-rootless.sh
+podman compose -f compose.rootless.yaml --profile tools pull
 podman compose -f compose.rootless.yaml up -d cloud
 cloud clusters create demo --min-nodes 1 --max-nodes 2
 cloud clusters get-credentials demo
@@ -31,7 +30,7 @@ lab load start
 
 The helper supports Bash and defines `cloud`, `lab` and containerized `kubectl`. No host kubectl installation is required. The wrapper uses the private cluster kubeconfig and mounts the current directory at `/workspace`, so `kubectl apply -f manifest.yaml` works normally. Read and write files relative to the current directory. Host kubeconfig export is optional.
 
-`CLOUD_STORAGE_CAPACITY` defaults to `20Gi`. A claim requesting `100Gi` with StorageClass `cloud-standard` remains Pending and produces `StorageCapacityExceeded`. Valid claims use shared directory-backed PVs. Retain keeps both data and the capacity reservation; Delete returns the budget after deleting the volume. Test persistence by moving a pod between nodes. A directory volume's advertised capacity is an allocation request, not a limit on bytes written.
+`CLOUD_STORAGE_CAPACITY` defaults to `20Gi`. A claim requesting `100Gi` with StorageClass `cloud-standard` remains Pending and produces `StorageCapacityExceeded`. Valid claims use shared directory-backed PVs. Retain keeps both data and the capacity reservation; Delete returns the budget after deleting the volume. Test persistence by recreating a pod on its original node. A directory volume's advertised capacity is an allocation request, not a limit on bytes written.
 
 Delete the cluster with `cloud clusters delete demo` before `podman compose -f compose.rootless.yaml down`. Named volumes survive `down`. Adding `-v` destroys the state and stored data.
 
