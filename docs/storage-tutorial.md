@@ -2,11 +2,12 @@
 
 For the Podman rootless VM variant, use [these setup instructions](podman-rootless.md). Its storage allocation budget is simulated and does not impose physical write quotas.
 
-This lab uses the same Docker Compose cloud as the [autoscaling tutorial](student-tutorial.md). Start it with `source scripts/configure.sh` and `docker compose up -d`, then create a cluster and configure credentials. The optional portal at
-<http://localhost:3000> shows the same volumes and allocation budget in **Volumes**;
-allocated capacity is not measured disk usage. Keep running the Kubernetes/PVC
-exercises from the terminal:
-
+Use the runtime already started in the [autoscaling tutorial](student-tutorial.md):
+`source scripts/configure-rootless.sh` for the Podman VM, or `source
+scripts/configure.sh` for Docker. The helpers provide containerized `kubectl`;
+no host installation is required. Pull images published by the CI before starting
+an updated lab. The optional portal is available only in the Docker configuration.
+Allocated capacity is a reservation, not measured disk usage.
 
 ```sh
 cloud clusters create demo
@@ -14,7 +15,7 @@ cloud clusters get-credentials demo
 kubectl get storageclass
 ```
 
-The cloud installs `cloud-standard` (reclaim policy `Delete`) and `cloud-retain` (`Retain`). If they are not visible yet, wait a few seconds. Volumes use NFS storage provided by the cloud. Each new volume has its own bounded filesystem. Its capacity includes filesystem metadata and journal space; usable file bytes are smaller than the nominal virtual disk size. The cloud also installs `cloud-static`, for administrator-created PVs.
+The cloud installs `cloud-standard` (reclaim policy `Delete`) and `cloud-retain` (`Retain`). If they are not visible yet, wait a few seconds. Docker volumes use NFS storage provided by the cloud, with a bounded filesystem per volume. Podman rootless uses directory-backed volumes with a simulated allocation budget and no physical write quota. On Docker, capacity includes filesystem metadata and journal space, so usable file bytes are smaller than the nominal virtual disk size. The cloud also installs `cloud-static`, for administrator-created PVs.
 
 ## Request and inspect a volume
 
@@ -136,7 +137,7 @@ cloud clusters delete restored
 docker compose down
 ```
 
-With `cloud-standard`, deleting the PVC deletes the cloud volume after its Pod has stopped. Deleting a cluster instead preserves all remaining volumes as `Retain`: delete any unwanted available volumes explicitly with `cloud volumes delete`. `docker compose down` preserves the shared Docker storage volume; `docker compose down -v` removes it and destroys its contents. This lab enforces virtual disk size but does not provide high availability. Run it on a trusted computer: the NFS export is accessible from the lab network.
+With `cloud-standard`, deleting the PVC deletes the cloud volume after its Pod has stopped. Deleting a cluster instead preserves all remaining volumes as `Retain`: delete any unwanted available volumes explicitly with `cloud volumes delete`. Compose `down` preserves named storage volumes in both configurations; `down -v` destroys their contents. Only the Docker/NFS backend enforces physical per-volume size. Run the lab on a trusted computer.
 
 
 ## Explore the allocation budget and write limit
@@ -147,7 +148,8 @@ cloud storage status
 
 The default total is `20Gi`. Set `CLOUD_STORAGE_CAPACITY=4Gi` in `.env` before
 starting the cloud to use a smaller budget, then recreate the cloud service with
-`docker compose up -d --force-recreate cloud`. The sum of allocated virtual disks
+`docker compose up -d --force-recreate cloud` or, for the rootless VM,
+`podman compose -f compose.rootless.yaml up -d --force-recreate cloud`. The sum of allocated virtual disks
 cannot exceed that budget. Retained volumes still count, even after deleting
 their PVCs or clusters. Reducing the budget never shrinks or deletes existing
 volumes: it blocks new allocations until capacity is available again.
@@ -165,7 +167,11 @@ volumes to release capacity; the provisioner retries the waiting PVC automatical
 A `ResourceQuota` is an additional Kubernetes namespace policy and does not
 replace this cloud-wide allocation budget.
 
-To demonstrate the write limit, create a disposable small PVC and Pod:
+### Docker/NFS only: physical write limit
+
+Skip this subsection on Podman rootless and use the oversized-PVC exercise
+below instead. Rootless directories do not impose a physical write quota.
+For Docker/NFS, create a disposable small PVC and Pod:
 
 ```sh
 cat > quota-lab.yaml <<'YAML'
@@ -293,3 +299,34 @@ cloud storage status
 
 The cloud refuses to delete a published or bound volume. If Kubernetes protection
 finalizers take longer to release a PV, retry `unpublish` after they finish.
+
+## Request more capacity than the cloud can supply
+
+Both paths enforce the allocation budget (`CLOUD_STORAGE_CAPACITY`, default
+`20Gi`). This check does not allocate or fill a 100Gi disk:
+
+```sh
+cat > oversized-pvc.yaml <<'YAML'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: oversized-data
+spec:
+  storageClassName: cloud-standard
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 100Gi
+YAML
+kubectl apply -f oversized-pvc.yaml
+kubectl get pvc oversized-data
+kubectl describe pvc oversized-data
+kubectl get events --field-selector reason=StorageCapacityExceeded
+cloud storage status
+```
+
+**Checkpoint:** the claim remains Pending, no PV is created for it, and its
+events contain `StorageCapacityExceeded`. Remove it with `kubectl delete pvc
+oversized-data`. On the rootless VM, do not confuse this allocation refusal
+with a write quota: writing beyond an accepted PVC's declared size is not blocked
+by a per-volume filesystem limit. Physical disk exhaustion is still possible.

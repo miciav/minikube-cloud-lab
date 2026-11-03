@@ -91,7 +91,7 @@ it("creates cluster and tracks operation failure", async () => {
       }),
     }),
   );
-  await u.click(screen.getByRole("link", { name: "Operations" }));
+  await u.click(await screen.findByRole("link", { name: "Operations" }));
   expect(await screen.findByText("bootstrap failed")).toBeTruthy();
 });
 it("confirms destructive actions and preserves conflict errors", async () => {

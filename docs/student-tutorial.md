@@ -22,79 +22,96 @@ By the end, you should be able to:
 You should already be familiar with a terminal and the Kubernetes concepts of
 Pod, Deployment, and Node. No Go programming is required.
 
-## 1. Prepare Docker on your lab host
+## 1. Prepare the lab host
 
-Use the Linux VM or Mac approved by your instructor. It needs:
+Use the Linux VM or Mac approved by your instructor. The reference rootless VM
+has 4 vCPUs and 6 GiB RAM. Node CPU limits share the host's processors; they do
+not reserve exclusive physical cores. Leave memory for the VM and cloud services.
+You need Git, internet access to GitHub/GHCR and one of the runtimes below.
+The tools image includes `cloud`, `lab` and `kubectl` v1.35.6: students do not
+need Go or a native kubectl installation.
 
-| Requirement | Check |
-| --- | --- |
-| At least 6 CPUs and 6 GiB of available memory | Linux: `nproc` and `free -h`; Mac: Docker Desktop resource settings |
-| Docker Engine (Linux) or Docker Desktop (Mac) running, with local socket access | `docker info` |
-| Docker Compose v2 | `docker compose version` |
-| `kubectl` v1.35.6 included in the tools image | After sourcing the helper: `kubectl version --client` |
-| Internet access to GitHub and GHCR | The VM can reach `github.com` and `ghcr.io` |
-
-The default two-node experiment uses machines capped at 2 GiB each (4 GiB
-combined); leave the remaining memory budget for the VM and cloud service.
-
-Use a dedicated lab environment: this exercise changes the current Kubernetes context
-and allows the cloud service to create Docker resources. Keep the VM on a
-trusted network. Compose keeps externalgrpc port 9090 inside a dedicated Docker
-bridge and publishes the management API only on localhost. These instructions
-work on Linux and Mac; Docker Desktop host networking is not required.
-The project commands run in containers, so no native `cloud`/`lab` binaries or
-Go installation are needed. `kubectl` is the standard host Kubernetes client.
-
-Clone the repository, unless your instructor has already placed it at
-`~/cloud-lab`:
+Clone the public repository, unless your instructor has already prepared it:
 
 ```sh
 git clone https://github.com/miciav/minikube-cloud-lab.git ~/cloud-lab
 cd ~/cloud-lab
 ```
 
-The repository and container images are public. The HTTPS clone command needs
-no GitHub account or SSH key, and pulling the images needs no Docker login to
-`ghcr.io`.
+The CI builds and publishes amd64/arm64 images after its checks pass on `main`.
+Wait for the instructor's confirmed image version, then pull the published
+images. A failed or unfinished CI run has not updated `latest`; rebuilding
+images is only needed when developing the lab itself.
 
-Prepare the configuration in your **Bash or zsh** terminal:
+### A. Student Linux VM with Podman rootless
+
+Use Bash. The instructor prepares Podman, a Compose provider, the user's API
+socket, subordinate UID/GID mappings, cgroups v2 delegation and the kernel
+modules `br_netfilter`/`vxlan`; see [VM preparation](podman-rootless.md).
+Students run the following without sudo:
 
 ```sh
-cd ~/cloud-lab
+podman info --format '{{.Host.Security.Rootless}}'
+source scripts/configure-rootless.sh
+```
+
+The first command must print `true`. The helper defines `cloud`, `lab` and
+containerized `kubectl`. State and data live in dedicated Podman named volumes.
+The rootless path omits the cloud portal and NFS server. Its PVC allocation
+budget is simulated; accepted volumes contain real persistent data, without
+physical write quotas.
+
+### B. Docker Engine on Linux or Docker Desktop on Mac
+
+Use Bash or zsh, with Docker Engine/Desktop running, Compose v2 and access to
+the local Docker socket:
+
+```sh
+docker info
+docker compose version
 source scripts/configure.sh
 ```
 
-This creates the data directories, adds missing UID/GID/socket-group values to
-`.env`, defines the `cloud` and `lab` command wrappers, and selects the matching
-host kubeconfig for this session. It leaves existing `.env` values unchanged,
-including image overrides. If a copied `.env` contains IDs belonging to a
-different user, correct them before continuing.
+The helper creates the data directories and fills missing UID/GID/socket-group
+values in `.env`. Existing values and image overrides are preserved. Correct
+copied IDs if they belong to another user. Docker state lives under
+`~/.minikube-cloud-lab`; the optional exported host kubeconfig is `~/.kube/config`.
+The default Docker storage backend uses NFS and bounded filesystems.
 
-The cloud stores state and its private kubeconfig under `~/.minikube-cloud-lab`.
-The `lab` container reads that state mount read-only and shares the running
-cloud container's network namespace to reach Kubernetes on the bridge. Finish
-running `lab` commands before recreating the cloud container. Host `kubectl` uses
-`~/.kube/config`, where `cloud` exports the localhost API endpoint. The IDs let the tools access their files as your user
-and let the cloud access the local Docker socket. On Mac, the helper configures
-group 0 for Docker Desktop's VM socket.
+### Commands in every terminal
 
-The script only configures files and the current shell. You will explicitly
-pull the images and start the cloud with Compose. It does not create a cluster,
-install Autoscaler, or start the workload, and it does not edit `.bashrc`, `.zshrc`, or
-other shell startup files.
+Source the appropriate helper in each new terminal. The functions configure
+only the current session; they do not start services, create clusters or edit
+shell startup files. Keep using the same runtime and checkout throughout the lab.
 
-In **every new Bash or zsh terminal** used for the lab, run:
+`kubectl` runs in the tools container, sharing the cloud's network namespace and
+private kubeconfig. It does not require credentials or a binary on the host.
+The current directory is mounted at `/workspace`, so local manifests work:
 
 ```sh
-source ~/cloud-lab/scripts/configure.sh
+kubectl version --client
 ```
 
-The wrappers work from other directories too. Use `source`, rather than
-executing the script: a child process cannot configure its parent terminal.
+When the exercises ask you to create a manifest, use `kubectl apply -f
+./my-manifest.yaml` from its directory. Files outside that directory are not mounted; copy them
+there or change directory first. Pipelines such as `cat file.yaml | kubectl apply
+-f -` also work. Complete long-running `kubectl`/`lab` commands before recreating
+the cloud container. For browser access use the published Service endpoints;
+`port-forward` listeners run inside the cloud network namespace.
 
 ## 2. Start the cloud and request a cluster
 
-Pull the images, then start the cloud service yourself:
+For the **Podman rootless VM**:
+
+```sh
+cd ~/cloud-lab
+podman compose -f compose.rootless.yaml --profile tools pull
+podman compose -f compose.rootless.yaml up -d cloud
+podman compose -f compose.rootless.yaml ps
+cloud machine-types list
+```
+
+For the **Docker path**:
 
 ```sh
 cd ~/cloud-lab
@@ -105,8 +122,10 @@ cloud machine-types list
 ```
 
 If the last command reports a connection error, wait a few seconds and retry.
-You should see `lab-small` with 2 CPUs and 2048 MiB, and `lab-medium` with
-4 CPUs and 8192 MiB. To diagnose startup, use `docker compose logs cloud`.
+Expect `lab-small` with 2 CPUs/2048 MiB and `lab-medium` with 4 CPUs/8192 MiB.
+Inspect `podman compose -f compose.rootless.yaml logs cloud` or
+`docker compose logs cloud` for your chosen runtime. From this point, the
+`cloud`, `lab` and `kubectl` exercise commands are the same for both paths.
 
 **Predict:** when you request a cluster with minimum 1 and maximum 3, how many
 machines should exist immediately? Does the control plane count?
@@ -119,7 +138,7 @@ cloud machines list --cluster demo
 cloud operations list
 ```
 
-Each newly created node uses Google's `https://mirror.gcr.io` cache for public
+In the Docker path, each newly created node uses Google's `https://mirror.gcr.io` cache for public
 Docker Hub images, including nodes added by Autoscaler. An image missing from the
 cache falls back to Docker Hub, where the usual rate limit still applies. Existing
 clusters need to be deleted and recreated to receive the setting. This does not
@@ -139,7 +158,9 @@ named `demo` with role `control-plane`, and the CREATE_CLUSTER operation has
 requester `student` and status DONE. The maximum is a limit; it does not cause
 three machines to be provisioned immediately.
 
-Now obtain Kubernetes credentials:
+The containerized tools already use the private cluster credentials. The first
+command below optionally exports a host kubeconfig for external tools; it is not
+required by the kubectl wrapper:
 
 ```sh
 cloud clusters get-credentials demo
@@ -168,7 +189,8 @@ host. Use Allocatable when reasoning about scheduling this experiment.
 
 ### Optional: observe your cloud in the portal
 
-Open <http://localhost:3000>. Compose starts the separate portal container alongside
+This optional section applies to the Docker path; the rootless VM omits the
+portal to reduce overhead. Open <http://localhost:3000>. Compose starts the separate portal container alongside
 cloud and NFS. The portal manages the same cloud resources as your terminal commands;
 it does not install Autoscaler or generate load for you. Keep using the terminal for
 the exercises below.
@@ -210,9 +232,8 @@ It requests 128 MiB of the scheduling budget. The cloud also installs Metrics Se
 in new clusters, enabling live Pod CPU/memory usage in YAKD and cluster/node usage in
 the portal. Allow a short interval for the first readings. Existing clusters need
 to be recreated to receive Metrics Server. Minikube's kubelet certificates require
-an internal lab-only TLS exception; see the [portal notes](../README.md#cloud-portal). A temporary alternative is
-`kubectl -n yakd-dashboard port-forward --address 127.0.0.1 service/yakd-dashboard 8081:80`;
-then open <http://127.0.0.1:8081> and keep that forwarding command running.
+an internal lab-only TLS exception; see the [portal notes](../README.md#cloud-portal).
+Use the localhost Service endpoint shown by `lab services` with containerized kubectl.
 
 ### Try NodePort and LoadBalancer
 
@@ -471,6 +492,14 @@ cloud clusters delete demo
 cloud clusters list
 cloud machines list
 cloud operations list
+```
+
+Then stop the selected runtime configuration:
+
+```sh
+# Podman rootless VM
+podman compose -f compose.rootless.yaml down
+# Or Docker
 docker compose down
 ```
 
@@ -479,7 +508,7 @@ DONE with requester `student`. The operation history remains on disk.
 Stop the observation watches with Ctrl-C. API connection errors after deleting
 the Kubernetes cluster are expected.
 
-`docker compose down` stops the cloud service; it does not itself delete the
+`podman compose -f compose.rootless.yaml down` or `docker compose down` stops the cloud service; it does not itself delete the
 machines owned by that service. Always complete `cloud clusters delete` first.
 The `demo` kubeconfig context can remain after deletion. Other contexts are
 preserved; deleting all of `~/.kube` is unnecessary.
