@@ -98,8 +98,17 @@ When the exercises ask you to create a manifest, use `kubectl apply -f
 ./my-manifest.yaml` from its directory. Files outside that directory are not mounted; copy them
 there or change directory first. Pipelines such as `cat file.yaml | kubectl apply
 -f -` also work. Complete long-running `kubectl`/`lab` commands before recreating
-the cloud container. For browser access use the published Service endpoints;
-`port-forward` listeners run inside the cloud network namespace.
+the cloud container. For temporary browser access to a running nginx pod:
+
+```sh
+kubectl port-forward pod/nginx 18080:80
+```
+
+Open `http://localhost:18080` on the lab host and leave the command running.
+Ctrl+C stops forwarding and removes the temporary tools container. Both wrappers
+publish only on `127.0.0.1`; choose an available explicit local port (random local
+ports are unsupported). On a remote VM, localhost means the VM; use SSH forwarding
+to reach it from your laptop. Published Service endpoints remain available too.
 
 ## 2. Start the cloud and request a cluster
 

@@ -62,8 +62,15 @@ func TestComposeConfiguration(t *testing.T) {
 	if err := json.Unmarshal(output, &config); err != nil {
 		t.Fatal(err)
 	}
-	if len(config.Services) != 4 {
+	if len(config.Services) != 5 {
 		t.Fatalf("services: %+v", config.Services)
+	}
+	forward := config.Services["kubectl-forward"]
+	if forward.Image != "example/lab:test" || forward.NetworkMode != "" || len(forward.Networks) != 1 || forward.User != "1001:1001" || len(forward.Ports) != 0 || len(forward.Volumes) != 1 || !forward.Volumes[0].ReadOnly || forward.Environment["KUBECONFIG"] != "/data/minikube/kubeconfig" {
+		t.Fatalf("forwarding isolation: %+v", forward)
+	}
+	if _, ok := forward.Networks["lab"]; !ok {
+		t.Fatal("forwarding container must reach cluster network")
 	}
 	portal := config.Services["portal"]
 	if portal.Image != "example/portal:test" || len(portal.Networks) != 1 || len(portal.Volumes) != 0 || len(portal.CapAdd) != 0 || len(portal.Ports) != 1 || portal.Ports[0].HostIP != "127.0.0.1" || portal.Ports[0].Target != 3000 || portal.Ports[0].Published != "3000" {

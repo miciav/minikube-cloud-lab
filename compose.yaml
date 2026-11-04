@@ -53,6 +53,16 @@ services:
     user: "${UID:?set UID in .env}:${GID:?set GID in .env}"
     volumes:
       - ${HOME}/.minikube-cloud-lab:/data:ro
+  kubectl-forward:
+    security_opt: [label=disable]
+    image: ${LAB_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/lab:latest}
+    profiles: [tools]
+    environment:
+      KUBECONFIG: /data/minikube/kubeconfig
+    networks: [lab]
+    user: "${UID:?set UID in .env}:${GID:?set GID in .env}"
+    volumes:
+      - ${HOME}/.minikube-cloud-lab:/data:ro
 networks:
   portal: {}
   lab:

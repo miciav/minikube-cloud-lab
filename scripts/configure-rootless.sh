@@ -29,6 +29,7 @@ _cloud_rootless_configure() {
         printf 'The instructor must load br_netfilter on the VM before running the lab.\n' >&2
         return 1
     fi
+    source "$root/scripts/kubectl-forward.sh" || return 1
     CLOUD_ROOTLESS_ROOT=$root
     function labcompose {
         if command -v podman-compose >/dev/null 2>&1; then
@@ -39,7 +40,19 @@ _cloud_rootless_configure() {
     }
     function cloud { labcompose exec cloud cloud "$@"; }
     function lab { labcompose run --rm lab "$@"; }
-    function kubectl { labcompose run --rm --entrypoint kubectl --volume "$PWD:/workspace" --workdir /workspace lab "$@"; }
+    function kubectl {
+        local -a _cloud_forward_ports _cloud_forward_args
+        local forward_status
+        if _cloud_kubectl_forward_prepare "$@"; then
+            labcompose run --rm --no-deps --entrypoint kubectl "${_cloud_forward_ports[@]}" \
+                --volume "$PWD:/workspace" --workdir /workspace kubectl-forward "${_cloud_forward_args[@]}"
+            return $?
+        else
+            forward_status=$?
+            [ "$forward_status" = 125 ] || return "$forward_status"
+        fi
+        labcompose run --rm --entrypoint kubectl --volume "$PWD:/workspace" --workdir /workspace lab "$@"
+    }
     unalias labcompose cloud lab kubectl 2>/dev/null || true
     printf 'Ready. Start: labcompose up -d cloud\n'
 }

@@ -51,6 +51,7 @@ _cloud_lab_configure() {
         fi
     done
 
+    source "$lab_root/scripts/kubectl-forward.sh" || return 1
     CLOUD_LAB_ROOT=$lab_root
     # The function keyword avoids expanding a pre-existing alias in both shells.
     function cloud {
@@ -62,6 +63,18 @@ _cloud_lab_configure() {
             -f "$CLOUD_LAB_ROOT/compose.yaml" run --rm lab "$@"
     }
     function kubectl {
+        local -a _cloud_forward_ports _cloud_forward_args
+        local forward_status
+        if _cloud_kubectl_forward_prepare "$@"; then
+            docker compose --progress quiet --project-directory "$CLOUD_LAB_ROOT" --env-file "$CLOUD_LAB_ROOT/.env" \
+                -f "$CLOUD_LAB_ROOT/compose.yaml" run --rm --no-deps --entrypoint kubectl \
+                "${_cloud_forward_ports[@]}" --volume "$PWD:/workspace" --workdir /workspace \
+                kubectl-forward "${_cloud_forward_args[@]}"
+            return $?
+        else
+            forward_status=$?
+            [ "$forward_status" = 125 ] || return "$forward_status"
+        fi
         docker compose --progress quiet --project-directory "$CLOUD_LAB_ROOT" --env-file "$CLOUD_LAB_ROOT/.env" \
             -f "$CLOUD_LAB_ROOT/compose.yaml" run --rm --entrypoint kubectl \
             --volume "$PWD:/workspace" --workdir /workspace lab "$@"

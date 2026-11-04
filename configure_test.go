@@ -25,7 +25,7 @@ func newConfigurationFixture(t *testing.T) configurationFixture {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"configure.sh", "configure-rootless.sh"} {
+	for _, name := range []string{"configure.sh", "configure-rootless.sh", "kubectl-forward.sh"} {
 		script, err := os.ReadFile(filepath.Join("scripts", name)) // #nosec G304 -- names come from the fixed list above.
 		if err != nil {
 			t.Fatal(err)
@@ -357,7 +357,7 @@ func TestRootlessWrappersUseAvailableComposeProvider(t *testing.T) {
 			if start < 0 || end <= start {
 				t.Fatal("rootless wrappers missing")
 			}
-			body := "CLOUD_ROOTLESS_ROOT=\"$CONFIG_TEST_ROOT\"\nPATH=\"$CONFIG_TEST_BIN\"\n" + string(script[start:end]) + `
+			body := "source \"$CONFIG_TEST_ROOT/scripts/kubectl-forward.sh\"\nCLOUD_ROOTLESS_ROOT=\"$CONFIG_TEST_ROOT\"\nPATH=\"$CONFIG_TEST_BIN\"\n" + string(script[start:end]) + `
 labcompose up -d cloud || exit
 cloud clusters list || exit
 lab load start || exit
@@ -442,5 +442,71 @@ test "$?" = 1
 				t.Fatalf("preflight: %s (%v), want %q", out, err, tc.want)
 			}
 		})
+	}
+}
+
+func TestContainerPortForward(t *testing.T) {
+	for _, mode := range []string{"bash", "zsh", "podman"} {
+		for _, tc := range []struct {
+			name, command string
+			ports         []string
+			fail          bool
+		}{
+			{"basic", "port-forward pod/nginx 18080:80", []string{"18080"}, false},
+			{"namespace_and_named_ports", "--context 'class context' -n default port-forward service/nginx 18080:http 18443:https --address localhost --pod-running-timeout 1m", []string{"18080", "18443"}, false},
+			{"same_port", "port-forward pod/nginx 8080", []string{"8080"}, false},
+			{"separator", "port-forward pod/nginx -- 18080:80", []string{"18080"}, false},
+			{"random", "port-forward pod/nginx :80", nil, true},
+			{"zero", "port-forward pod/nginx 0:80", nil, true},
+			{"range", "port-forward pod/nginx 65536:80", nil, true},
+			{"overflow", "port-forward pod/nginx 9999999999999999999999:80", nil, true},
+			{"external_address", "port-forward pod/nginx 18080:80 --address=0.0.0.0", nil, true},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				f := newConfigurationFixture(t)
+				shell, setup := mode, "source \"$CONFIG_TEST_SCRIPT\" || exit\n"
+				if mode == "podman" {
+					shell = "bash"
+					script, err := os.ReadFile("scripts/configure-rootless.sh")
+					if err != nil {
+						t.Fatal(err)
+					}
+					start, end := strings.Index(string(script), "    function "), strings.Index(string(script), "    unalias ")
+					setup = "source \"$CONFIG_TEST_ROOT/scripts/kubectl-forward.sh\"\nCLOUD_ROOTLESS_ROOT=\"$CONFIG_TEST_ROOT\"\n" + string(script[start:end])
+				}
+				out, err := f.runShell(t, shell, setup+"\nkubectl "+tc.command, "CONFIG_TEST_ROOT="+f.root)
+				if tc.fail {
+					if err == nil || !strings.Contains(string(out), "Containerized port-forward") {
+						t.Fatalf("expected validation error: %s (%v)", out, err)
+					}
+					if _, err := os.Stat(f.dockerLog); !os.IsNotExist(err) {
+						t.Fatal("invalid request invoked runtime")
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("forward: %s (%v)", out, err)
+				}
+				data, err := os.ReadFile(f.dockerLog)
+				if err != nil {
+					t.Fatal(err)
+				}
+				args := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
+				joined := strings.Join(args, "|")
+				for _, port := range tc.ports {
+					if !strings.Contains(joined, "--publish|127.0.0.1:"+port+":"+port+"|") {
+						t.Fatalf("missing loopback mapping: %q", args)
+					}
+				}
+				for _, want := range []string{"--no-deps", "kubectl-forward", "port-forward|--address=0.0.0.0", "--volume|" + f.taskHome + ":/workspace"} {
+					if !strings.Contains(joined, want) {
+						t.Fatalf("missing %s: %q", want, args)
+					}
+				}
+				if tc.name == "namespace_and_named_ports" && !strings.Contains(joined, "--context|class context|-n|default|") {
+					t.Fatalf("lost flags: %q", args)
+				}
+			})
+		}
 	}
 }
