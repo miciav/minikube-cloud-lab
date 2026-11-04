@@ -134,7 +134,9 @@ cloud volumes list
 kubectl delete pv VOLUME_ID --ignore-not-found
 cloud volumes delete VOLUME_ID
 cloud clusters delete restored
-docker compose down
+# Podman rootless VM:
+podman compose -f compose.rootless.yaml down
+# For Docker, use docker compose down instead.
 ```
 
 With `cloud-standard`, deleting the PVC deletes the cloud volume after its Pod has stopped. Deleting a cluster instead preserves all remaining volumes as `Retain`: delete any unwanted available volumes explicitly with `cloud volumes delete`. Compose `down` preserves named storage volumes in both configurations; `down -v` destroys their contents. Only the Docker/NFS backend enforces physical per-volume size. Run the lab on a trusted computer.

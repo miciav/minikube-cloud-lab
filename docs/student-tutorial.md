@@ -319,7 +319,9 @@ before starting the workload.
 In **terminal B**, watch the lab's Pods:
 
 ```sh
-source ~/cloud-lab/scripts/configure.sh
+# Podman rootless VM:
+source ~/cloud-lab/scripts/configure-rootless.sh
+# For Docker, use source ~/cloud-lab/scripts/configure.sh instead.
 kubectl get pods -l app=lab-load -w
 ```
 
@@ -328,7 +330,9 @@ An initially empty list is expected. Leave the watch running.
 In **terminal C**, watch Nodes:
 
 ```sh
-source ~/cloud-lab/scripts/configure.sh
+# Podman rootless VM:
+source ~/cloud-lab/scripts/configure-rootless.sh
+# For Docker, use source ~/cloud-lab/scripts/configure.sh instead.
 kubectl get nodes -w
 ```
 

@@ -548,3 +548,26 @@ func TestDirectoryStorageCannotSwitchToBoundedBackend(t *testing.T) {
 		t.Fatal("accepted incompatible backend")
 	}
 }
+
+func TestDirectoryStorageReconfigurationPreservesReservations(t *testing.T) {
+	s, _, _ := newService(t)
+	root := t.TempDir()
+	if err := s.ConfigureDirectoryStorage(root, "32Mi"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateAvailableVolume("32Mi"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfigureDirectoryStorage(root, "32Mi"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ root, budget string }{{"relative/path", "32Mi"}, {root, "invalid"}} {
+		if err := s.ConfigureDirectoryStorage(tc.root, tc.budget); err == nil {
+			t.Fatalf("accepted invalid configuration: %+v", tc)
+		}
+	}
+	status, err := s.StorageCapacity()
+	if err != nil || status.Total != "32Mi" || status.Allocated != "32Mi" || status.Available != "0" {
+		t.Fatalf("reservation changed after reconfiguration: %+v %v", status, err)
+	}
+}

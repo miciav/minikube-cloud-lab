@@ -417,6 +417,30 @@ func TestStorageConfigurationDefaultsAndValidation(t *testing.T) {
 	}
 }
 
+func TestRootlessStorageConfigurationUsesPersistentDirectories(t *testing.T) {
+	s, _ := setup(t, nil)
+	dir := t.TempDir()
+	t.Setenv("CLOUD_STORAGE_VOLUME", "student-storage")
+	t.Setenv("CLOUD_STORAGE_CAPACITY", "32Mi")
+	t.Setenv("CLOUD_NFS_IP", "invalid-unused-nfs")
+	if err := configureStorage(s, dir, configuredStorageServer()); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.CreateAvailableVolume("32Mi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Enforced || v.Backend != "directory" {
+		t.Fatalf("wrong backend: %+v", v)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "storage", "volumes", v.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateAvailableVolume("16Mi"); !errors.Is(err, cloud.ErrStorageCapacity) {
+		t.Fatalf("configured budget not enforced: %v", err)
+	}
+}
+
 func TestStaticCLICommandsReportSuccessfulAdministration(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

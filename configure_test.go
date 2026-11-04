@@ -367,3 +367,31 @@ func TestRootlessKubectlWrapperUsesPodman(t *testing.T) {
 		t.Fatalf("argv: %q want %q", got, want)
 	}
 }
+
+func TestRootlessConfigurationIgnoresCDPATH(t *testing.T) {
+	f := newConfigurationFixture(t)
+	script, err := os.ReadFile("scripts/configure-rootless.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.root, "scripts/configure-rootless.sh"), script, 0o600); err != nil { // #nosec G703 -- canonical fixture directory beneath t.TempDir.
+		t.Fatal(err)
+	}
+	out, err := f.run(t, `builtin cd -- "$CONFIG_TEST_ROOT" || exit
+export CDPATH=.
+function podman {
+    # Inspect the helper's local path before the Linux-only preflight checks.
+    printf '%s' "$root" > "$CONFIG_TEST_ROOT_LOG"
+    printf 'false\n'
+}
+source scripts/configure-rootless.sh
+test "$?" = 1
+`, "CONFIG_TEST_ROOT="+f.root, "CONFIG_TEST_ROOT_LOG="+f.dockerLog)
+	if err != nil {
+		t.Fatalf("preflight: %s (%v)", out, err)
+	}
+	got, err := os.ReadFile(f.dockerLog)
+	if err != nil || string(got) != f.root {
+		t.Fatalf("checkout path: %q, want %q (%v)", got, f.root, err)
+	}
+}
