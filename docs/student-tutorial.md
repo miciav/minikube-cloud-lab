@@ -105,9 +105,9 @@ For the **Podman rootless VM**:
 
 ```sh
 cd ~/cloud-lab
-podman compose -f compose.rootless.yaml --profile tools pull
-podman compose -f compose.rootless.yaml up -d cloud
-podman compose -f compose.rootless.yaml ps
+labcompose --profile tools pull
+labcompose up -d cloud
+labcompose ps
 cloud machine-types list
 ```
 
@@ -123,7 +123,7 @@ cloud machine-types list
 
 If the last command reports a connection error, wait a few seconds and retry.
 Expect `lab-small` with 2 CPUs/2048 MiB and `lab-medium` with 4 CPUs/8192 MiB.
-Inspect `podman compose -f compose.rootless.yaml logs cloud` or
+Inspect `labcompose logs cloud` or
 `docker compose logs cloud` for your chosen runtime. From this point, the
 `cloud`, `lab` and `kubectl` exercise commands are the same for both paths.
 
@@ -502,7 +502,7 @@ Then stop the selected runtime configuration:
 
 ```sh
 # Podman rootless VM
-podman compose -f compose.rootless.yaml down
+labcompose down
 # Or Docker
 docker compose down
 ```
@@ -512,7 +512,7 @@ DONE with requester `student`. The operation history remains on disk.
 Stop the observation watches with Ctrl-C. API connection errors after deleting
 the Kubernetes cluster are expected.
 
-`podman compose -f compose.rootless.yaml down` or `docker compose down` stops the cloud service; it does not itself delete the
+`labcompose down` or `docker compose down` stops the cloud service; it does not itself delete the
 machines owned by that service. Always complete `cloud clusters delete` first.
 The `demo` kubeconfig context can remain after deletion. Other contexts are
 preserved; deleting all of `~/.kube` is unnecessary.

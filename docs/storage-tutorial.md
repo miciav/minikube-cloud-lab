@@ -135,7 +135,7 @@ kubectl delete pv VOLUME_ID --ignore-not-found
 cloud volumes delete VOLUME_ID
 cloud clusters delete restored
 # Podman rootless VM:
-podman compose -f compose.rootless.yaml down
+labcompose down
 # For Docker, use docker compose down instead.
 ```
 
@@ -151,7 +151,7 @@ cloud storage status
 The default total is `20Gi`. Set `CLOUD_STORAGE_CAPACITY=4Gi` in `.env` before
 starting the cloud to use a smaller budget, then recreate the cloud service with
 `docker compose up -d --force-recreate cloud` or, for the rootless VM,
-`podman compose -f compose.rootless.yaml up -d --force-recreate cloud`. The sum of allocated virtual disks
+`labcompose up -d --force-recreate cloud`. The sum of allocated virtual disks
 cannot exceed that budget. Retained volumes still count, even after deleting
 their PVCs or clusters. Reducing the budget never shrinks or deletes existing
 volumes: it blocks new allocations until capacity is available again.

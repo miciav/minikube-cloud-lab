@@ -2,6 +2,7 @@ package distribution
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -339,34 +340,56 @@ printf 'manifest-input' | kubectl apply -f - --namespace 'name with spaces'
 	}
 }
 
-func TestRootlessKubectlWrapperUsesPodman(t *testing.T) {
-	f := newConfigurationFixture(t)
-	script, err := os.ReadFile("scripts/configure-rootless.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var wrapper string
-	for _, line := range strings.Split(string(script), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "function kubectl {") {
-			wrapper = line
-			break
-		}
-	}
-	if wrapper == "" {
-		t.Fatal("rootless kubectl wrapper missing")
-	}
-	out, err := f.run(t, "CLOUD_ROOTLESS_ROOT=\"$CONFIG_TEST_ROOT\"\n"+wrapper+"\nkubectl apply -f 'manifest with spaces.yaml'\n", "CONFIG_TEST_ROOT="+f.root)
-	if err != nil {
-		t.Fatalf("%s: %v", out, err)
-	}
-	data, err := os.ReadFile(f.dockerLog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
-	want := []string{"compose", "-f", filepath.Join(f.root, "compose.rootless.yaml"), "run", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "manifest with spaces.yaml"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("argv: %q want %q", got, want)
+func TestRootlessWrappersUseAvailableComposeProvider(t *testing.T) {
+	for _, standalone := range []bool{false, true} {
+		t.Run(fmt.Sprint(standalone), func(t *testing.T) {
+			f := newConfigurationFixture(t)
+			if standalone {
+				if err := os.Symlink(filepath.Join(f.bin, "podman"), filepath.Join(f.bin, "podman-compose")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			script, err := os.ReadFile("scripts/configure-rootless.sh")
+			if err != nil {
+				t.Fatal(err)
+			}
+			start, end := strings.Index(string(script), "    function "), strings.Index(string(script), "    unalias ")
+			if start < 0 || end <= start {
+				t.Fatal("rootless wrappers missing")
+			}
+			body := "CLOUD_ROOTLESS_ROOT=\"$CONFIG_TEST_ROOT\"\nPATH=\"$CONFIG_TEST_BIN\"\n" + string(script[start:end]) + `
+labcompose up -d cloud || exit
+cloud clusters list || exit
+lab load start || exit
+kubectl apply -f 'manifest with spaces.yaml'
+`
+			out, err := f.run(t, body, "CONFIG_TEST_ROOT="+f.root, "CONFIG_TEST_BIN="+f.bin)
+			if err != nil {
+				t.Fatalf("wrappers: %s (%v)", out, err)
+			}
+			data, err := os.ReadFile(f.dockerLog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prefix := []string{"-f", filepath.Join(f.root, "compose.rootless.yaml")}
+			if !standalone {
+				prefix = append([]string{"compose"}, prefix...)
+			}
+			var want []string
+			for _, args := range [][]string{
+				{"up", "-d", "cloud"},
+				{"exec", "cloud", "cloud", "clusters", "list"},
+				{"run", "--rm", "lab", "load", "start"},
+				{"run", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "manifest with spaces.yaml"},
+			} {
+				want = append(want, prefix...)
+				want = append(want, args...)
+			}
+			got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("argv: %q want %q", got, want)
+			}
+		})
 	}
 }
 
