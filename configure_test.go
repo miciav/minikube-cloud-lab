@@ -24,12 +24,14 @@ func newConfigurationFixture(t *testing.T) configurationFixture {
 			t.Fatal(err)
 		}
 	}
-	script, err := os.ReadFile("scripts/configure.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(f.root, "scripts/configure.sh"), script, 0o600); err != nil { // #nosec G703 -- canonical fixture directory beneath t.TempDir.
-		t.Fatal(err)
+	for _, name := range []string{"configure.sh", "configure-rootless.sh"} {
+		script, err := os.ReadFile(filepath.Join("scripts", name)) // #nosec G304 -- names come from the fixed list above.
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(f.root, "scripts", name), script, 0o600); err != nil { // #nosec G703 -- canonical fixture directory beneath t.TempDir.
+			t.Fatal(err)
+		}
 	}
 	for name, body := range map[string]string{
 		"uname":   "printf '%s\\n' \"${CONFIG_TEST_OS:-Linux}\"",
@@ -370,13 +372,6 @@ func TestRootlessKubectlWrapperUsesPodman(t *testing.T) {
 
 func TestRootlessConfigurationIgnoresCDPATH(t *testing.T) {
 	f := newConfigurationFixture(t)
-	script, err := os.ReadFile("scripts/configure-rootless.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(f.root, "scripts/configure-rootless.sh"), script, 0o600); err != nil { // #nosec G703 -- canonical fixture directory beneath t.TempDir.
-		t.Fatal(err)
-	}
 	out, err := f.run(t, `builtin cd -- "$CONFIG_TEST_ROOT" || exit
 export CDPATH=.
 function podman {
@@ -384,6 +379,7 @@ function podman {
     printf '%s' "$root" > "$CONFIG_TEST_ROOT_LOG"
     printf 'false\n'
 }
+
 source scripts/configure-rootless.sh
 test "$?" = 1
 `, "CONFIG_TEST_ROOT="+f.root, "CONFIG_TEST_ROOT_LOG="+f.dockerLog)
@@ -393,5 +389,35 @@ test "$?" = 1
 	got, err := os.ReadFile(f.dockerLog)
 	if err != nil || string(got) != f.root {
 		t.Fatalf("checkout path: %q, want %q (%v)", got, f.root, err)
+	}
+}
+
+func TestRootlessConfigurationCgroupVersionCompatibility(t *testing.T) {
+	for _, tc := range []struct{ field, version, want string }{
+		{"CgroupsVersion", "v2", "Start the user API socket"},
+		{"CGroupsVersion", "v2", "Start the user API socket"},
+		{"CgroupsVersion", "v1", "Rootless resource limits require cgroups v2"},
+		{"CGroupsVersion", "v1", "Rootless resource limits require cgroups v2"},
+		{"unavailable", "", "Cannot read the Podman cgroup version"},
+	} {
+		t.Run(tc.field+"/"+tc.version, func(t *testing.T) {
+			f := newConfigurationFixture(t)
+			out, err := f.run(t, `function podman {
+    if [[ "$*" == 'info --format {{.Host.Security.Rootless}}' ]]; then
+        printf 'true\n'
+    elif [[ "$*" == "info --format {{.Host.$CONFIG_TEST_CGROUP_FIELD}}" ]]; then
+        printf '%s\n' "$CONFIG_TEST_CGROUP_VERSION"
+    else
+        printf 'cannot evaluate template field\n' >&2
+        return 1
+    fi
+}
+source "$(dirname -- "$CONFIG_TEST_SCRIPT")/configure-rootless.sh"
+test "$?" = 1
+`, "XDG_RUNTIME_DIR=", "CONFIG_TEST_CGROUP_FIELD="+tc.field, "CONFIG_TEST_CGROUP_VERSION="+tc.version)
+			if err != nil || !strings.Contains(string(out), tc.want) {
+				t.Fatalf("preflight: %s (%v), want %q", out, err, tc.want)
+			}
+		})
 	}
 }

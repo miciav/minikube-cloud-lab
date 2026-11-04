@@ -5,13 +5,19 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
     exit 1
 fi
 _cloud_rootless_configure() {
-    local root
+    local root cgroup_version
     root=$(CDPATH= builtin cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." >/dev/null && builtin pwd -P) || return 1
     if [[ $(podman info --format '{{.Host.Security.Rootless}}') != true ]]; then
         printf 'Podman must run rootless as the student user.\n' >&2
         return 1
     fi
-    if [[ $(podman info --format '{{.Host.CgroupsVersion}}') != v2 ]]; then
+    # Podman 3 uses CGroupsVersion; newer versions use CgroupsVersion.
+    if ! cgroup_version=$(podman info --format '{{.Host.CgroupsVersion}}' 2>/dev/null ||
+        podman info --format '{{.Host.CGroupsVersion}}'); then
+        printf 'Cannot read the Podman cgroup version. Check podman info.\n' >&2
+        return 1
+    fi
+    if [[ $cgroup_version != v2 ]]; then
         printf 'Rootless resource limits require cgroups v2.\n' >&2
         return 1
     fi
