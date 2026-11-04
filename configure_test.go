@@ -332,7 +332,7 @@ printf 'manifest-input' | kubectl apply -f - --namespace 'name with spaces'
 				t.Fatalf("stdin lost: %q %v", input, err)
 			}
 			got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
-			want := []string{"compose", "--project-directory", f.root, "--env-file", filepath.Join(f.root, ".env"), "-f", filepath.Join(f.root, "compose.yaml"), "run", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "-", "--namespace", "name with spaces"}
+			want := []string{"compose", "--progress", "quiet", "--project-directory", f.root, "--env-file", filepath.Join(f.root, ".env"), "-f", filepath.Join(f.root, "compose.yaml"), "run", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "-", "--namespace", "name with spaces"}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("argv: %q want %q", got, want)
 			}

@@ -62,7 +62,7 @@ _cloud_lab_configure() {
             -f "$CLOUD_LAB_ROOT/compose.yaml" run --rm lab "$@"
     }
     function kubectl {
-        docker compose --project-directory "$CLOUD_LAB_ROOT" --env-file "$CLOUD_LAB_ROOT/.env" \
+        docker compose --progress quiet --project-directory "$CLOUD_LAB_ROOT" --env-file "$CLOUD_LAB_ROOT/.env" \
             -f "$CLOUD_LAB_ROOT/compose.yaml" run --rm --entrypoint kubectl \
             --volume "$PWD:/workspace" --workdir /workspace lab "$@"
     }
