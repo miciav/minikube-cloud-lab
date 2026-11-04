@@ -12,7 +12,17 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/storage-nfs ./cmd/storage-nfs && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/portal ./cmd/portal
 
-FROM registry.k8s.io/kubectl:v1.35.6 AS kubectl-cli
+# Build the upstream CLI with patched dependencies isolated from the cloud module.
+FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm AS kubectl-cli
+ARG TARGETOS
+ARG TARGETARCH
+WORKDIR /src
+COPY tools/kubectl/go.mod tools/kubectl/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY tools/kubectl/main.go ./
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -mod=readonly -trimpath \
+    -ldflags="-s -w -X k8s.io/client-go/pkg/version.gitVersion=v1.35.10 -X k8s.io/component-base/version.gitVersion=v1.35.10" -o /out/kubectl .
 
 FROM docker:29.9.2-cli AS docker-cli
 
@@ -36,7 +46,7 @@ ENTRYPOINT ["cloud"]
 CMD ["serve","--data-dir","/data"]
 
 FROM base AS lab
-COPY --from=kubectl-cli /bin/kubectl /usr/local/bin/kubectl
+COPY --from=kubectl-cli /out/kubectl /usr/local/bin/kubectl
 COPY --from=build /out/lab /usr/local/bin/lab
 USER 65532:65532
 ENTRYPOINT ["lab"]

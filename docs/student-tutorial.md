@@ -28,8 +28,10 @@ Use the Linux VM or Mac approved by your instructor. The reference rootless VM
 has 4 vCPUs and 6 GiB RAM. Node CPU limits share the host's processors; they do
 not reserve exclusive physical cores. Leave memory for the VM and cloud services.
 You need Git, internet access to GitHub/GHCR and one of the runtimes below.
-The tools image includes `cloud`, `lab` and `kubectl` v1.35.6: students do not
-need Go or a native kubectl installation.
+The tools image includes `cloud`, `lab` and `kubectl` v1.35.10: students do not
+need Go or a native kubectl installation. An existing host installation is kept;
+after sourcing the helper, use `command kubectl` to bypass the container wrapper
+and use the host binary with an exported host kubeconfig.
 
 Clone the public repository, unless your instructor has already prepared it:
 

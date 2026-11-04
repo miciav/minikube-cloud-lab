@@ -85,6 +85,7 @@ jobs:
         run: |
           docker run --rm minikube-cloud-lab/cloud:dev --help
           docker run --rm minikube-cloud-lab/lab:dev --help
+          docker run --rm --entrypoint kubectl minikube-cloud-lab/lab:dev version --client | grep -Fx 'Client Version: v1.35.10'
           docker run --rm --entrypoint docker minikube-cloud-lab/cloud:dev --version
           go test -tags docker . -run TestComposeConfiguration -v
       - name: Scan cloud image

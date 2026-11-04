@@ -43,7 +43,7 @@ delete machines.
 ## Student quick start: Docker on Linux or macOS
 
 You need Docker Engine on Linux or Docker Desktop on macOS, Compose v2, access
-to the local Docker socket. The lab image includes `kubectl` v1.35.6.
+to the local Docker socket. The lab image includes `kubectl` v1.35.10.
 The `cloud` and `lab` tools run in containers on both platforms; no Go install
 or native project binaries are needed. For the default experiment, provide
 at least 6 CPUs and 6 GiB of available memory. The images support Linux amd64
@@ -76,6 +76,11 @@ images, start Docker services, or create cluster resources. Students run Compose
 and all cloud/Kubernetes commands explicitly.
 
 After sourcing `scripts/configure.sh` (or `scripts/configure-rootless.sh`), `kubectl` runs in the lab tools container with the cloud's private kubeconfig. The current directory is mounted at `/workspace`, so relative manifest paths and `kubectl cp` work without installing kubectl on the host. Use paths relative to this directory; files outside it are not mounted. `port-forward`/`proxy` listeners remain in the cloud container's network namespace; use the lab's published Service endpoints to access workloads from the host.
+
+An existing host kubectl installation is unchanged. The shell function takes precedence;
+use `command kubectl` to run the host binary with a host-accessible kubeconfig
+(for example, `command kubectl --kubeconfig ./cloud-demo.yaml get nodes`).
+Run `type kubectl` to check which command your shell selects.
 
 On macOS, start Docker Desktop first. The helper uses BSD `stat` and configures
 the group of Docker Desktop's root-owned VM socket. On Linux it reads the local
@@ -132,7 +137,7 @@ and follow cloud operations. Destructive actions require confirmation. Cluster d
 also check the selected cluster generation, so a cluster recreated under the same
 name is not affected by an old dialog. A downloaded
 kubeconfig is a file: the browser does not merge it into `~/.kube/config`. Use
-`kubectl --kubeconfig ./cloud-demo.yaml get nodes` or the existing
+`command kubectl --kubeconfig ./cloud-demo.yaml get nodes` or the existing
 `cloud clusters get-credentials demo` command when you want to merge credentials.
 
 A cluster's **Monitoring** tab shows Ready nodes, actual CPU/memory usage, resource
