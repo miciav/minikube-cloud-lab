@@ -2,7 +2,7 @@
 
 Verified on Fedora CoreOS 44 ARM64 with Podman 6.1.4 rootless, Kubernetes 1.35.6 and containerd 2.3.4, in a VM with 4 CPUs and 6 GiB RAM. The full autoscaling cycle 1 → 2 → 1 passed, with four load pods Running across two nodes. Physical CPU/RAM limits, HTTP from the host, the oversized-PVC warning and persistence after recreating a pod on its original node were also verified. Cross-node persistence is not an acceptance requirement.
 
-All lab containers in this configuration run under Podman rootless.
+All lab containers in this configuration run under Podman rootless. New Minikube nodes receive an explicit limit of 4096 processes/threads, preserved when CPU/RAM limits are updated. This avoids relying on implicit zero/unlimited PID handling in the Docker-compatible API. A node with `pids.max=1` cannot fork during entrypoint startup; verify the effective cgroup value, not only `podman inspect`.
 
 This configuration uses real persistent directories shared by every node and a simulated allocation budget. It does not impose physical write quotas. Keep enough free disk space in the VM. Use dedicated rootless state; existing Docker/NFS volumes are not migrated.
 
@@ -111,8 +111,9 @@ Allow roughly 20–40 minutes, depending on image downloads and autoscaling.
 Polling checks default to 600 seconds each (`--timeout` changes that limit).
 Each command also has a bounded timeout. Logs and `report.json` are written to a
 private `cloud-lab-verification-*` temporary directory, whose path is printed at
-startup. Failed runs collect Kubernetes diagnostics before cleaning their own
-resources. Keep the report if cleanup fails; the cluster and namespace names
+startup. Failed runs collect cloud/node runtime logs even if provisioning fails before
+Kubernetes starts, and Kubernetes diagnostics when available, before cleaning
+their own resources. Runtime stderr is included in `commands.log`. Keep the report if cleanup fails; the cluster and namespace names
 are printed so remaining test resources can be inspected. Ctrl+C also attempts
 cleanup; forcibly killing the script or shutting down the VM can leave resources.
 

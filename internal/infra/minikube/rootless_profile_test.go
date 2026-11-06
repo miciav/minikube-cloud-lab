@@ -33,3 +33,29 @@ func TestNodeProfileRetainsRuntimeAndSharedMountForWorkers(t *testing.T) {
 		})
 	}
 }
+
+func TestRootlessDriverHasExplicitPIDLimit(t *testing.T) {
+	for _, rootless := range []bool{false, true} {
+		cc := config.ClusterConfig{Name: "pid-check", Driver: "docker", CPUs: 2, Memory: 2048, Nodes: []config.Node{{Port: 8443}}}
+		if rootless {
+			cc.KubernetesConfig.FeatureGates = "KubeletInUserNamespace=true"
+		}
+		for _, name := range []string{"", "m02"} {
+			node := cc.Nodes[0]
+			node.Name = name
+			d, err := nodeDriverConfig(cc, node)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, arg := range d.NodeConfig.ExtraArgs {
+				if arg == "--pids-limit=4096" {
+					found = true
+				}
+			}
+			if found != rootless {
+				t.Fatalf("rootless=%v node=%s args=%v", rootless, name, d.NodeConfig.ExtraArgs)
+			}
+		}
+	}
+}

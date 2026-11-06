@@ -20,6 +20,7 @@ class VerificationTest(unittest.TestCase):
         self.suite = verify.Verification(
             argparse.Namespace(runtime="podman", cluster="existing", api_url="http://127.0.0.1:8080", timeout=1)
         )
+        self.suite.diagnostics = Mock()
         self.addCleanup(shutil.rmtree, self.suite.directory)
         self.addCleanup(self.suite.log.close)
 
@@ -66,6 +67,7 @@ class VerificationTest(unittest.TestCase):
         self.suite.cleanup = Mock()
         self.assertEqual(self.suite.execute(), 1)
         self.suite.cleanup.assert_called_once()
+        self.suite.diagnostics.assert_called_once()
         report = json.loads((self.suite.directory / "report.json").read_text())
         self.assertEqual([r["status"] for r in report], ["FAIL", "PASS"])
 

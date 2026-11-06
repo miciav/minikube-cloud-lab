@@ -23,9 +23,9 @@ func TestMachineResourcesReachDockerAPI(t *testing.T) {
 		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/demo-m02/json") {
 			w.Header().Set("Content-Type", "application/json")
 			if updated.Load() {
-				_, _ = w.Write([]byte(`{"HostConfig":{"CPUPeriod":100000,"CPUQuota":200000,"Memory":2147483648,"MemorySwap":2147483648}}`))
+				_, _ = w.Write([]byte(`{"HostConfig":{"CPUPeriod":100000,"CPUQuota":200000,"Memory":2147483648,"MemorySwap":2147483648,"PidsLimit":4096}}`))
 			} else {
-				_, _ = w.Write([]byte(`{"HostConfig":{}}`))
+				_, _ = w.Write([]byte(`{"HostConfig":{"PidsLimit":4096}}`))
 			}
 			return
 		}
@@ -34,11 +34,11 @@ func TestMachineResourcesReachDockerAPI(t *testing.T) {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		var limits struct{ NanoCpus, CPUPeriod, CPUQuota, Memory, MemorySwap int64 }
+		var limits struct{ NanoCpus, CPUPeriod, CPUQuota, Memory, MemorySwap, PidsLimit int64 }
 		if err := json.NewDecoder(r.Body).Decode(&limits); err != nil {
 			t.Error(err)
 		}
-		if limits.NanoCpus != 0 || limits.CPUPeriod != 100000 || limits.CPUQuota != 200000 || limits.Memory != 2147483648 || limits.MemorySwap != 2147483648 {
+		if limits.PidsLimit != 4096 || limits.NanoCpus != 0 || limits.CPUPeriod != 100000 || limits.CPUQuota != 200000 || limits.Memory != 2147483648 || limits.MemorySwap != 2147483648 {
 			t.Errorf("wrong machine limits: %+v", limits)
 		}
 		updated.Store(true)

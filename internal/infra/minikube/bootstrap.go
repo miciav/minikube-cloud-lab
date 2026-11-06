@@ -38,6 +38,22 @@ import (
 	"k8s.io/minikube/pkg/util"
 )
 
+// An explicit finite limit avoids ambiguous zero/unlimited PID handling in compatible engines.
+func nodeDriverConfig(cc config.ClusterConfig, n config.Node) (*kic.Driver, error) {
+	definition, err := registry.Driver("docker").Config(cc, n)
+	if err != nil {
+		return nil, err
+	}
+	d, ok := definition.(*kic.Driver)
+	if !ok {
+		return nil, fmt.Errorf("unexpected Docker driver configuration %T", definition)
+	}
+	if strings.Contains(cc.KubernetesConfig.FeatureGates, "KubeletInUserNamespace=true") {
+		d.NodeConfig.ExtraArgs = append(d.NodeConfig.ExtraArgs, "--pids-limit=4096")
+	}
+	return d, nil
+}
+
 // The node package wraps these primitives with CLI fatal exits, unsuitable for a daemon.
 func provisionNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node) (libmachine.API, *host.Host, command.Runner, error) {
 	if err := ctx.Err(); err != nil {
@@ -59,7 +75,7 @@ func provisionNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	definition, err := registry.Driver("docker").Config(*cc, *n)
+	definition, err := nodeDriverConfig(*cc, *n)
 	if err != nil {
 		return api, nil, nil, err
 	}

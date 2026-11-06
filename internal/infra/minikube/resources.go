@@ -46,6 +46,9 @@ func setMachineResources(ctx context.Context, name string, shape infra.MachineSh
 		return err
 	}
 	limits := container.Resources{CPUPeriod: 100000, CPUQuota: int64(shape.CPUs) * 100000, Memory: memory, MemorySwap: memory}
+	if observed.HostConfig != nil {
+		limits.PidsLimit = observed.HostConfig.PidsLimit
+	}
 	if observed.HostConfig != nil && observed.HostConfig.NanoCPUs > 0 {
 		limits.CPUPeriod = 0
 		limits.CPUQuota = 0
@@ -66,6 +69,9 @@ func setMachineResources(ctx context.Context, name string, shape infra.MachineSh
 		return fmt.Errorf("container has no resource configuration")
 	}
 	got := observed.HostConfig
+	if limits.PidsLimit != nil && (got.PidsLimit == nil || *got.PidsLimit != *limits.PidsLimit) {
+		return fmt.Errorf("node PID limit was not preserved during resource update")
+	}
 	cpuOK := got.NanoCPUs == int64(shape.CPUs)*1000000000 || (got.CPUPeriod == 100000 && got.CPUQuota == int64(shape.CPUs)*100000)
 	if !cpuOK || got.Memory != memory || got.MemorySwap != memory {
 		return fmt.Errorf("requested CPU/memory limits were not applied; check cgroups delegation")

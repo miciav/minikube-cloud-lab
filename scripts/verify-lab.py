@@ -583,6 +583,21 @@ class Verification:
         self.api("clusters/" + self.cluster + "/dashboard")
 
     def diagnostics(self):
+        try:
+            (self.directory / "cloud.log").write_text(self.run(self.compose + ["logs", "--tail=150", "cloud"]))
+            names = self.run([self.args.runtime, "ps", "-a", "--format", "{{.Names}}"]).splitlines()
+            for name in names:
+                if name == self.cluster or name.startswith(self.cluster + "-m"):
+                    (self.directory / (name + ".log")).write_text(
+                        self.run([self.args.runtime, "logs", "--tail=150", name])
+                    )
+                    (self.directory / (name + "-state.json")).write_text(
+                        self.run([self.args.runtime, "inspect", "--format", "{{json .State}}", name])
+                    )
+        except Exception as exc:  # noqa: BLE001 -- diagnostics must not prevent cleanup.
+            self.log.write(f"Runtime diagnostics: {exc}\n")
+        if not self.namespace_created:
+            return
         for name, command in [
             ("nodes", ["nodes"]),
             ("pods", ["pods", "-A"]),
@@ -654,7 +669,7 @@ class Verification:
         except KeyboardInterrupt:
             self.results.append({"name": "interrupted", "status": "FAIL", "detail": "Interrupted by user"})
         finally:
-            if self.namespace_created and any(r["status"] == "FAIL" for r in self.results):
+            if any(r["status"] == "FAIL" for r in self.results):
                 self.diagnostics()
             self.check("cleanup (only test resources)", self.cleanup)
             if not self.args.cluster:
