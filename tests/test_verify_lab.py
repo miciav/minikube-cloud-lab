@@ -105,6 +105,112 @@ class VerificationTest(unittest.TestCase):
         for call in self.suite.run.call_args_list:
             self.assertIn("label=minikube-cloud-lab.service-uid=owned-uid", call.args[0])
 
+    def test_full_lifecycle_orders_start_tests_cleanup_and_shutdown(self):
+        self.suite.args.cluster = None
+        order = []
+        methods = [
+            "start_platform",
+            "setup",
+            "limits",
+            "workloads",
+            "autoscale",
+            "storage",
+            "retained_storage",
+            "services",
+            "port_forward",
+            "monitoring",
+            "cleanup",
+            "delete_cluster",
+            "shutdown_platform",
+        ]
+        for name in methods:
+            setattr(self.suite, name, Mock(side_effect=lambda name=name: order.append(name)))
+        self.assertEqual(self.suite.execute(), 0)
+        self.assertEqual(order, methods)
+
+    def test_cluster_cleanup_is_attempted_after_resource_cleanup_fails(self):
+        self.suite.args.cluster = None
+        self.suite.start_platform = Mock(side_effect=RuntimeError("partial start"))
+        self.suite.cleanup = Mock(side_effect=RuntimeError("namespace stuck"))
+        self.suite.delete_cluster = Mock()
+        self.suite.shutdown_platform = Mock()
+        self.assertEqual(self.suite.execute(), 1)
+        self.suite.delete_cluster.assert_called_once()
+        self.suite.shutdown_platform.assert_called_once()
+
+    def test_shutdown_preserves_foreign_clusters_and_volumes(self):
+        self.suite.stop_platform = True
+        self.suite.project_label = "io.podman.compose.project=minikube-cloud-lab"
+        self.suite.api = Mock(return_value=[{"name": "someone-else"}])
+        self.suite.run = Mock(return_value="")
+        with self.assertRaisesRegex(RuntimeError, "keeping management"):
+            self.suite.shutdown_platform()
+        self.suite.run.assert_not_called()
+        self.suite.api.return_value = []
+        self.suite.shutdown_platform()
+        down = self.suite.run.call_args_list[0].args[0]
+        self.assertEqual(down[-3:], ["--profile", "tools", "down"])
+        self.assertNotIn("-v", down)
+        self.assertIn("label=io.podman.compose.project=minikube-cloud-lab", self.suite.run.call_args_list[1].args[0])
+
+    def test_shutdown_rejects_unverified_start(self):
+        self.suite.run = Mock()
+        with self.assertRaises(verify.Skip):
+            self.suite.shutdown_platform()
+        self.suite.run.assert_not_called()
+
+    def test_node_leftovers_prevent_successful_cluster_deletion(self):
+        self.suite.owned_cluster = True
+        self.suite.api = Mock(return_value=[])
+        self.suite.run = Mock(return_value=self.suite.cluster + "-m02")
+        with self.assertRaisesRegex(RuntimeError, "node containers remain"):
+            self.suite.delete_cluster()
+        self.assertTrue(self.suite.owned_cluster)
+
+    def test_start_checks_existing_state_before_arming_teardown(self):
+        self.suite.run = Mock(return_value="")
+        self.suite.wait = Mock()
+        self.suite.api = Mock(return_value=[{"name": "existing"}])
+        with (
+            patch.object(verify.shutil, "which", return_value="podman"),
+            self.assertRaisesRegex(RuntimeError, "already exists"),
+        ):
+            self.suite.start_platform()
+        self.assertFalse(self.suite.stop_platform)
+        commands = [c.args[0] for c in self.suite.run.call_args_list]
+        self.assertEqual(commands[0], ["systemctl", "--user", "start", "podman.socket"])
+        self.assertTrue(any(command[-3:] == ["up", "-d", "cloud"] for command in commands))
+        self.assertFalse(any("down" in command for command in commands))
+
+    def test_start_records_actual_compose_owner_for_shutdown(self):
+        self.suite.wait = Mock()
+        self.suite.api = Mock(return_value=[])
+
+        def runtime(argv, **kwargs):
+            if "inspect" in argv:
+                return json.dumps(
+                    [
+                        {
+                            "State": {"Running": True},
+                            "Config": {"Labels": {"io.podman.compose.project": "actual-project"}},
+                        }
+                    ]
+                )
+            return "cloud-id" if "ps" in argv else ""
+
+        self.suite.run = Mock(side_effect=runtime)
+        with patch.object(verify.shutil, "which", return_value="podman"):
+            self.suite.start_platform()
+        self.assertTrue(self.suite.stop_platform)
+        self.assertEqual(self.suite.project_label, "io.podman.compose.project=actual-project")
+
+    def test_delete_cluster_does_not_delete_unowned_cluster(self):
+        self.suite.cloud = Mock()
+        self.suite.api = Mock()
+        self.suite.delete_cluster()
+        self.suite.cloud.assert_not_called()
+        self.suite.api.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

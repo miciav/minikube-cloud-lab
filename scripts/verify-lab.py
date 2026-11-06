@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live lab acceptance checks. Python 3 standard library; no host kubectl required."""
+"""Start, verify and stop the lab; --cluster tests an existing deployment in place."""
 
 import argparse
 import json
@@ -48,6 +48,8 @@ class Verification:
         self.name = "verify-" + uuid.uuid4().hex[:12]
         self.cluster = args.cluster or self.name
         self.owned_cluster = False
+        self.stop_platform = False
+        self.project_label = None
         self.namespace_created = False
         self.scale_started = False
         self.volumes = set()
@@ -152,6 +154,79 @@ class Verification:
             for n in self.obj("nodes")["items"]
             if any(c["type"] == "Ready" and c["status"] == "True" for c in n["status"]["conditions"])
         ]
+
+    def start_platform(self):
+        require(shutil.which(self.args.runtime), f"Missing {self.args.runtime}")
+        if self.args.runtime == "podman":
+            self.run(["systemctl", "--user", "start", "podman.socket"])
+        script = "configure-rootless.sh" if self.args.runtime == "podman" else "configure.sh"
+        self.run(["bash", "-c", 'source "$1"', "verify", str(ROOT / "scripts" / script)])
+        self.run(self.compose + ["--profile", "tools", "pull"], timeout=1800)
+        services = ["cloud"] if self.args.runtime == "podman" else ["cloud", "portal"]
+        self.run(self.compose + ["up", "-d", *services], timeout=300)
+        self.wait("cloud management API ready", lambda: bool(self.api("machine-types")), timeout=180)
+        require(
+            not self.api("clusters"),
+            "A cluster already exists. Full lifecycle requires an empty platform; use --cluster NAME to test it without shutting it down.",
+        )
+        # Teardown is authorized only after checking the platform has no existing cluster.
+        self.stop_platform = True
+        required = ["cloud"] if self.args.runtime == "podman" else ["cloud", "nfs", "portal"]
+        for service in required:
+            container = self.run(self.compose + ["ps", "-q", service])
+            require(bool(container), f"Missing container for {service}")
+            info = json.loads(self.run([self.args.runtime, "inspect", container]))[0]
+            require(info["State"]["Running"], f"Service {service} is not running")
+            if service == "cloud":
+                labels = info["Config"].get("Labels", {})
+                for key in ("com.docker.compose.project", "io.podman.compose.project"):
+                    if labels.get(key):
+                        self.project_label = key + "=" + labels[key]
+                        break
+                require(self.project_label, "Missing Compose ownership label on cloud")
+        if self.args.runtime == "docker":
+
+            def portal_ready():
+                with urllib.request.urlopen("http://127.0.0.1:3000", timeout=5) as response:
+                    return response.status == 200
+
+            self.wait("portal HTTP ready", portal_ready, timeout=120)
+
+    def delete_cluster(self):
+        if self.owned_cluster:
+            if any(c["name"] == self.cluster for c in self.api("clusters")):
+                self.cloud("clusters", "delete", self.cluster, timeout=900)
+            require(not any(c["name"] == self.cluster for c in self.api("clusters")), "Temporary cluster still exists")
+            names = self.run([self.args.runtime, "ps", "-a", "--format", "{{.Names}}"]).splitlines()
+            require(
+                not any(n == self.cluster or n.startswith(self.cluster + "-m") for n in names),
+                "Test node containers remain",
+            )
+            relays = self.run(
+                [
+                    self.args.runtime,
+                    "ps",
+                    "-aq",
+                    "--filter",
+                    "label=minikube-cloud-lab.service-proxy=true",
+                    "--filter",
+                    "label=minikube-cloud-lab.cluster=" + self.cluster,
+                ]
+            )
+            require(not relays, "Test service relay containers remain")
+            self.owned_cluster = False
+
+    def shutdown_platform(self):
+        if not self.stop_platform:
+            raise Skip("Platform not confirmed empty; preserved to protect existing state")
+        require(
+            not self.owned_cluster and not self.api("clusters"),
+            "Cluster deletion did not complete; keeping management services available for recovery",
+        )
+        require(self.project_label, "Cannot verify project ownership for teardown")
+        self.run(self.compose + ["--profile", "tools", "down"], timeout=300)
+        remaining = self.run([self.args.runtime, "ps", "-aq", "--filter", "label=" + self.project_label])
+        require(not remaining, "Compose project containers remain: " + remaining)
 
     def setup(self):
         require(shutil.which(self.args.runtime), f"Missing {self.args.runtime}")
@@ -550,15 +625,12 @@ class Verification:
             self.wait(
                 "restore initial node count after test load removal", lambda: len(self.obj("nodes")["items"]) == 1
             )
-        if self.owned_cluster:
-            self.cloud("clusters", "delete", self.cluster, timeout=900)
-            require(not any(c["name"] == self.cluster for c in self.api("clusters")), "Temporary cluster still exists")
-            self.owned_cluster = False
 
     def execute(self):
         print(f"Cluster: {self.cluster}; namespace: {self.name}; logs: {self.directory}", flush=True)
         try:
-            if self.check("platform / cluster / namespace", self.setup):
+            started = bool(self.args.cluster) or self.check("start platform and verify services", self.start_platform)
+            if started and self.check("platform / cluster / namespace", self.setup):
                 for name, action in [
                     ("CPU and RAM limits", self.limits),
                     ("deployment, DNS and ClusterIP", self.workloads),
@@ -576,6 +648,9 @@ class Verification:
             if self.namespace_created and any(r["status"] == "FAIL" for r in self.results):
                 self.diagnostics()
             self.check("cleanup (only test resources)", self.cleanup)
+            if not self.args.cluster:
+                self.check("delete temporary cluster and node containers", self.delete_cluster)
+                self.check("stop all lab project containers", self.shutdown_platform)
             (self.directory / "report.json").write_text(json.dumps(self.results, indent=2))
             self.log.close()
         counts = {s: sum(r["status"] == s for r in self.results) for s in ("PASS", "FAIL", "SKIP")}
@@ -591,12 +666,13 @@ def main():
     parser.add_argument("--runtime", choices=("podman", "docker"), default="podman")
     parser.add_argument(
         "--cluster",
-        help="Test this existing cluster; omit only on an empty platform to create/delete a temporary cluster",
+        help="Optional: test an existing running cluster without starting/stopping the platform. Default: full lifecycle with a temporary cluster",
     )
     parser.add_argument("--timeout", type=int, default=600, help="Polling timeout per check in seconds (default: 600)")
     args = parser.parse_args()
     if args.timeout < 1:
         parser.error("--timeout must be positive")
+    os.environ["PATH"] = str(Path.home() / ".local/bin") + os.pathsep + os.environ.get("PATH", "")
     return Verification(args).execute()
 
 

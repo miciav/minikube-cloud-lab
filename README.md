@@ -459,17 +459,19 @@ See [the rootless VM instructions](docs/podman-rootless.md) for the separate con
 
 ## Live acceptance checks
 
-With the platform already running, test an existing cluster without installing
-host kubectl or Go:
+Run the full lifecycle (start services, create a test cluster, install autoscaler,
+verify features, delete the cluster, stop all project containers):
 
 ```sh
-python3 scripts/verify-lab.py --runtime podman --cluster demo
+python3 scripts/verify-lab.py --runtime podman
 # Docker deployment:
-python3 scripts/verify-lab.py --runtime docker --cluster demo
+python3 scripts/verify-lab.py --runtime docker
 ```
 
-The suite creates a temporary namespace, performs real load/storage/network
-checks, cleans its resources and writes a PASS/FAIL/SKIP report. It can create
-and delete a temporary cluster when `--cluster` is omitted on an empty platform.
-See [scope, prerequisites and cleanup behavior](docs/podman-rootless.md#automated-live-verification)
-before running on a cluster with existing workloads.
+No host kubectl or Go is needed. The platform must have no existing cluster;
+the script never deletes an existing cluster or unrelated containers. Persistent
+Compose volumes are preserved. To test an existing running cluster without
+starting/stopping the platform, add `--cluster demo`.
+
+The suite writes a PASS/FAIL/SKIP report and diagnostic logs. See
+[scope, prerequisites and cleanup behavior](docs/podman-rootless.md#automated-live-verification).

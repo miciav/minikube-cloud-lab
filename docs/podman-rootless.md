@@ -59,24 +59,42 @@ Repeat the PATH export and source command in each terminal. Podman Compose 1.x d
 
 ## Automated live verification
 
-Run on the VM hosting the already running platform, from the repository:
+For the complete automatic lifecycle, run on the VM from the repository:
+
+```sh
+python3 scripts/verify-lab.py --runtime podman
+```
+
+No cluster needs to be created manually. The script starts the user Podman
+socket, runs the configuration preflight, pulls the published images, starts
+Compose and checks service/API readiness. It creates a temporary lab-small
+cluster (min 1, max 2), installs the autoscaler, runs all checks, deletes the
+cluster and its nodes/relays, then runs Compose down and verifies that no
+project containers remain. It does not stop unrelated containers or remove
+persistent volumes with `down -v`. Only Python 3 and a working runtime/Compose
+provider are required. Kernel modules, UID/GID mappings and cgroup delegation
+must already be configured. Use `--runtime docker` for Docker; this also starts
+and checks the portal HTTP endpoint and NFS container.
+
+Full lifecycle mode requires an empty platform. If a cluster already exists,
+it refuses to delete it or shut its services down. For an existing cluster use
+the optional non-destructive mode instead:
 
 ```sh
 python3 scripts/verify-lab.py --runtime podman --cluster demo
 ```
 
-Only Python 3 and the runtime/Compose provider are required; kubectl runs in the
-published tools image. Use `--runtime docker` for the Docker deployment. On an
-empty, running platform omit `--cluster`: the script creates a temporary
-lab-small cluster (min 1, max 2) and deletes only that cluster afterwards. It
-refuses to create one if another cluster already exists. It does not start or
-restart the platform, change its storage budget, or export host credentials.
+This mode requires the platform to be running already and does not start or
+stop it. Both modes preserve host kubeconfig and the configured storage budget.
+If cluster deletion fails in full mode, management services are kept available
+for recovery and the shutdown check fails; inspect the report before retrying.
 
 On an existing cluster, resources are placed in a unique temporary namespace.
 Autoscaling is a real load test: allow capacity for two nodes and run outside
 other resource-intensive exercises. For a complete 1 → 2 → 1 check, start with
 one lab-small node, min=1, max>=2, and an installed autoscaler. Otherwise that
-check is reported SKIP. Existing workloads can prevent scale-down, causing a
+check is reported SKIP. Full lifecycle mode configures these prerequisites
+automatically on its temporary cluster. Existing workloads can prevent scale-down, causing a
 FAIL; the script never deletes those workloads to force a pass.
 
 Checks cover physical cgroup v2 CPU/RAM limits, deployment readiness, DNS and
