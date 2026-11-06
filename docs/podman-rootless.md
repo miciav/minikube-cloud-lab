@@ -56,3 +56,47 @@ labcompose up -d cloud
 ```
 
 Repeat the PATH export and source command in each terminal. Podman Compose 1.x documents support for Podman 3.4 and later; the helper accepts both old and new cgroup info field names. This does not certify the complete lab on Podman 3.4.4: the full runtime test above used 6.1.4. Missing kernel modules, subordinate UID/GID mappings or cgroup delegation must still be prepared by the VM administrator. If pip is unavailable, this installation command cannot run; ask for it to be included in the VM image.
+
+## Automated live verification
+
+Run on the VM hosting the already running platform, from the repository:
+
+```sh
+python3 scripts/verify-lab.py --runtime podman --cluster demo
+```
+
+Only Python 3 and the runtime/Compose provider are required; kubectl runs in the
+published tools image. Use `--runtime docker` for the Docker deployment. On an
+empty, running platform omit `--cluster`: the script creates a temporary
+lab-small cluster (min 1, max 2) and deletes only that cluster afterwards. It
+refuses to create one if another cluster already exists. It does not start or
+restart the platform, change its storage budget, or export host credentials.
+
+On an existing cluster, resources are placed in a unique temporary namespace.
+Autoscaling is a real load test: allow capacity for two nodes and run outside
+other resource-intensive exercises. For a complete 1 → 2 → 1 check, start with
+one lab-small node, min=1, max>=2, and an installed autoscaler. Otherwise that
+check is reported SKIP. Existing workloads can prevent scale-down, causing a
+FAIL; the script never deletes those workloads to force a pass.
+
+Checks cover physical cgroup v2 CPU/RAM limits, deployment readiness, DNS and
+ClusterIP HTTP, autoscaling and cross-node networking, PVC persistence on the
+original node, oversized-PVC rejection, Delete reclamation, static publishing
+and Retain/republication, NodePort/LoadBalancer HTTP, the shell port-forward
+wrapper and shutdown, monitoring metrics and the dashboard API. Rootless
+storage uses a simulated allocation budget: physical write quotas and
+cross-node storage persistence are not claimed. Portal browser interactions,
+platform restarts and crash recovery are not tested by this script, to avoid
+interrupting an existing deployment.
+
+Allow roughly 20–40 minutes, depending on image downloads and autoscaling.
+Polling checks default to 600 seconds each (`--timeout` changes that limit).
+Each command also has a bounded timeout. Logs and `report.json` are written to a
+private `cloud-lab-verification-*` temporary directory, whose path is printed at
+startup. Failed runs collect Kubernetes diagnostics before cleaning their own
+resources. Keep the report if cleanup fails; the cluster and namespace names
+are printed so remaining test resources can be inspected. Ctrl+C also attempts
+cleanup; forcibly killing the script or shutting down the VM can leave resources.
+
+Exit codes: **0** all checks passed, **1** failures (including cleanup), **2** no
+failures but some checks skipped. A SKIP is not full certification of the VM.

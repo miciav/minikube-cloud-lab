@@ -456,3 +456,20 @@ Recreate the cluster after changing host resources.
 ## Podman rootless
 
 See [the rootless VM instructions](docs/podman-rootless.md) for the separate configuration with persistent data and a simulated allocation budget.
+
+## Live acceptance checks
+
+With the platform already running, test an existing cluster without installing
+host kubectl or Go:
+
+```sh
+python3 scripts/verify-lab.py --runtime podman --cluster demo
+# Docker deployment:
+python3 scripts/verify-lab.py --runtime docker --cluster demo
+```
+
+The suite creates a temporary namespace, performs real load/storage/network
+checks, cleans its resources and writes a PASS/FAIL/SKIP report. It can create
+and delete a temporary cluster when `--cluster` is omitted on an empty platform.
+See [scope, prerequisites and cleanup behavior](docs/podman-rootless.md#automated-live-verification)
+before running on a cluster with existing workloads.
