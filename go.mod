@@ -3,7 +3,7 @@ module github.com/miciav/minikube-cloud-lab
 go 1.27.3
 
 require (
-	github.com/diskfs/go-diskfs v1.9.3
+	github.com/diskfs/go-diskfs v1.9.4
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.8.1
 	github.com/go-logr/logr v1.4.4
