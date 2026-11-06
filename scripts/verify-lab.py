@@ -172,11 +172,19 @@ class Verification:
         # Teardown is authorized only after checking the platform has no existing cluster.
         self.stop_platform = True
         required = ["cloud"] if self.args.runtime == "podman" else ["cloud", "nfs", "portal"]
+        # podman-compose ps accepts no service selector; inspect the project's IDs.
+        containers = self.run(self.compose + ["ps", "-q"]).split()
+        require(bool(containers), "No Compose project containers found")
+        records = json.loads(self.run([self.args.runtime, "inspect", *containers]))
         for service in required:
-            container = self.run(self.compose + ["ps", "-q", service])
-            require(bool(container), f"Missing container for {service}")
-            info = json.loads(self.run([self.args.runtime, "inspect", container]))[0]
-            require(info["State"]["Running"], f"Service {service} is not running")
+            matches = [
+                info
+                for info in records
+                if (info["Config"].get("Labels") or {}).get("com.docker.compose.service") == service
+                or (info["Config"].get("Labels") or {}).get("io.podman.compose.service") == service
+            ]
+            require(len(matches) == 1, f"Expected one container for {service}, found {len(matches)}")
+            info = matches[0]
             if service == "cloud":
                 labels = info["Config"].get("Labels", {})
                 for key in ("com.docker.compose.project", "io.podman.compose.project"):
@@ -184,6 +192,7 @@ class Verification:
                         self.project_label = key + "=" + labels[key]
                         break
                 require(self.project_label, "Missing Compose ownership label on cloud")
+            require(info["State"]["Running"], f"Service {service} is not running")
         if self.args.runtime == "docker":
 
             def portal_ready():

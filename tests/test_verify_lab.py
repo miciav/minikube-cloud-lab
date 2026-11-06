@@ -190,13 +190,22 @@ class VerificationTest(unittest.TestCase):
             if "inspect" in argv:
                 return json.dumps(
                     [
+                        {"State": {"Running": True}, "Config": {"Labels": {"com.docker.compose.service": "lab"}}},
                         {
                             "State": {"Running": True},
-                            "Config": {"Labels": {"io.podman.compose.project": "actual-project"}},
-                        }
+                            "Config": {
+                                "Labels": {
+                                    "io.podman.compose.project": "actual-project",
+                                    "com.docker.compose.service": "cloud",
+                                }
+                            },
+                        },
                     ]
                 )
-            return "cloud-id" if "ps" in argv else ""
+            if "ps" in argv:
+                self.assertEqual(argv[-2:], ["ps", "-q"], "podman-compose ps does not accept a service argument")
+                return "tools-id\ncloud-id"
+            return ""
 
         self.suite.run = Mock(side_effect=runtime)
         with patch.object(verify.shutil, "which", return_value="podman"):
