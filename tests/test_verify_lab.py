@@ -222,6 +222,32 @@ class VerificationTest(unittest.TestCase):
         self.suite.cloud.assert_not_called()
         self.suite.api.assert_not_called()
 
+    def test_provider_installed_during_configuration_is_used_for_pull(self):
+        self.suite.compose = ["podman", "compose", "-f", "compose.rootless.yaml"]
+        self.suite.wait = Mock()
+        self.suite.api = Mock(return_value=[{"name": "existing"}])
+        installed = False
+        commands = []
+
+        def run(argv, **kwargs):
+            nonlocal installed
+            commands.append(argv)
+            if argv[0] == "bash":
+                installed = True
+            return ""
+
+        def which(name):
+            return name if name == "podman" or installed else None
+
+        self.suite.run = run
+        with (
+            patch.object(verify.shutil, "which", side_effect=which),
+            self.assertRaisesRegex(RuntimeError, "already exists"),
+        ):
+            self.suite.start_platform()
+        pull = next(argv for argv in commands if argv[-1] == "pull")
+        self.assertEqual(pull[0], "podman-compose")
+
 
 if __name__ == "__main__":
     unittest.main()

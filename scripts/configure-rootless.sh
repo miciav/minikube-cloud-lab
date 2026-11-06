@@ -34,6 +34,19 @@ _cloud_rootless_configure() {
         printf 'The instructor must load br_netfilter on the VM before running the lab.\n' >&2
         return 1
     fi
+    # Install only when neither the standalone command nor a delegated provider works.
+    if ! command -v podman-compose >/dev/null 2>&1 && ! podman compose version >/dev/null 2>&1; then
+        if ! command -v python3 >/dev/null 2>&1 || ! python3 -m pip --version >/dev/null 2>&1; then
+            printf 'Compose is missing. Python 3 with pip is required to install podman-compose without sudo.\n' >&2
+            return 1
+        fi
+        printf 'Installing podman-compose in the current user account...\n'
+        python3 -m pip install --user 'podman-compose>=1,<2' || return 1
+        if ! command -v podman-compose >/dev/null 2>&1; then
+            printf 'podman-compose was not found on PATH after installation; check Python user installation settings.\n' >&2
+            return 1
+        fi
+    fi
     source "$root/scripts/kubectl-forward.sh" || return 1
     CLOUD_ROOTLESS_ROOT=$root
     function labcompose {

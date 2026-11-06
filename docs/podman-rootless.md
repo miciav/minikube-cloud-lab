@@ -44,17 +44,16 @@ Rootless nodes retain the distinct MAC addresses assigned by the engine. This av
 
 ## Existing VM without administrator privileges
 
-Upgrading the operating system is not required just to install Compose. If Python 3 and pip are available, install the standalone provider in your account:
+Upgrading the operating system is not required just to install Compose. The configuration script installs `podman-compose` in your account automatically when no Compose provider is available. Python 3, pip and access to PyPI are required; no sudo is used:
 
 ```sh
-python3 -m pip install --user 'podman-compose>=1,<2'
 systemctl --user enable --now podman.socket
 source scripts/configure-rootless.sh
 labcompose --profile tools pull
 labcompose up -d cloud
 ```
 
-Source `scripts/configure-rootless.sh` in each terminal; it adds `~/.local/bin` to PATH automatically without duplicating an existing entry. Podman Compose 1.x documents support for Podman 3.4 and later; the helper accepts both old and new cgroup info field names. This does not certify the complete lab on Podman 3.4.4: the full runtime test above used 6.1.4. Missing kernel modules, subordinate UID/GID mappings or cgroup delegation must still be prepared by the VM administrator. If pip is unavailable, this installation command cannot run; ask for it to be included in the VM image.
+Source `scripts/configure-rootless.sh` in each terminal; it adds `~/.local/bin` to PATH automatically without duplicating an existing entry. Podman Compose 1.x documents support for Podman 3.4 and later; the helper accepts both old and new cgroup info field names. This does not certify the complete lab on Podman 3.4.4: the full runtime test above used 6.1.4. Missing kernel modules, subordinate UID/GID mappings or cgroup delegation must still be prepared by the VM administrator. If pip is unavailable or user installation is blocked by the Python environment, setup stops with an error; ask for Python/pip or a Compose provider to be included in the VM image. Existing working providers are not reinstalled.
 
 ## Automated live verification
 

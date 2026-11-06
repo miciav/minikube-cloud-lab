@@ -538,3 +538,35 @@ bash -c '[[ ":$PATH:" == *":$HOME/.local/bin:"* ]]' || exit 24
 		})
 	}
 }
+
+func TestRootlessComposeInstallation(t *testing.T) {
+	script, err := os.ReadFile("scripts/configure-rootless.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(script), "    # Install only when")
+	end := strings.Index(string(script), "    source \"$root/scripts/kubectl-forward.sh\"")
+	if start < 0 || end <= start {
+		t.Fatal("missing provider setup")
+	}
+	for _, tc := range []struct {
+		name, setup   string
+		install, fail bool
+	}{
+		{"standalone", `function podman-compose { :; }; function podman { return 1; }`, false, false},
+		{"delegated", `function podman { return 0; }`, false, false},
+		{"install", `function podman { return 1; }; function python3 { if [[ "$*" == '-m pip --version' ]]; then return 0; fi; printf 'INSTALL_CALLED\n'; [[ "$*" == '-m pip install --user podman-compose>=1,<2' ]] || return 9; function podman-compose { :; }; }`, true, false},
+		{"missing_pip", `function podman { return 1; }; function python3 { return 1; }`, false, true},
+		{"install_failed", `function podman { return 1; }; function python3 { if [[ "$*" == '-m pip --version' ]]; then return 0; fi; printf 'INSTALL_CALLED\n'; return 1; }`, true, true},
+		{"missing_after_install", `function podman { return 1; }; function python3 { if [[ "$*" == '-m pip --version' ]]; then return 0; fi; printf 'INSTALL_CALLED\n'; }`, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newConfigurationFixture(t)
+			body := "PATH=/nonexistent\n" + tc.setup + "\n_probe() {\n" + string(script[start:end]) + "\n}\n_probe\n"
+			out, err := f.run(t, body)
+			if (err != nil) != tc.fail || strings.Contains(string(out), "INSTALL_CALLED") != tc.install {
+				t.Fatalf("setup: %s (%v)", out, err)
+			}
+		})
+	}
+}

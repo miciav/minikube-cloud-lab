@@ -160,7 +160,10 @@ class Verification:
         if self.args.runtime == "podman":
             self.run(["systemctl", "--user", "start", "podman.socket"])
         script = "configure-rootless.sh" if self.args.runtime == "podman" else "configure.sh"
-        self.run(["bash", "-c", 'source "$1"', "verify", str(ROOT / "scripts" / script)])
+        self.run(["bash", "-c", 'source "$1"', "verify", str(ROOT / "scripts" / script)], timeout=600)
+        # Configuration may have just installed the standalone provider.
+        if self.args.runtime == "podman" and shutil.which("podman-compose"):
+            self.compose = ["podman-compose", "-f", str(ROOT / "compose.rootless.yaml")]
         self.run(self.compose + ["--profile", "tools", "pull"], timeout=1800)
         services = ["cloud"] if self.args.runtime == "podman" else ["cloud", "portal"]
         self.run(self.compose + ["up", "-d", *services], timeout=300)
