@@ -81,6 +81,8 @@ class VerificationTest(unittest.TestCase):
         argv = self.suite.run.call_args.args[0]
         self.assertIn("-T", argv)
         self.assertIn("--no-deps", argv)
+        self.assertEqual(argv[argv.index("--profile") + 1], "tools")
+        self.assertLess(argv.index("--profile"), argv.index("run"))
         self.assertEqual(argv[argv.index("--context") + 1], "existing")
 
     def test_command_failure_preserves_stderr(self):

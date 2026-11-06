@@ -96,7 +96,20 @@ class Verification:
     def k(self, *args, data=None, timeout=120):
         return self.run(
             self.compose
-            + ["run", "--rm", "--no-deps", "-T", "--entrypoint", "kubectl", "lab", "--context", self.cluster, *args],
+            + [
+                "--profile",
+                "tools",
+                "run",
+                "--rm",
+                "--no-deps",
+                "-T",
+                "--entrypoint",
+                "kubectl",
+                "lab",
+                "--context",
+                self.cluster,
+                *args,
+            ],
             data,
             timeout,
         )
@@ -342,7 +355,19 @@ class Verification:
         if self.owned_cluster:
             self.run(
                 self.compose
-                + ["run", "--rm", "--no-deps", "-T", "lab", "--context", self.cluster, "install", "autoscaler"]
+                + [
+                    "--profile",
+                    "tools",
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "-T",
+                    "lab",
+                    "--context",
+                    self.cluster,
+                    "install",
+                    "autoscaler",
+                ]
             )
         elif not self.obj("deployments", "-n", "kube-system", "-l", "app=cluster-autoscaler")["items"]:
             raise Skip("Install the autoscaler on the existing cluster first: lab install autoscaler")

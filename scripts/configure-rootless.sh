@@ -57,19 +57,19 @@ _cloud_rootless_configure() {
         fi
     }
     function cloud { labcompose exec cloud cloud "$@"; }
-    function lab { labcompose run --rm lab "$@"; }
+    function lab { labcompose --profile tools run --rm lab "$@"; }
     function kubectl {
         local -a _cloud_forward_ports _cloud_forward_args
         local forward_status
         if _cloud_kubectl_forward_prepare "$@"; then
-            labcompose run --rm --no-deps --entrypoint kubectl "${_cloud_forward_ports[@]}" \
+            labcompose --profile tools run --rm --no-deps --entrypoint kubectl "${_cloud_forward_ports[@]}" \
                 --volume "$PWD:/workspace" --workdir /workspace kubectl-forward "${_cloud_forward_args[@]}"
             return $?
         else
             forward_status=$?
             [ "$forward_status" = 125 ] || return "$forward_status"
         fi
-        labcompose run --rm --entrypoint kubectl --volume "$PWD:/workspace" --workdir /workspace lab "$@"
+        labcompose --profile tools run --rm --entrypoint kubectl --volume "$PWD:/workspace" --workdir /workspace lab "$@"
     }
     unalias labcompose cloud lab kubectl 2>/dev/null || true
     printf 'Ready. Start: labcompose up -d cloud\n'

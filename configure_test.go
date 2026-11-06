@@ -379,8 +379,8 @@ kubectl apply -f 'manifest with spaces.yaml'
 			for _, args := range [][]string{
 				{"up", "-d", "cloud"},
 				{"exec", "cloud", "cloud", "clusters", "list"},
-				{"run", "--rm", "lab", "load", "start"},
-				{"run", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "manifest with spaces.yaml"},
+				{"--profile", "tools", "run", "--rm", "lab", "load", "start"},
+				{"--profile", "tools", "run", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "manifest with spaces.yaml"},
 			} {
 				want = append(want, prefix...)
 				want = append(want, args...)
