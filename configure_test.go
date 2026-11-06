@@ -510,3 +510,31 @@ func TestContainerPortForward(t *testing.T) {
 		}
 	}
 }
+
+func TestRootlessConfigurationAddsUserBinOnce(t *testing.T) {
+	for _, alreadyPresent := range []bool{false, true} {
+		t.Run(fmt.Sprint(alreadyPresent), func(t *testing.T) {
+			f := newConfigurationFixture(t)
+			setup := ""
+			if alreadyPresent {
+				setup = `PATH="$PATH:$HOME/.local/bin"`
+			}
+			out, err := f.run(t, setup+`
+before=$PATH
+# The fake Podman fails preflight; PATH must already support user-installed tools.
+source "$CONFIG_TEST_ROOT/scripts/configure-rootless.sh" >/dev/null 2>&1 || true
+first=$PATH
+source "$CONFIG_TEST_ROOT/scripts/configure-rootless.sh" >/dev/null 2>&1 || true
+[[ "$PATH" == "$first" ]] || exit 21
+case ":$before:" in
+ *":$HOME/.local/bin:"*) [[ "$PATH" == "$before" ]] || exit 22 ;;
+ *) [[ "$PATH" == "$HOME/.local/bin:$before" ]] || exit 23 ;;
+esac
+bash -c '[[ ":$PATH:" == *":$HOME/.local/bin:"* ]]' || exit 24
+`, "CONFIG_TEST_ROOT="+f.root)
+			if err != nil {
+				t.Fatalf("user PATH setup: %s (%v)", out, err)
+			}
+		})
+	}
+}

@@ -6,6 +6,11 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
 fi
 _cloud_rootless_configure() {
     local root cgroup_version
+    case ":${PATH:-}:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) PATH="$HOME/.local/bin${PATH:+:$PATH}" ;;
+    esac
+    export PATH
     root=$(CDPATH= builtin cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." >/dev/null && builtin pwd -P) || return 1
     if [[ $(podman info --format '{{.Host.Security.Rootless}}') != true ]]; then
         printf 'Podman must run rootless as the student user.\n' >&2
