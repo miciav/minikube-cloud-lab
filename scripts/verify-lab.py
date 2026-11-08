@@ -469,6 +469,14 @@ class Verification:
         self.claim("data", "cloud-standard", "64Mi")
         volume = self.bound("data")
         self.writer("data")
+        # Directory mutations followed by getattr expose Ganesha's Linux 6.19+ incompatibility.
+        self.k(
+            "-n", self.name, "exec", "writer", "--", "sh", "-ec",
+            "mkdir /data/dir-probe; i=0; while [ $i -lt 20 ]; do "
+            "touch /data/dir-probe/file; stat /data/dir-probe >/dev/null; "
+            "rm /data/dir-probe/file; stat /data/dir-probe >/dev/null; "
+            "i=$((i+1)); done; rmdir /data/dir-probe",
+        )
         self.k("-n", self.name, "exec", "writer", "--", "sh", "-c", f"printf '%s' '{self.name}' > /data/proof; sync")
         self.delete("pod/writer")
         self.writer("data")

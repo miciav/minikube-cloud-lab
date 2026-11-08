@@ -16,6 +16,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// shortcut: Ganesha 4.3 rejects GET_DIR_DELEGATION from Linux 6.19+ clients.
+// Return to NFSv4.1 after shipping Ganesha with nfs-ganesha/nfs-ganesha#1385 fixed.
+const nfsMountVersion = "nfsvers=4.0"
+
 // ReconcileStorage provisions cloud volumes requested by cluster claims.
 func (s *Service) ReconcileStorage(ctx context.Context, client kubernetes.Interface, cluster, server string) error {
 	if net.ParseIP(server) == nil {
@@ -133,7 +137,7 @@ func (s *Service) provisionClaim(ctx context.Context, client kubernetes.Interfac
 		Capacity: corev1.ResourceList{corev1.ResourceStorage: size}, AccessModes: claim.Spec.AccessModes, PersistentVolumeReclaimPolicy: reclaim,
 		StorageClassName: *claim.Spec.StorageClassName, ClaimRef: &corev1.ObjectReference{Namespace: claim.Namespace, Name: claim.Name, UID: claim.UID},
 		PersistentVolumeSource: corev1.PersistentVolumeSource{NFS: &corev1.NFSVolumeSource{Server: server, Path: "/data/volumes/" + volume.ID}},
-		MountOptions:           []string{"nfsvers=4.1"},
+		MountOptions:           []string{nfsMountVersion},
 	}}
 	setDirectoryPV(pv, volume)
 	return ensurePersistentVolume(ctx, client, pv)

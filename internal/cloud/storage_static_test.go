@@ -75,6 +75,9 @@ func TestStaticPublicationBindingRetentionAndUnpublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(pv.Spec.MountOptions) != 1 || pv.Spec.MountOptions[0] != "nfsvers=4.0" {
+		t.Fatalf("NFS mounts must avoid unsupported directory delegations: %v", pv.Spec.MountOptions)
+	}
 	if pv.Spec.ClaimRef != nil || pv.Spec.StorageClassName != "cloud-static" || pv.Spec.PersistentVolumeReclaimPolicy != "Retain" {
 		t.Fatalf("not a static PV: %+v", pv.Spec)
 	}

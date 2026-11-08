@@ -43,6 +43,9 @@ func TestStorageReconcilerProvisionsPVCOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(pv.Spec.MountOptions) != 1 || pv.Spec.MountOptions[0] != "nfsvers=4.0" {
+		t.Fatalf("NFS mounts must avoid unsupported directory delegations: %v", pv.Spec.MountOptions)
+	}
 	if pv.Spec.NFS == nil || pv.Spec.NFS.Server != "172.30.0.253" || pv.Spec.NFS.Path != "/data/volumes/"+volumes[0].ID || pv.Spec.ClaimRef.UID != claim.UID {
 		t.Fatalf("bad volume: %+v", pv.Spec)
 	}

@@ -101,7 +101,7 @@ func (s *Service) syncPublication(ctx context.Context, client kubernetes.Interfa
 		return ErrFailedPrecondition
 	}
 	pv := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: v.ID, Labels: map[string]string{"cloud.minikube.local/volume": v.ID}}, Spec: corev1.PersistentVolumeSpec{
-		Capacity: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(v.Capacity)}, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain, StorageClassName: "cloud-static", MountOptions: []string{"nfsvers=4.1"}, PersistentVolumeSource: corev1.PersistentVolumeSource{NFS: &corev1.NFSVolumeSource{Server: s.storageServer, Path: "/data/volumes/" + v.ID}},
+		Capacity: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(v.Capacity)}, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain, StorageClassName: "cloud-static", MountOptions: []string{nfsMountVersion}, PersistentVolumeSource: corev1.PersistentVolumeSource{NFS: &corev1.NFSVolumeSource{Server: s.storageServer, Path: "/data/volumes/" + v.ID}},
 	}}
 	setDirectoryPV(pv, v)
 	var current *corev1.PersistentVolume

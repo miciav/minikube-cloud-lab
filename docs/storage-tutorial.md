@@ -169,6 +169,20 @@ volumes to release capacity; the provisioner retries the waiting PVC automatical
 A `ResourceQuota` is an additional Kubernetes namespace policy and does not
 replace this cloud-wide allocation budget.
 
+### NFS client compatibility
+
+The Docker backend mounts new dynamic and static PVs with NFSv4.0. The bundled
+Ganesha 4.3 rejects the `GET_DIR_DELEGATION` request sent by Linux 6.19+ clients
+with NFSv4.1, causing `Remote I/O error` during ordinary directory operations
+([upstream issue](https://github.com/nfs-ganesha/nfs-ganesha/issues/1385)).
+This compatibility setting is scoped to the lab PVs; it does not change host
+kernel parameters. Return to NFSv4.1 after upgrading to a fixed Ganesha release.
+
+Existing PVs retain their mount options. For an affected lab volume, stop its
+workloads, set that PV's `spec.mountOptions` to `["nfsvers=4.0"]`, and recreate
+the Pods so Kubernetes remounts it. Back up needed data before storage maintenance;
+do not delete the PVC or backing volume to repair this protocol mismatch.
+
 ### Docker/NFS only: physical write limit
 
 Skip this subsection on Podman rootless and use the oversized-PVC exercise
