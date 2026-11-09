@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vote
+  namespace: lecture02-vote
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: vote
+  template:
+    metadata:
+      labels:
+        app: vote
+        course-lab: lecture02
+      annotations:
+        lecture02/revision: v2
+    spec:
+      containers:
+      - name: vote
+        image: dockersamples/examplevotingapp_vote:latest
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        ports:
+        - containerPort: 80
+        readinessProbe:
+          tcpSocket:
+            port: 80
+          initialDelaySeconds: 2
+          periodSeconds: 3
+        imagePullPolicy: Always

@@ -1,0 +1,159 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lecture02-app
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-auth
+  namespace: lecture02-app
+type: Opaque
+stringData:
+  MARIADB_ROOT_PASSWORD: root-lab-only
+  MARIADB_DATABASE: books
+  MARIADB_USER: student
+  MARIADB_PASSWORD: student-lab-only
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-init
+  namespace: lecture02-app
+data:
+  01-books.sql: 'USE books;
+
+    CREATE TABLE books (id INT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(200) NOT
+    NULL);
+
+    INSERT INTO books(title) VALUES (''Cloud Computing'');
+
+    '
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: db-data
+  namespace: lecture02-app
+spec:
+  storageClassName: cloud-retain
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: lecture02-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+        course-lab: lecture02
+    spec:
+      containers:
+      - name: db
+        image: mariadb:11.4
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+        ports:
+        - containerPort: 3306
+        readinessProbe:
+          exec:
+            command:
+            - healthcheck.sh
+            - --connect
+            - --innodb_initialized
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        envFrom:
+        - secretRef:
+            name: db-auth
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+        - name: init
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: db-data
+      - name: init
+        configMap:
+          name: db-init
+  strategy:
+    type: Recreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: lecture02-app
+spec:
+  type: ClusterIP
+  selector:
+    app: db
+  ports:
+  - port: 3306
+    targetPort: 3306
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: lecture02-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+        course-lab: lecture02
+    spec:
+      containers:
+      - name: frontend
+        image: adminer:5
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 3
+        env:
+        - name: ADMINER_DEFAULT_SERVER
+          value: db
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: lecture02-app
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+  - port: 80
+    targetPort: 8080

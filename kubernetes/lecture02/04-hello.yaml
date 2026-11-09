@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+  namespace: lecture02
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello
+  template:
+    metadata:
+      labels:
+        app: hello
+        course-lab: lecture02
+    spec:
+      containers:
+      - name: hello
+        image: busybox:1.37.0
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        command:
+        - sh
+        - -c
+        - while true; do echo "hello from $HOSTNAME"; sleep 5; done

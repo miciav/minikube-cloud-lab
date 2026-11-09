@@ -1,0 +1,439 @@
+GUIDED COMMAND TRANSCRIPT — not an unattended script.
+Run from kubernetes/lecture02 after setup. Some commands block or delete named exercise resources.
+
+SLIDE 1: Container e Kubernetes
+
+
+SLIDE 2: From individual Pods to complete applications
+
+
+SLIDE 3: Lab setup: start with one node
+
+source scripts/configure.sh
+docker compose up -d
+cloud clusters list
+cloud machine-types list
+cloud clusters create lecture02 --machine-type lab-small \
+  --min-nodes 1 --max-nodes 1
+
+SLIDE 4: Lab setup: context, files and namespaces
+
+cloud clusters get-credentials lecture02
+kubectl config current-context
+kubectl config set-context --current --namespace=default
+kubectl wait --for=condition=Ready nodes --all --timeout=5m
+kubectl get nodes -o wide
+cd kubernetes/lecture02
+kubectl apply -f 00-namespace.yaml
+
+SLIDE 5: Deployment/ReplicaSet Objects
+
+
+SLIDE 6: A container restart is not a new Pod
+
+
+SLIDE 7: Readiness and resource requirements
+
+
+SLIDE 8: Deployment + ReplicaSet
+
+
+SLIDE 9: ReplicaSet
+
+
+SLIDE 10: ReplicaSet
+
+
+SLIDE 11: A Deployment declares a Pod template
+
+
+SLIDE 12: Exercise 1: create and expose hello-go
+
+kubectl create deployment hello-go --image=miciav/hello-go:1.0.0 --port=8180
+kubectl get deployment
+kubectl describe deployment hello-go
+kubectl edit deployment hello-go
+kubectl create service clusterip hello-go --tcp=8080:8180
+kubectl get svc hello-go
+kubectl edit svc hello-go
+kubectl port-forward svc/hello-go 18080:8080
+
+SLIDE 13: Exercise 1: scale the workload
+
+kubectl scale deployment hello-go --replicas=4
+kubectl get pods -l app=hello-go -o wide
+kubectl get endpointslices \
+  -l kubernetes.io/service-name=hello-go
+
+SLIDE 14: Exercise 2: Nginx with three replicas
+
+kubectl apply -f 02-web.yaml
+kubectl -n lecture02 rollout status deployment/web --timeout=3m
+kubectl -n lecture02 get deploy,rs,pods,svc -o wide
+kubectl -n lecture02 port-forward service/web 18080:80
+
+SLIDE 15: Node failure and application recovery
+
+
+SLIDE 16: Exercise 3: observe reconciliation
+
+POD=$(kubectl -n lecture02 get pods -l app=web \
+  -o jsonpath='{.items[0].metadata.name}')
+kubectl -n lecture02 get pod "$POD" \
+  -o custom-columns=NAME:.metadata.name,UID:.metadata.uid
+kubectl -n lecture02 delete pod "$POD"
+kubectl -n lecture02 get pods -l app=web -w
+
+SLIDE 17: Scaling Pods does not add nodes
+
+
+SLIDE 18: Exercise 4: scaling and placement
+
+kubectl -n lecture02 scale deployment/web --replicas=6
+kubectl -n lecture02 rollout status deployment/web --timeout=3m
+kubectl -n lecture02 get pods -l app=web -o wide
+kubectl -n lecture02 scale deployment/web --replicas=3
+kubectl apply -f 04-hello.yaml
+kubectl -n lecture02 logs deployment/hello --tail=5
+kubectl -n lecture02 scale deployment/hello --replicas=6
+kubectl -n lecture02 rollout status deployment/hello --timeout=3m
+kubectl -n lecture02 get pods -l app=hello -o wide
+kubectl delete -f 04-hello.yaml
+
+SLIDE 19: Scheduling: capacity and eligible nodes
+
+
+SLIDE 20: Placement mechanisms
+
+
+SLIDE 21: The multi-node teaching environment
+
+
+SLIDE 22: From one node to three: inspect the lab
+
+cd ../..
+source scripts/configure.sh
+cloud clusters list
+cloud clusters resize --help
+
+SLIDE 23: Load the provider build with resize
+
+docker build --target cloud \
+  -t minikube-cloud-lab/cloud:resize-dev .
+export CLOUD_IMAGE=minikube-cloud-lab/cloud:resize-dev
+docker compose up -d --no-deps cloud
+cloud clusters resize --help
+
+SLIDE 24: Grow the existing cluster to three nodes
+
+CURRENT_CLUSTER=lecture02
+cloud clusters describe "$CURRENT_CLUSTER"
+cloud clusters resize "$CURRENT_CLUSTER" --nodes 3
+cloud machines list --cluster "$CURRENT_CLUSTER"
+
+SLIDE 25: Verify the control plane and both workers
+
+kubectl config current-context
+kubectl wait --for=condition=Ready nodes --all --timeout=5m
+kubectl get nodes -o wide
+kubectl get nodes -l '!node-role.kubernetes.io/control-plane'
+cloud clusters list
+cloud machines list
+cd kubernetes/lecture02
+
+SLIDE 26: Exercise 5: label the workers
+
+source ex03/prepare.sh
+kubectl get nodes -L lecture02-role
+WORKER=$(kubectl get nodes -l lecture02-role=frontend \
+  -o jsonpath='{.items[0].metadata.name}')
+kubectl label node "$WORKER" lecture02-storage=ssd --overwrite
+
+SLIDE 27: Exercise 5: enforce and remove a constraint
+
+kubectl apply -f constraints.yaml
+kubectl -n lecture02 rollout status deployment/constrained
+kubectl -n lecture02 get pods -l app=constrained -o wide
+kubectl delete -f constraints.yaml
+kubectl label node "$WORKER" lecture02-storage-
+
+SLIDE 28: Service discovery across nodes
+
+
+SLIDE 29: Exercise 6: Redis across two workers
+
+source ex03/prepare.sh
+kubectl apply -f ex03/network.yaml
+kubectl -n lecture02 rollout status deployment/db --timeout=3m
+kubectl -n lecture02 rollout status deployment/client --timeout=3m
+kubectl -n lecture02 get pods -l 'app in (db,client)' -o wide
+
+SLIDE 30: Exercise 6: DNS and application traffic
+
+kubectl -n lecture02 exec deployment/client -- redis-cli -h db ping
+kubectl -n lecture02 exec deployment/client -- redis-cli -h db set course k8s
+kubectl -n lecture02 exec deployment/client -- redis-cli -h db get course
+kubectl -n lecture02 get endpointslices \
+  -l kubernetes.io/service-name=db
+kubectl delete -f ex03/network.yaml
+
+SLIDE 31: Expose a Service outside the cluster
+
+
+SLIDE 32: Exercise 6: compare NodePort and port-forward
+
+kubectl -n lecture02 expose deployment web --name=web-node \
+  --type=NodePort --port=80 --target-port=80
+lab services
+kubectl -n lecture02 delete service web-node
+
+SLIDE 33: Exercise 7: build client and Nginx Deployments
+
+registry.gitlab.com/aletundo/cloud-computing-lab:lecture01-es04-client
+BACKEND_URL=http://nginx.default:8080
+kubectl port-forward svc/client 15000:5000
+
+SLIDE 34: Deployment update strategies
+
+
+SLIDE 35: RollingUpdate Deployment
+
+
+SLIDE 36: RollingUpdate Deployment
+
+
+SLIDE 37: RollingUpdate Deployment
+
+
+SLIDE 38: RollingUpdate Deployment
+
+
+SLIDE 39: RollingUpdate Deployment
+
+
+SLIDE 40: RollingUpdate Deployment
+
+
+SLIDE 41: Exercise 8: update and roll back hello-go
+
+kubectl set image deployment/hello-go hello-go=miciav/hello-go:1.1.0
+kubectl rollout status deployment/hello-go --timeout=3m
+kubectl rollout history deployment/hello-go
+kubectl get pods -l app=hello-go -o wide
+kubectl rollout undo deployment/hello-go
+kubectl rollout status deployment/hello-go --timeout=3m
+kubectl delete service hello-go
+kubectl delete deployment hello-go
+
+SLIDE 42: Exercise 9: declarative Nginx deployment
+
+cat 00_es01_nginx_deployment.yml
+kubectl apply -f 00_es01_nginx_deployment.yml
+kubectl get deployment nginx -w
+kubectl describe deployment nginx
+
+SLIDE 43: Exercise 9: declarative update and rollback
+
+cat 00_es02_nginx_deployment.yml
+kubectl apply -f 00_es02_nginx_deployment.yml
+kubectl rollout status deployment/nginx --timeout=120s
+kubectl describe deployment nginx
+kubectl rollout history deployment/nginx
+kubectl rollout undo deployment/nginx
+kubectl rollout status deployment/nginx --timeout=120s
+kubectl apply -f 00_es01_nginx_deployment.yml
+
+SLIDE 44: Exercise 10: observe an update budget
+
+kubectl apply -f 05-rollout.yaml
+kubectl -n lecture02 rollout status deployment/rollout --timeout=3m
+kubectl -n lecture02 get pods -l app=rollout -w
+kubectl -n lecture02 set image deployment/rollout rollout=nginx:1.28.1
+kubectl -n lecture02 rollout status deployment/rollout --timeout=3m
+kubectl -n lecture02 rollout history deployment/rollout
+kubectl -n lecture02 rollout undo deployment/rollout
+kubectl -n lecture02 rollout status deployment/rollout --timeout=3m
+
+SLIDE 45: DaemonSet: one Pod per eligible node
+
+
+SLIDE 46: Exercise 11: inspect a DaemonSet
+
+kubectl apply -f daemonset.yaml
+kubectl -n lecture02 get daemonset node-agent
+kubectl -n lecture02 get pods -l app=node-agent -o wide
+
+SLIDE 47: Exercise 12: drain and reactivate a worker
+
+WORKER=$(kubectl get nodes -l lecture02-role=frontend \
+  -o jsonpath='{.items[0].metadata.name}')
+kubectl drain "$WORKER" --ignore-daemonsets \
+  --pod-selector='course-lab=lecture02' --timeout=3m
+kubectl -n lecture02 get pods -o wide
+kubectl uncordon "$WORKER"
+kubectl delete -f 05-rollout.yaml -f daemonset.yaml
+kubectl delete -f 02-web.yaml
+
+SLIDE 48: StatefulSet Object
+
+
+SLIDE 49: Case study
+
+
+SLIDE 50: Storage
+
+
+SLIDE 51: Volumes
+
+
+SLIDE 52: Storage objects: the three roles
+
+
+SLIDE 53: PersistentVolume
+
+
+SLIDE 54: PersistentVolume
+
+
+SLIDE 55: Access Modes
+
+
+SLIDE 56: StorageClass
+
+
+SLIDE 57: PersistentVolumeClaim
+
+
+SLIDE 58: PersistentVolumeClaim
+
+
+SLIDE 59: PV and PVC with Selectors
+
+
+SLIDE 60: Deletion, persistence and the Retain policy
+
+
+SLIDE 61: What is a Secret?
+
+
+SLIDE 62: Configuration and access to Secrets
+
+
+SLIDE 63: What is a StatefulSet?
+
+
+SLIDE 64: StatefulSet ordering guarantees
+
+
+SLIDE 65: Headless Services and stable Pod names
+
+mongo-0.mongo.default.svc.cluster.local
+
+SLIDE 66: Manifest of a StatefulSet
+
+
+SLIDE 67: StatefulSet
+
+
+SLIDE 68: StatefulSet
+
+
+SLIDE 69: Exercise 13: MongoDB with persistent storage
+
+kubectl get storageclass
+kubectl apply -f 00_es03_mongo-keyfile_secret.yml
+kubectl apply -f 02_es03_mongo_svc.yml
+kubectl apply -f 01_es03_mongo_statefulset.yml
+kubectl rollout status statefulset/mongo --timeout=180s
+kubectl get pods -l app.kubernetes.io/name=mongo
+for i in 0 1 2; do kubectl exec mongo-$i -- hostname -f; done
+
+SLIDE 70: Exercise 13: inspect NFS-backed claims
+
+kubectl describe service mongo
+kubectl get pvc
+kubectl describe pvc data-db-mongo-0
+kubectl get pv -o yaml
+cloud volumes list
+
+SLIDE 71: MongoDB DNS
+
+kubectl apply -f https://k8s.io/examples/admin/dns/dnsutils.yaml
+kubectl wait --for=condition=Ready pod/dnsutils --timeout=120s
+kubectl exec dnsutils -- nslookup mongo.default.svc.cluster.local
+kubectl exec dnsutils -- nslookup mongo-0.mongo.default.svc.cluster.local
+
+SLIDE 72: Exercise 13: initialize the MongoDB replica set
+
+kubectl exec -it mongo-0 -- mongo
+rs.initiate({ _id: "MainRepSet", members: [
+  { _id: 0, host: "mongo-0.mongo.default.svc.cluster.local:27017" },
+  { _id: 1, host: "mongo-1.mongo.default.svc.cluster.local:27017" },
+  { _id: 2, host: "mongo-2.mongo.default.svc.cluster.local:27017" }
+] })
+rs.status().members.map(m => ({name: m.name, state: m.stateStr}))
+
+SLIDE 73: Exercise 13: create the first administrator
+
+kubectl exec -it mongo-0 -- mongo
+use admin
+db.createUser({ user: "labadmin", pwd: passwordPrompt(),
+  roles: [ { role: "root", db: "admin" } ] })
+db.auth("labadmin", passwordPrompt())
+rs.status().members.map(m => ({name: m.name, state: m.stateStr}))
+
+SLIDE 74: From individual resources to an application
+
+
+SLIDE 75: Exercise 14: apply a multi-resource manifest
+
+kubectl apply -f https://k8s.io/examples/application/nginx-app.yaml
+kubectl delete -f https://k8s.io/examples/application/nginx-app.yaml
+
+SLIDE 76: A frontend with a persistent database
+
+
+SLIDE 77: Exercise 15: deploy Adminer and MariaDB
+
+kubectl apply -f ex06/app.yaml
+kubectl -n lecture02-app rollout status deployment/db --timeout=5m
+kubectl -n lecture02-app rollout status deployment/frontend --timeout=5m
+kubectl -n lecture02-app get pods,svc,pvc
+kubectl -n lecture02-app port-forward service/frontend 18080:80
+
+SLIDE 78: Exercise 15: prove persistence
+
+kubectl -n lecture02-app delete pod -l app=db
+kubectl -n lecture02-app rollout status deployment/db --timeout=5m
+kubectl -n lecture02-app port-forward service/frontend 18080:80
+kubectl -n lecture02-app get pvc db-data \
+  -o jsonpath='{.spec.volumeName}{"\n"}'
+cloud volumes list
+kubectl delete namespace lecture02-app
+
+SLIDE 79: Voting App: follow the data path
+
+
+SLIDE 80: Exercise 16: deploy the Voting App
+
+kubectl apply -f ex07/voting.yaml
+kubectl -n lecture02-vote wait --for=condition=Available \
+  deployment --all --timeout=5m
+kubectl -n lecture02-vote get deploy,pods,svc,pvc
+kubectl -n lecture02-vote port-forward service/vote 5000:80
+kubectl -n lecture02-vote port-forward service/result 5001:80
+
+SLIDE 81: Exercise 16: update and inspect the application
+
+kubectl -n lecture02-vote logs deployment/worker --tail=30
+kubectl apply -f ex07/vote-update.yaml
+kubectl -n lecture02-vote rollout status deployment/vote --timeout=3m
+kubectl -n lecture02-vote get deploy,rs,pods -l app=vote
+
+SLIDE 82: Finish the application labs deliberately
+
+kubectl -n lecture02-vote get pvc db-data \
+  -o jsonpath='{.spec.volumeName}{"\n"}'
+cloud volumes list
+kubectl delete namespace lecture02-vote lecture02
+cloud volumes list

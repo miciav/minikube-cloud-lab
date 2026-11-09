@@ -57,7 +57,7 @@ spec:
     spec:
       accessModes:
         - ReadWriteOnce
-      storageClassName: standard
+      storageClassName: cloud-standard
       resources:
         requests:
           storage: 0.5Gi

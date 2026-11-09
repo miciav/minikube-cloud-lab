@@ -8,3 +8,10 @@ web/dist/
 web/test-results/
 web/playwright-report/
 web/test-results-real/
+
+# Local lecture validation evidence.
+kubernetes/lecture02/source-evidence/
+kubernetes/lecture02/LIVE-VALIDATION.txt
+
+# Keep lecture 1 exercise 4 solutions private.
+kubernetes/lecture01/es04-solutions/

@@ -1,0 +1,50 @@
+MongoDB — minikube-cloud-lab
+
+1. Selezionare il contesto del proprio laboratorio e verificare il namespace:
+   kubectl config current-context
+   kubectl config set-context --current --namespace=default
+   cd kubernetes/lecture02
+
+2. Su un ambiente nuovo:
+   kubectl get storageclass
+   kubectl apply -f 00_es03_mongo-keyfile_secret.yml
+   kubectl apply -f 02_es03_mongo_svc.yml
+   kubectl apply -f 01_es03_mongo_statefulset.yml
+   kubectl rollout status statefulset/mongo --timeout=180s
+
+3. Inizializzare UNA SOLA VOLTA:
+   kubectl exec -i mongo-0 -- mongo --quiet < 03_es03_mongo-init.js
+   Se il replica set è già inizializzato, non ripetere questo comando.
+   Non cancellare PVC o dati per ripetere l'inizializzazione.
+
+4. Attendere l'elezione e verificare:
+   kubectl exec -it mongo-0 -- mongo
+   rs.status().members.map(m => ({name:m.name, state:m.stateStr}))
+   Atteso: un PRIMARY e due SECONDARY. Uscire con exit.
+
+5. Prima di creare altri utenti, aprire la shell nel Pod PRIMARY (sostituire
+   mongo-0 con il nome effettivo se diverso). Eseguire:
+   use admin
+   db.createUser({user:"labadmin", pwd:passwordPrompt(), roles:[{role:"root",db:"admin"}]})
+   db.auth("labadmin", passwordPrompt())
+   rs.status().members.map(m => ({name:m.name, state:m.stateStr}))
+   Scegliere una password personale, senza salvarla nei manifest o nelle slide.
+   Il ruolo root è una semplificazione per il laboratorio isolato.
+   Il primo utente chiude la localhost exception: per le connessioni successive:
+   kubectl exec -it mongo-0 -- mongo -u labadmin -p --authenticationDatabase admin
+   Non ripetere createUser se l'utente esiste già.
+
+Storage: cloud-standard, tre PVC da 512Mi su NFS.
+   kubectl get pvc
+   kubectl get pv -o yaml
+Dal terminale configurato del laboratorio:
+   cloud volumes list
+Non usare /var/hostpath-provisioner/default: il laboratorio non usa quel provisioner.
+Un PVC esistente non cambia StorageClass modificando il manifest; non eliminare
+PVC con dati. In tal caso occorre pianificare una migrazione.
+
+Questa immagine mongo:4.2 include la shell mongo, non mongosh.
+StatefulSet e PVC garantiscono identità e storage; rs.initiate configura invece
+la replica applicativa. Il keyfile autentica i membri, non sostituisce gli utenti.
+
+Fonte: https://www.mongodb.com/docs/manual/tutorial/deploy-replica-set-with-keyfile-access-control/

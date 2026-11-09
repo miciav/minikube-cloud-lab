@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: lecture02
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+        course-lab: lecture02
+    spec:
+      containers:
+      - name: db
+        image: redis:7.4-alpine
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        ports:
+        - containerPort: 6379
+        readinessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 2
+          periodSeconds: 3
+      nodeSelector:
+        lecture02-role: backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: lecture02
+spec:
+  type: ClusterIP
+  selector:
+    app: db
+  ports:
+  - port: 6379
+    targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client
+  namespace: lecture02
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: client
+  template:
+    metadata:
+      labels:
+        app: client
+        course-lab: lecture02
+    spec:
+      containers:
+      - name: client
+        image: redis:7.4-alpine
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        command:
+        - sleep
+        - infinity
+      nodeSelector:
+        lecture02-role: frontend

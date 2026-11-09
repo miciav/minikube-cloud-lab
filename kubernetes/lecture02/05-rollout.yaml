@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rollout
+  namespace: lecture02
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: rollout
+  template:
+    metadata:
+      labels:
+        app: rollout
+        course-lab: lecture02
+    spec:
+      containers:
+      - name: rollout
+        image: nginx:1.28.0
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        ports:
+        - containerPort: 80
+        readinessProbe:
+          tcpSocket:
+            port: 80
+          initialDelaySeconds: 2
+          periodSeconds: 3
+  minReadySeconds: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 2

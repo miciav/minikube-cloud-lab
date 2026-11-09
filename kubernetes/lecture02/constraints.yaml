@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: constrained
+  namespace: lecture02
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: constrained
+  template:
+    metadata:
+      labels:
+        app: constrained
+        course-lab: lecture02
+    spec:
+      containers:
+      - name: constrained
+        image: nginx:1.28.0
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        ports:
+        - containerPort: 80
+        readinessProbe:
+          tcpSocket:
+            port: 80
+          initialDelaySeconds: 2
+          periodSeconds: 3
+      nodeSelector:
+        lecture02-storage: ssd
