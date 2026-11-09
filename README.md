@@ -304,6 +304,10 @@ successfully created workers remain tracked. An unresolved machine requires
 reconciliation before retrying. `--async` prints one operation ID per new worker,
 or no IDs when no worker is needed; accepted work survives client disconnection.
 
+New workers are automatically labeled `node-role.kubernetes.io/worker=worker`
+during cluster creation, manual growth, and autoscaling, so `kubectl get nodes`
+shows their `worker` role. Existing nodes are not relabeled automatically.
+
 New workers inherit the existing machine type. Three `lab-small` nodes have
 aggregate limits of 6 CPUs / 6 GiB; three `lab-medium` nodes have limits of
 12 CPUs / 24 GiB. These limits do not create physical capacity: check the Docker

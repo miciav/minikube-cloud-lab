@@ -11,10 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
@@ -124,6 +126,53 @@ func TestClusterDNSUsesManagedContext(t *testing.T) {
 			}
 			if existing && !strings.Contains(updated, "existing.local") {
 				t.Fatal("existing DNS record lost")
+			}
+		})
+	}
+}
+
+func TestLabelWorkerUsesManagedContextAndPreservesOtherFields(t *testing.T) {
+	for _, forbidden := range []bool{false, true} {
+		t.Run(fmt.Sprint(forbidden), func(t *testing.T) {
+			requests := make(chan map[string]any, 2)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/nodes/demo-m02" || r.Header.Get("Content-Type") != "application/merge-patch+json" {
+					t.Errorf("unexpected node label request: %s %s (%s)", r.Method, r.URL, r.Header.Get("Content-Type"))
+				}
+				var patch map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+					t.Error(err)
+				}
+				requests <- patch
+				w.Header().Set("Content-Type", "application/json")
+				if forbidden {
+					w.WriteHeader(http.StatusForbidden)
+					_, _ = w.Write([]byte(`{"kind":"Status","apiVersion":"v1","reason":"Forbidden","code":403}`))
+					return
+				}
+				_, _ = w.Write([]byte(`{"kind":"Node","apiVersion":"v1","metadata":{"name":"demo-m02"}}`))
+			}))
+			defer server.Close()
+			yakdConfig(t, server.URL)
+			for range 2 {
+				err := labelWorker(t.Context(), "demo", "demo-m02")
+				if forbidden && !apierrors.IsForbidden(err) || !forbidden && err != nil {
+					t.Fatalf("forbidden=%v: %v", forbidden, err)
+				}
+				select {
+				case patch := <-requests:
+					want := map[string]any{"metadata": map[string]any{"labels": map[string]any{"node-role.kubernetes.io/worker": "worker"}}}
+					if !reflect.DeepEqual(patch, want) {
+						t.Fatalf("patch must change only the worker role: %#v", patch)
+					}
+				default:
+					t.Fatal("worker role was not applied to the managed cluster")
+				}
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			if err := labelWorker(ctx, "demo", "demo-m02"); !errors.Is(err, context.Canceled) {
+				t.Fatalf("canceled labeling: %v", err)
 			}
 		})
 	}

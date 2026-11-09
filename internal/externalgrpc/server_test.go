@@ -141,7 +141,7 @@ func TestReadRPCsAndTemplate(t *testing.T) {
 	if node.Status.Capacity.Cpu().Value() != 2 || node.Status.Allocatable.Memory().Value() != 2147483648 || node.Status.Capacity.Memory().Value() != 2147483648 || node.Status.Capacity.Pods().Value() != 110 {
 		t.Fatalf("template: %+v", node.Status)
 	}
-	for k, v := range map[string]string{"kubernetes.io/os": "linux", "kubernetes.io/arch": runtime.GOARCH, "node.kubernetes.io/instance-type": "lab-small", "topology.kubernetes.io/region": "lab-region-1", "topology.kubernetes.io/zone": "lab-region-1-a"} {
+	for k, v := range map[string]string{"node-role.kubernetes.io/worker": "worker", "kubernetes.io/os": "linux", "kubernetes.io/arch": runtime.GOARCH, "node.kubernetes.io/instance-type": "lab-small", "topology.kubernetes.io/region": "lab-region-1", "topology.kubernetes.io/zone": "lab-region-1-a"} {
 		if node.Labels[k] != v {
 			t.Fatalf("template label %s: %s", k, node.Labels[k])
 		}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -199,6 +200,9 @@ func startNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node, ap
 		if err := joinWorker(cc, n, api, bs, cr); err != nil {
 			return nil, err
 		}
+		if err := labelWorker(ctx, cc.Name, config.MachineName(*cc, *n)); err != nil {
+			return nil, err
+		}
 		return nil, verifyNodes(ctx, cc.Name, r)
 	}
 	settings, err := clusterSettings(cc, n, h, providerIP != "")
@@ -327,6 +331,18 @@ func configureClusterDNS(ctx context.Context, name, ip string) error {
 		if _, err := c.CoreV1().ConfigMaps("kube-system").Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func labelWorker(ctx context.Context, cluster, name string) error {
+	client, err := kapi.Client(cluster)
+	if err != nil {
+		return err
+	}
+	patch := []byte(`{"metadata":{"labels":{"node-role.kubernetes.io/worker":"worker"}}}`)
+	if _, err := client.CoreV1().Nodes().Patch(ctx, name, types.MergePatchType, patch, metav1.PatchOptions{}); err != nil {
+		return fmt.Errorf("label worker %s: %w", name, err)
 	}
 	return nil
 }

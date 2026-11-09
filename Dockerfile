@@ -46,6 +46,10 @@ ENTRYPOINT ["cloud"]
 CMD ["serve","--data-dir","/data"]
 
 FROM base AS lab
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends nano && \
+    rm -rf /var/lib/apt/lists/*
+ENV KUBE_EDITOR=nano
 COPY --from=kubectl-cli /out/kubectl /usr/local/bin/kubectl
 COPY --from=build /out/lab /usr/local/bin/lab
 USER 65532:65532

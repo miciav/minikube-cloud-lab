@@ -124,6 +124,13 @@ func TestClusterLifecycle(t *testing.T) {
 			ready := 0
 			if listErr == nil {
 				for _, n := range nodes.Items {
+					role, worker := n.Labels["node-role.kubernetes.io/worker"]
+					if n.Name == name && worker {
+						t.Fatalf("control plane %s must not be labeled worker", n.Name)
+					}
+					if n.Name != name && role != "worker" {
+						t.Fatalf("worker %s is missing its role label", n.Name)
+					}
 					for k, v := range labels {
 						if n.Labels[k] != v {
 							t.Fatalf("node %s label %s: %q", n.Name, k, n.Labels[k])

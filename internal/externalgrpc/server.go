@@ -187,6 +187,7 @@ func (s *server) NodeGroupTemplateNodeInfo(_ context.Context, req *protos.NodeGr
 		}
 	}
 	labels := cloud.NodeLabels(c.MachineType)
+	labels["node-role.kubernetes.io/worker"] = "worker"
 	labels["kubernetes.io/os"] = "linux"
 	labels["kubernetes.io/arch"] = runtime.GOARCH
 	capacity := corev1.ResourceList{corev1.ResourceCPU: *resource.NewQuantity(int64(shape.CPUs), resource.DecimalSI), corev1.ResourceMemory: *resource.NewQuantity(int64(shape.MemoryMiB)*1024*1024, resource.BinarySI), corev1.ResourcePods: resource.MustParse("110")}
