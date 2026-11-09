@@ -15,7 +15,7 @@ _cloud_lab_configure() {
     if [ -n "${ZSH_VERSION:-}" ]; then
         emulate -L zsh
     fi
-    local lab_root lab_uid lab_gid socket_gid env_file entry key lab_script socket_stat
+    local lab_root lab_uid lab_gid socket_gid env_file entry key lab_script socket_stat runtime
     case $(uname -s) in
         Linux) socket_stat=-c ;;
         Darwin) socket_stat=-f ;;
@@ -27,6 +27,16 @@ _cloud_lab_configure() {
         lab_script=${BASH_SOURCE[0]}
     fi
     lab_root=$(CDPATH= builtin cd -- "$(dirname -- "$lab_script")/.." >/dev/null && builtin pwd -P) || return 1
+    runtime=$(bash "$lab_root/scripts/detect-runtime.sh" "${CLOUD_RUNTIME:-auto}") || return 1
+    printf 'Detected runtime: %s\n' "$runtime"
+    if [[ $runtime == podman ]]; then
+        if [[ -z ${BASH_VERSION:-} ]]; then
+            printf 'Podman rootless configuration requires Bash. Run bash, then source scripts/configure.sh.\n' >&2
+            return 1
+        fi
+        source "$lab_root/scripts/configure-rootless.sh"
+        return $?
+    fi
     lab_uid=$(id -u) || return 1
     lab_gid=$(id -g) || return 1
     socket_gid=$(stat "$socket_stat" '%g' /var/run/docker.sock) || {
@@ -54,6 +64,10 @@ _cloud_lab_configure() {
     source "$lab_root/scripts/kubectl-forward.sh" || return 1
     CLOUD_LAB_ROOT=$lab_root
     # The function keyword avoids expanding a pre-existing alias in both shells.
+    function labcompose {
+        docker compose --project-directory "$CLOUD_LAB_ROOT" --env-file "$CLOUD_LAB_ROOT/.env" \
+            -f "$CLOUD_LAB_ROOT/compose.yaml" "$@"
+    }
     function cloud {
         docker compose --project-directory "$CLOUD_LAB_ROOT" --env-file "$CLOUD_LAB_ROOT/.env" \
             -f "$CLOUD_LAB_ROOT/compose.yaml" exec cloud cloud "$@"
@@ -79,7 +93,7 @@ _cloud_lab_configure() {
             -f "$CLOUD_LAB_ROOT/compose.yaml" run --rm --entrypoint kubectl \
             --volume "$PWD:/workspace" --workdir /workspace lab "$@"
     }
-    unalias cloud lab kubectl 2>/dev/null || true
+    unalias labcompose cloud lab kubectl 2>/dev/null || true
     export KUBECONFIG="$HOME/.kube/config"
     printf 'Lab configuration ready. Existing .env values were preserved.\n'
     printf 'Start the cloud and portal yourself with docker compose up -d from %s.\n' "$CLOUD_LAB_ROOT"

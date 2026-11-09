@@ -3,7 +3,10 @@
 import argparse
 import importlib.util
 import json
+import os
 import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -15,6 +18,52 @@ verify = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verify)
 
 
+class RuntimeDetectionTest(unittest.TestCase):
+    def test_runtime_detection(self):
+        cases = [
+            ("docker", "rootful", "", "auto", "docker", ""),
+            ("podman", "rootless", "", "auto", "podman", ""),
+            ("docker", "offline", "rootless", "auto", "podman", ""),
+            ("docker", "rootful", "rootless", "auto", "docker", ""),
+            ("docker", "rootful", "rootless", "podman", "podman", ""),
+            ("docker", "rootless", "", "auto", "", "Docker rootless"),
+            ("podman", "rootful", "", "auto", "", "Podman rootful"),
+            ("docker", "alias", "rootless", "auto", "podman", ""),
+            ("docker", "offline", "", "docker", "", "Cannot query docker"),
+            ("", "", "", "auto", "", "No working Docker or Podman"),
+            ("podman", "rootless", "", "docker", "", "Cannot query docker"),
+            ("", "", "", "unknown", "", "Unknown runtime"),
+        ]
+        for primary, mode, podman, requested, expected, error in cases:
+            with self.subTest(primary=primary, mode=mode, requested=requested), tempfile.TemporaryDirectory() as directory:
+                for name, state in [(primary, mode), ("podman", podman)]:
+                    if not name or not state:
+                        continue
+                    path = Path(directory) / name
+                    if state == "offline":
+                        body = "exit 1"
+                    elif name == "podman" or state == "alias":
+                        body = "echo " + ("true" if state != "rootful" else "false")
+                    else:
+                        security = "rootless" if state == "rootless" else "seccomp"
+                        body = (
+                            'case "$*" in *Host.Security.Rootless*) exit 1;; esac\n'
+                            + "echo '[\"name=" + security + "\"]'"
+                        )
+                    path.write_text("#!/bin/sh\n" + body + "\n")
+                    path.chmod(0o700)
+                result = subprocess.run(
+                    ["/bin/bash", str(verify.ROOT / "scripts/detect-runtime.sh"), requested],
+                    env={**os.environ, "PATH": directory}, capture_output=True, text=True, check=False,
+                )
+                if error:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(error, result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), expected)
+
+
 class VerificationTest(unittest.TestCase):
     def setUp(self):
         self.suite = verify.Verification(
@@ -23,6 +72,21 @@ class VerificationTest(unittest.TestCase):
         self.suite.diagnostics = Mock()
         self.addCleanup(shutil.rmtree, self.suite.directory)
         self.addCleanup(self.suite.log.close)
+
+    def test_cli_detects_runtime_before_verification(self):
+        for choice in ([], ["--runtime", "podman"]):
+            with (
+                self.subTest(choice=choice),
+                patch.object(verify.sys, "argv", ["verify-lab.py", *choice]),
+                patch.dict(os.environ, {"CLOUD_RUNTIME": "auto"}),
+                patch.object(verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "podman\n", "")) as detect,
+                patch.object(verify, "Verification") as suite,
+            ):
+                suite.return_value.execute.return_value = 0
+                self.assertEqual(verify.main(), 0)
+                self.assertEqual(detect.call_args.args[0][-1], "podman" if choice else "auto")
+                self.assertEqual(suite.call_args.args[0].runtime, "podman")
+                self.assertEqual(os.environ["CLOUD_RUNTIME"], "podman")
 
     def test_existing_cluster_is_never_deleted(self):
         self.suite.cloud = Mock()

@@ -25,7 +25,7 @@ func newConfigurationFixture(t *testing.T) configurationFixture {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"configure.sh", "configure-rootless.sh", "kubectl-forward.sh"} {
+	for _, name := range []string{"configure.sh", "configure-rootless.sh", "kubectl-forward.sh", "detect-runtime.sh"} {
 		script, err := os.ReadFile(filepath.Join("scripts", name)) // #nosec G304 -- names come from the fixed list above.
 		if err != nil {
 			t.Fatal(err)
@@ -39,7 +39,7 @@ func newConfigurationFixture(t *testing.T) configurationFixture {
 		"id":      "case \"$1\" in -u) printf '1001\\n';; -g) printf '1002\\n';; *) exit 1;; esac",
 		"stat":    "if [ \"${CONFIG_TEST_SOCKET_FAIL:-}\" = 1 ]; then exit 1; fi; case \"${CONFIG_TEST_OS:-Linux}\" in Linux) test \"$1\" = -c || exit 1;; Darwin) test \"$1\" = -f || exit 1;; esac; printf '999\\n'",
 		"kubectl": "exit 98",
-		"docker":  "printf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"; if [ -n \"${CONFIG_TEST_STDIN_LOG:-}\" ]; then cat > \"$CONFIG_TEST_STDIN_LOG\"; fi",
+		"docker":  "if [ \"$1\" = info ]; then case \"$*\" in *Host.Security.Rootless*) exit 1;; esac; echo seccomp; exit; fi; printf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"; if [ -n \"${CONFIG_TEST_STDIN_LOG:-}\" ]; then cat > \"$CONFIG_TEST_STDIN_LOG\"; fi",
 		"podman":  "printf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"",
 	} {
 		if err := os.WriteFile(filepath.Join(f.bin, name), []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
@@ -73,7 +73,7 @@ func (f configurationFixture) runShell(t *testing.T, shell, body string, extra .
 	return cmd.CombinedOutput()
 }
 
-func TestConfigurationPreparesSessionWithoutRunningDocker(t *testing.T) {
+func TestConfigurationPreparesSessionWithoutMutatingDocker(t *testing.T) {
 	f := newConfigurationFixture(t)
 	out, err := f.run(t, `before_dir=$PWD
 before_flags=$-
@@ -568,5 +568,40 @@ func TestRootlessComposeInstallation(t *testing.T) {
 				t.Fatalf("setup: %s (%v)", out, err)
 			}
 		})
+	}
+}
+
+func TestConfigurationDetectsPodmanAndDelegates(t *testing.T) {
+	f := newConfigurationFixture(t)
+	if err := os.WriteFile(filepath.Join(f.bin, "docker"), []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.bin, "podman"), []byte("#!/bin/sh\necho true\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.root, "scripts/configure-rootless.sh"), []byte("CLOUD_ROOTLESS_ROOT=delegated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.run(t, `source "$CONFIG_TEST_SCRIPT" || exit
+[[ "$CLOUD_ROOTLESS_ROOT" == delegated ]] || exit 9
+[[ ! -e "$CONFIG_TEST_ROOT/.env" ]] || exit 10
+`, "CONFIG_TEST_ROOT="+f.root)
+	if err != nil {
+		t.Fatalf("Podman routing: %s (%v)", out, err)
+	}
+}
+
+func TestConfigurationRejectsDockerRootlessBeforeWriting(t *testing.T) {
+	f := newConfigurationFixture(t)
+	body := "#!/bin/sh\ncase \"$*\" in *Host.Security.Rootless*) exit 1;; esac\necho rootless\n"
+	if err := os.WriteFile(filepath.Join(f.bin, "docker"), []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.run(t, `source "$CONFIG_TEST_SCRIPT"
+result=$?
+[[ "$result" == 1 && ! -e "$CONFIG_TEST_ROOT/.env" ]] || exit 9
+`, "CONFIG_TEST_ROOT="+f.root)
+	if err != nil || !strings.Contains(string(out), "Docker rootless") {
+		t.Fatalf("unsupported mode: %s (%v)", out, err)
 	}
 }

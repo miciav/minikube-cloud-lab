@@ -723,7 +723,12 @@ def main():
         description=__doc__,
         epilog="Exit: 0 all PASS; 1 FAIL; 2 incomplete (SKIP). Existing workloads are preserved; autoscaling adds temporary load. Budget 20-40 minutes and capacity for two lab-small nodes.",
     )
-    parser.add_argument("--runtime", choices=("podman", "docker"), default="podman")
+    parser.add_argument(
+        "--runtime",
+        choices=("auto", "podman", "docker"),
+        default=os.environ.get("CLOUD_RUNTIME", "auto"),
+        help="Runtime (default: auto; Docker first, then rootless Podman)",
+    )
     parser.add_argument(
         "--cluster",
         help="Optional: test an existing running cluster without starting/stopping the platform. Default: full lifecycle with a temporary cluster",
@@ -733,6 +738,18 @@ def main():
     if args.timeout < 1:
         parser.error("--timeout must be positive")
     os.environ["PATH"] = str(Path.home() / ".local/bin") + os.pathsep + os.environ.get("PATH", "")
+    try:
+        detected = subprocess.run(
+            ["bash", str(ROOT / "scripts/detect-runtime.sh"), args.runtime],
+            capture_output=True, text=True, timeout=60, check=False,
+        )
+        if detected.returncode:
+            parser.error(detected.stderr.strip())
+        args.runtime = detected.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        parser.error(f"Runtime detection failed: {exc}")
+    print(f"Detected runtime: {args.runtime}", flush=True)
+    os.environ["CLOUD_RUNTIME"] = args.runtime
     return Verification(args).execute()
 
 

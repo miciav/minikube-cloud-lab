@@ -60,8 +60,16 @@ Source `scripts/configure-rootless.sh` in each terminal; it adds `~/.local/bin` 
 For the complete automatic lifecycle, run on the VM from the repository:
 
 ```sh
-python3 scripts/verify-lab.py --runtime podman
+python3 scripts/verify-lab.py
 ```
+
+Runtime selection is automatic: working Docker takes precedence over rootless
+Podman. Use `--runtime podman` to select Podman when both are available.
+`source scripts/configure.sh` now also detects Podman and delegates to the
+rootless helper; `configure-rootless.sh` remains an explicit Podman entry point.
+Both require Bash for Podman configuration. Detection checks the runtime's
+reported rootless mode and rejects unsupported Podman rootful or Docker rootless
+configurations before changing state.
 
 No cluster needs to be created manually. The script starts the user Podman
 socket, runs the configuration preflight, pulls the published images, starts

@@ -71,7 +71,7 @@ kubectl get nodes -L node.kubernetes.io/instance-type,topology.kubernetes.io/zon
 `source scripts/configure.sh` prepares the data directories, adds missing
 UID/GID/socket-group entries to `.env`, and defines the `cloud` and `lab` shell
 commands, a containerized `kubectl`, plus `KUBECONFIG` for this Bash or zsh session. Existing `.env` values are
-preserved. Run it in each terminal; it does not edit shell startup files, pull
+preserved. Run it in each terminal; it queries runtime info but does not edit shell startup files, pull
 images, start Docker services, or create cluster resources. Students run Compose
 and all cloud/Kubernetes commands explicitly.
 
@@ -463,10 +463,23 @@ Run the full lifecycle (start services, create a test cluster, install autoscale
 verify features, delete the cluster, stop all project containers):
 
 ```sh
+python3 scripts/verify-lab.py
+# Explicit runtime override:
 python3 scripts/verify-lab.py --runtime podman
 # Docker deployment:
 python3 scripts/verify-lab.py --runtime docker
 ```
+
+Both `source scripts/configure.sh` and `verify-lab.py` detect the runtime from
+its info response: working Docker takes precedence, otherwise rootless Podman
+is selected. The Docker compatibility shim provided by Podman selects Podman.
+Use `CLOUD_RUNTIME=podman` (or `docker`) before sourcing to override detection;
+verification also accepts `--runtime podman|docker|auto`. Explicit selection does
+not fall back to another engine when unavailable. Docker rootless and Podman
+rootful are detected and rejected because the supplied Compose configurations
+do not support them. Detection queries runtime info but starts no services.
+For Podman, source from Bash; `labcompose` selects the appropriate Compose file
+on both runtimes. Direct `docker compose` commands apply only to Docker.
 
 No host kubectl or Go is needed. The platform must have no existing cluster;
 the script never deletes an existing cluster or unrelated containers. Persistent
