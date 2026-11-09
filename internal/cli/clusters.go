@@ -92,5 +92,5 @@ func addClusterCommands(root *cobra.Command) {
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Credentials configured for cluster %s\n", args[0])
 		return err
 	}}
-	parent.AddCommand(create, list, describe, remove, credentials)
+	parent.AddCommand(create, list, describe, remove, credentials, newResizeCommand())
 }

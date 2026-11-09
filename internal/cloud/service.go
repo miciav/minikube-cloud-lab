@@ -299,8 +299,14 @@ func (s *Service) AddMachines(name string, n int, requester string) ([]Operation
 	if n > c.MaxMachines-target {
 		return nil, fmt.Errorf("%w: maximum size is %d", ErrFailedPrecondition, c.MaxMachines)
 	}
-	next := s.state.clone()
-	ops := make([]Operation, 0, n)
+	return s.addMachines(c, n, requester, s.state.clone())
+}
+
+// addMachines persists worker reservations and any size change in one snapshot.
+// The caller holds s.mu; all callers share execution and partial-failure recovery.
+func (s *Service) addMachines(c Cluster, n int, requester string, next snapshot) ([]Operation, error) {
+	name := c.Name
+	ops := []Operation{}
 	for range n {
 		op := next.newOperation("ADD_MACHINE", name, requester)
 		op.Target = name + "-pending-" + op.ID

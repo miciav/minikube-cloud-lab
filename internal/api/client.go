@@ -89,6 +89,13 @@ func (c *Client) CreateCluster(ctx context.Context, name, kind string, minM, max
 	return result, err
 }
 
+// ResizeCluster requests additive growth with min=max=nodes.
+func (c *Client) ResizeCluster(ctx context.Context, name string, nodes int) ([]cloud.Operation, error) {
+	var result []cloud.Operation
+	_, err := c.request(ctx, http.MethodPost, "/v1/clusters/"+url.PathEscape(name)+"/resize", map[string]int{"nodes": nodes}, &result)
+	return result, err
+}
+
 // Clusters lists clusters.
 func (c *Client) Clusters(ctx context.Context) ([]cloud.Cluster, error) {
 	var result []cloud.Cluster

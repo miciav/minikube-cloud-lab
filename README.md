@@ -274,6 +274,7 @@ You can also apply those files directly with
 | `cloud clusters create NAME` | `--machine-type lab-small`, `--min-nodes 1`, `--max-nodes 3`, `--async` |
 | `cloud clusters list` | Lists the managed cluster |
 | `cloud clusters describe NAME` | Displays machine type, size limits, and status |
+| `cloud clusters resize NAME --nodes N` | Adds workers and sets min=max=N, including the control plane; optional `--async`; shrinking is rejected |
 | `cloud clusters delete NAME` | Deletes the cluster and its machines; `--async` |
 | `cloud clusters get-credentials NAME` | Updates `$KUBECONFIG` or `~/.kube/config` |
 | `cloud machines list` | Optional `--cluster NAME` filter |
@@ -282,6 +283,36 @@ You can also apply those files directly with
 | `cloud operations describe ID` | Displays one operation |
 | `lab install autoscaler` / `lab uninstall autoscaler` | Installs / removes Autoscaler |
 | `lab load start` / `lab load stop` | Creates / deletes the workload; `start --replicas N` |
+
+To grow an existing lab without recreating its cluster or volumes:
+
+```sh
+cloud clusters resize deck3 --nodes 3
+kubectl wait --for=condition=Ready nodes --all --timeout=5m
+kubectl get nodes -o wide
+```
+
+Use the actual cluster name. This command sets both size limits to the requested
+total and creates only the missing workers. It preserves the control plane,
+machine type, credentials, workloads and volumes. It does not redistribute
+existing Pods. A completed repeated request at the same size creates nothing;
+a smaller size is rejected. Do not use this command to preserve an autoscaling
+range: it deliberately switches to a fixed node count. Wait for running
+operations to finish before another resize. If worker creation fails, inspect
+`cloud operations list` and resolve the reported error, then retry the same size;
+successfully created workers remain tracked. An unresolved machine requires
+reconciliation before retrying. `--async` prints one operation ID per new worker,
+or no IDs when no worker is needed; accepted work survives client disconnection.
+
+New workers inherit the existing machine type. Three `lab-small` nodes have
+aggregate limits of 6 CPUs / 6 GiB; three `lab-medium` nodes have limits of
+12 CPUs / 24 GiB. These limits do not create physical capacity: check the Docker
+host allocation and actual workload memory before increasing the node count.
+
+The management API accepts `POST /v1/clusters/{name}/resize` with `{"nodes":3}`
+and returns the new worker operations. Limits and reservations are persisted in
+one snapshot before provisioning starts. The optional strong `If-Match` header
+checks cluster identity before accepting this mutation.
 
 The management API returns the cluster generation as an ETag on
 `GET /v1/clusters/{name}`. Portal mutations send it as a single strong `If-Match`

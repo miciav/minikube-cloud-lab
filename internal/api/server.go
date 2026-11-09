@@ -123,6 +123,22 @@ func NewServer(svc *cloud.Service) http.Handler {
 		op, err := svc.DeleteClusterIfUnchanged(r.PathValue("name"), "student", expected) //nolint:contextcheck // accepted work must survive HTTP request cancellation.
 		respond(w, http.StatusAccepted, op, err)
 	})
+	mux.HandleFunc("POST /v1/clusters/{name}/resize", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Nodes int `json:"nodes"`
+		}
+		if err := decodeStorageRequest(w, r, &request); err != nil {
+			respond(w, 400, nil, cloud.ErrInvalid)
+			return
+		}
+		expected, err := clusterGeneration(r)
+		if err != nil {
+			respond(w, 400, nil, err)
+			return
+		}
+		ops, err := svc.ResizeClusterIfUnchanged(r.PathValue("name"), request.Nodes, "student", expected) //nolint:contextcheck // accepted work survives HTTP request cancellation.
+		respond(w, http.StatusAccepted, ops, err)
+	})
 	mux.HandleFunc("GET /v1/clusters/{name}/kubeconfig", func(w http.ResponseWriter, r *http.Request) {
 		data, err := svc.Kubeconfig(r.PathValue("name")) //nolint:contextcheck // the service owns infrastructure contexts.
 		if err != nil {

@@ -573,10 +573,10 @@ func TestRootlessComposeInstallation(t *testing.T) {
 
 func TestConfigurationDetectsPodmanAndDelegates(t *testing.T) {
 	f := newConfigurationFixture(t)
-	if err := os.WriteFile(filepath.Join(f.bin, "docker"), []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(f.bin, "docker"), []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil { // #nosec G306 -- private executable test fixture, not a data file.
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(f.bin, "podman"), []byte("#!/bin/sh\necho true\n"), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(f.bin, "podman"), []byte("#!/bin/sh\necho true\n"), 0o700); err != nil { // #nosec G306 -- private executable test fixture, not a data file.
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(f.root, "scripts/configure-rootless.sh"), []byte("CLOUD_ROOTLESS_ROOT=delegated\n"), 0o600); err != nil {
@@ -594,7 +594,7 @@ func TestConfigurationDetectsPodmanAndDelegates(t *testing.T) {
 func TestConfigurationRejectsDockerRootlessBeforeWriting(t *testing.T) {
 	f := newConfigurationFixture(t)
 	body := "#!/bin/sh\ncase \"$*\" in *Host.Security.Rootless*) exit 1;; esac\necho rootless\n"
-	if err := os.WriteFile(filepath.Join(f.bin, "docker"), []byte(body), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(f.bin, "docker"), []byte(body), 0o700); err != nil { // #nosec G306 -- private executable test fixture, not a data file.
 		t.Fatal(err)
 	}
 	out, err := f.run(t, `source "$CONFIG_TEST_SCRIPT"
