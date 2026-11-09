@@ -188,8 +188,12 @@ Docker bridge. Ports are bound only to `127.0.0.1`, never the LAN.
 `lab services` reads the `minikube-cloud-lab.io/host-endpoints` JSON annotation
 (`name`, `servicePort`, `nodePort`, `hostPort`) and
 `minikube-cloud-lab.io/exposure-error`. Its Kubernetes equivalent is
-`kubectl get services -A -o json`. A missing endpoint means publication is pending
-or failed; inspect the ERROR column. A NodePort already in use on the computer
+`kubectl get nodes,services -A -o json`. The `NODE_ENDPOINTS` column combines
+node InternalIPs with the Service's allocated NodePorts, including every node
+and port; it requires permission to list Nodes. These are cluster-network
+addresses, not connectivity checks. Use `LOCAL_ENDPOINT` from the Mac browser.
+A missing local endpoint means publication is pending or failed; inspect the
+ERROR column. A NodePort already in use on the computer
 fails explicitly: free that port or change the Service's NodePort.
 
 The first release supports TCP, including raw TLS and database connections,

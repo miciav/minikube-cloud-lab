@@ -160,7 +160,9 @@ func assertConfigurationWrapperArguments(t *testing.T, f configurationFixture) {
 	}
 	got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
 	prefix := []string{"compose", "--project-directory", f.root, "--env-file", filepath.Join(f.root, ".env"), "-f", filepath.Join(f.root, "compose.yaml")}
-	want := append(append(append([]string{}, prefix...), "exec", "cloud", "cloud", "clusters", "describe", "name with spaces"), prefix...)
+	want := append(append([]string{}, prefix...), "exec", "cloud", "cloud", "clusters", "describe", "name with spaces")
+	want = append(want, "compose", "--progress", "quiet")
+	want = append(want, prefix[1:]...)
 	want = append(want, "run", "--rm", "lab", "load", "start", "--replicas", "4")
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("wrapper argv: %q want %q", got, want)
