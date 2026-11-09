@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-go
+  namespace: default
+  labels:
+    app: hello-go
+spec:
+  replicas: 4
+  minReadySeconds: 20
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: hello-go
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: hello-go
+    spec:
+      containers:
+      - name: hello-go
+        image: miciav/hello-go:1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8180
+          protocol: TCP
+      terminationGracePeriodSeconds: 30

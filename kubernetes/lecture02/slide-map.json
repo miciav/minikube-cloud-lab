@@ -2,575 +2,475 @@
   {
     "slide": 1,
     "part": 1,
-    "title": "Container e Kubernetes",
-    "original": 1,
-    "source": "Kubernetes_3"
+    "title": "PARTE 1: Container e Kubernetes",
+    "hidden": false
   },
   {
     "slide": 2,
-    "part": 42,
-    "title": "From individual Pods to complete applications",
-    "original": null,
-    "source": "Inf06 2; https://github.com/miciav/minikube-cloud-lab"
+    "part": 2,
+    "title": "Lab setup: start with one node",
+    "hidden": false
   },
   {
     "slide": 3,
-    "part": 43,
-    "title": "Lab setup: start with one node",
-    "original": null,
-    "source": "Inf06 12; https://github.com/miciav/minikube-cloud-lab"
+    "part": 3,
+    "title": "Lab setup: context, files and namespace",
+    "hidden": false
   },
   {
     "slide": 4,
-    "part": 44,
-    "title": "Lab setup: context, files and namespaces",
-    "original": null,
-    "source": "Inf06 13; https://github.com/miciav/minikube-cloud-lab"
+    "part": 4,
+    "title": "Deployment/ReplicaSet Objects",
+    "hidden": false
   },
   {
     "slide": 5,
-    "part": 3,
-    "title": "Deployment/ReplicaSet Objects",
-    "original": 3,
-    "source": "Kubernetes_3"
+    "part": 5,
+    "title": "Deployment + ReplicaSet",
+    "hidden": false
   },
   {
     "slide": 6,
-    "part": 45,
+    "part": 6,
     "title": "A container restart is not a new Pod",
-    "original": null,
-    "source": "Inf06 15; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/"
+    "hidden": false
   },
   {
     "slide": 7,
-    "part": 46,
+    "part": 7,
     "title": "Readiness and resource requirements",
-    "original": null,
-    "source": "https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/ ; https://kubernetes.io/docs/concepts/configuration/liveness-readiness-startup-probes/"
+    "hidden": false
   },
   {
     "slide": 8,
-    "part": 4,
-    "title": "Deployment + ReplicaSet",
-    "original": 4,
-    "source": "Kubernetes_3"
+    "part": 8,
+    "title": "ReplicaSet",
+    "hidden": false
   },
   {
     "slide": 9,
-    "part": 5,
+    "part": 9,
     "title": "ReplicaSet",
-    "original": 5,
-    "source": "Kubernetes_3"
+    "hidden": false
   },
   {
     "slide": 10,
-    "part": 6,
-    "title": "ReplicaSet",
-    "original": 6,
-    "source": "Kubernetes_3"
+    "part": 10,
+    "title": "Exercise 1: create and expose hello-go",
+    "hidden": false
   },
   {
     "slide": 11,
-    "part": 47,
-    "title": "A Deployment declares a Pod template",
-    "original": null,
-    "source": "Inf06 14, 18; https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"
+    "part": 11,
+    "title": "Exercise 1: scale the workload",
+    "hidden": false
   },
   {
     "slide": 12,
-    "part": 8,
-    "title": "Exercise 1: create and expose hello-go",
-    "original": 8,
-    "source": "Kubernetes_3"
+    "part": 12,
+    "title": "Exercise 2: Nginx with three replicas",
+    "hidden": false
   },
   {
     "slide": 13,
-    "part": 48,
-    "title": "Exercise 1: scale the workload",
-    "original": null,
-    "source": "Kubernetes_3 9; https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"
+    "part": 13,
+    "title": "Node failure and application recovery",
+    "hidden": false
   },
   {
     "slide": 14,
-    "part": 49,
-    "title": "Exercise 2: Nginx with three replicas",
-    "original": null,
-    "source": "Inf06 16; https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"
+    "part": 14,
+    "title": "Exercise 3: observe reconciliation",
+    "hidden": false
   },
   {
     "slide": 15,
-    "part": 50,
-    "title": "Node failure and application recovery",
-    "original": null,
-    "source": "Inf06 20; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/"
+    "part": 15,
+    "title": "Scaling Pods does not add nodes",
+    "hidden": false
   },
   {
     "slide": 16,
-    "part": 51,
-    "title": "Exercise 3: observe reconciliation",
-    "original": null,
-    "source": "Inf06 21; https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"
+    "part": 16,
+    "title": "Exercise 4: scaling and placement",
+    "hidden": false
   },
   {
     "slide": 17,
-    "part": 52,
-    "title": "Scaling Pods does not add nodes",
-    "original": null,
-    "source": "Inf06 22; https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"
+    "part": 17,
+    "title": "Scheduling: capacity and eligible nodes",
+    "hidden": false
   },
   {
     "slide": 18,
-    "part": 53,
-    "title": "Exercise 4: scaling and placement",
-    "original": null,
-    "source": "Inf06 22, 28; https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"
+    "part": 18,
+    "title": "Placement mechanisms",
+    "hidden": false
   },
   {
     "slide": 19,
-    "part": 54,
-    "title": "Scheduling: capacity and eligible nodes",
-    "original": null,
-    "source": "Inf06 25–26; https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/"
+    "part": 19,
+    "title": "The multi-node environment",
+    "hidden": false
   },
   {
     "slide": 20,
-    "part": 55,
-    "title": "Placement mechanisms",
-    "original": null,
-    "source": "Inf06 26; https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/"
+    "part": 20,
+    "title": "From one node to three: inspect the lab",
+    "hidden": false
   },
   {
     "slide": 21,
-    "part": 56,
-    "title": "The multi-node teaching environment",
-    "original": null,
-    "source": "Inf06 7; https://github.com/miciav/minikube-cloud-lab"
+    "part": 21,
+    "title": "Grow the existing cluster to three nodes",
+    "hidden": false
   },
   {
     "slide": 22,
-    "part": 57,
-    "title": "From one node to three: inspect the lab",
-    "original": null,
-    "source": "https://github.com/miciav/minikube-cloud-lab; local resize implementation, 2026-11-09"
+    "part": 22,
+    "title": "Verify the control plane and both workers",
+    "hidden": false
   },
   {
     "slide": 23,
-    "part": 58,
-    "title": "Load the provider build with resize",
-    "original": null,
-    "source": "https://github.com/miciav/minikube-cloud-lab; Dockerfile cloud target and compose.yaml"
+    "part": 23,
+    "title": "Exercise 5: label the workers",
+    "hidden": false
   },
   {
     "slide": 24,
-    "part": 59,
-    "title": "Grow the existing cluster to three nodes",
-    "original": null,
-    "source": "https://github.com/miciav/minikube-cloud-lab; internal/cloud/resize.go and internal/cli/resize.go"
+    "part": 24,
+    "title": "Exercise 5: enforce and remove a constraint",
+    "hidden": false
   },
   {
     "slide": 25,
-    "part": 60,
-    "title": "Verify the control plane and both workers",
-    "original": null,
-    "source": "https://github.com/miciav/minikube-cloud-lab; ex03/prepare.sh"
+    "part": 25,
+    "title": "Service discovery across nodes",
+    "hidden": false
   },
   {
     "slide": 26,
-    "part": 61,
-    "title": "Exercise 5: label the workers",
-    "original": null,
-    "source": "Inf06 25; https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/"
+    "part": 26,
+    "title": "Exercise 6: Redis across two workers",
+    "hidden": false
   },
   {
     "slide": 27,
-    "part": 62,
-    "title": "Exercise 5: enforce and remove a constraint",
-    "original": null,
-    "source": "Inf06 25; https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/"
+    "part": 27,
+    "title": "Exercise 6: DNS and application traffic",
+    "hidden": false
   },
   {
     "slide": 28,
-    "part": 63,
-    "title": "Service discovery across nodes",
-    "original": null,
-    "source": "Inf06 10, 19; https://kubernetes.io/docs/concepts/services-networking/service/"
+    "part": 28,
+    "title": "Expose a Service outside the cluster",
+    "hidden": false
   },
   {
     "slide": 29,
-    "part": 64,
-    "title": "Exercise 6: Redis across two workers",
-    "original": null,
-    "source": "Inf06 17; https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/"
+    "part": 29,
+    "title": "Exercise 6: compare NodePort and port-forward",
+    "hidden": false
   },
   {
     "slide": 30,
-    "part": 65,
-    "title": "Exercise 6: DNS and application traffic",
-    "original": null,
-    "source": "Inf06 17; https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/"
+    "part": 30,
+    "title": "Exercise 7: build client and Nginx Deployments",
+    "hidden": false
   },
   {
     "slide": 31,
-    "part": 66,
-    "title": "Expose a Service outside the cluster",
-    "original": null,
-    "source": "Inf06 27; https://kubernetes.io/docs/concepts/services-networking/service/"
+    "part": 31,
+    "title": "Deployment update strategies",
+    "hidden": false
   },
   {
     "slide": 32,
-    "part": 67,
-    "title": "Exercise 6: compare NodePort and port-forward",
-    "original": null,
-    "source": "Inf06 27; https://github.com/miciav/minikube-cloud-lab"
+    "part": 32,
+    "title": "RollingUpdate Deployment",
+    "hidden": false
   },
   {
     "slide": 33,
-    "part": 41,
-    "title": "Exercise 7: build client and Nginx Deployments",
-    "original": 41,
-    "source": "Kubernetes_3"
+    "part": 33,
+    "title": "RollingUpdate Deployment",
+    "hidden": false
   },
   {
     "slide": 34,
-    "part": 7,
-    "title": "Deployment update strategies",
-    "original": 7,
-    "source": "Kubernetes_3"
+    "part": 34,
+    "title": "RollingUpdate Deployment",
+    "hidden": false
   },
   {
     "slide": 35,
-    "part": 10,
+    "part": 35,
     "title": "RollingUpdate Deployment",
-    "original": 10,
-    "source": "Kubernetes_3"
+    "hidden": false
   },
   {
     "slide": 36,
-    "part": 11,
+    "part": 36,
     "title": "RollingUpdate Deployment",
-    "original": 11,
-    "source": "Kubernetes_3"
+    "hidden": false
   },
   {
     "slide": 37,
-    "part": 12,
+    "part": 37,
     "title": "RollingUpdate Deployment",
-    "original": 12,
-    "source": "Kubernetes_3"
+    "hidden": false
   },
   {
     "slide": 38,
-    "part": 13,
-    "title": "RollingUpdate Deployment",
-    "original": 13,
-    "source": "Kubernetes_3"
+    "part": 38,
+    "title": "Exercise 8: update and roll back hello-go",
+    "hidden": false
   },
   {
     "slide": 39,
-    "part": 14,
-    "title": "RollingUpdate Deployment",
-    "original": 14,
-    "source": "Kubernetes_3"
+    "part": 39,
+    "title": "Exercise 9: declarative Nginx deployment",
+    "hidden": false
   },
   {
     "slide": 40,
-    "part": 15,
-    "title": "RollingUpdate Deployment",
-    "original": 15,
-    "source": "Kubernetes_3"
+    "part": 40,
+    "title": "Exercise 9: declarative update and rollback",
+    "hidden": false
   },
   {
     "slide": 41,
-    "part": 68,
-    "title": "Exercise 8: update and roll back hello-go",
-    "original": null,
-    "source": "Kubernetes_3 9; https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"
+    "part": 41,
+    "title": "Exercise 10: observe an update budget",
+    "hidden": false
   },
   {
     "slide": 42,
-    "part": 16,
-    "title": "Exercise 9: declarative Nginx deployment",
-    "original": 16,
-    "source": "Kubernetes_3"
+    "part": 42,
+    "title": "DaemonSet: one Pod per eligible node",
+    "hidden": false
   },
   {
     "slide": 43,
-    "part": 17,
-    "title": "Exercise 9: declarative update and rollback",
-    "original": 17,
-    "source": "Kubernetes_3"
+    "part": 43,
+    "title": "Exercise 11: inspect a DaemonSet",
+    "hidden": false
   },
   {
     "slide": 44,
-    "part": 69,
-    "title": "Exercise 10: observe an update budget",
-    "original": null,
-    "source": "Inf06 29; https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"
+    "part": 44,
+    "title": "Exercise 12: drain and reactivate a worker",
+    "hidden": false
   },
   {
     "slide": 45,
-    "part": 70,
-    "title": "DaemonSet: one Pod per eligible node",
-    "original": null,
-    "source": "Inf06 23–24; https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/"
+    "part": 45,
+    "title": "StatefulSet Object",
+    "hidden": false
   },
   {
     "slide": 46,
-    "part": 71,
-    "title": "Exercise 11: inspect a DaemonSet",
-    "original": null,
-    "source": "Inf06 23–24; https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/"
+    "part": 46,
+    "title": "Case study",
+    "hidden": false
   },
   {
     "slide": 47,
-    "part": 72,
-    "title": "Exercise 12: drain and reactivate a worker",
-    "original": null,
-    "source": "Inf06 30; https://kubernetes.io/docs/tasks/administer-cluster/safely-drain-node/"
+    "part": 47,
+    "title": "Storage",
+    "hidden": false
   },
   {
     "slide": 48,
-    "part": 19,
-    "title": "StatefulSet Object",
-    "original": 19,
-    "source": "Kubernetes_3"
+    "part": 48,
+    "title": "Volumes",
+    "hidden": false
   },
   {
     "slide": 49,
-    "part": 20,
-    "title": "Case study",
-    "original": 20,
-    "source": "Kubernetes_3"
+    "part": 49,
+    "title": "Storage objects: the three roles",
+    "hidden": false
   },
   {
     "slide": 50,
-    "part": 26,
-    "title": "Storage",
-    "original": 26,
-    "source": "Kubernetes_3"
+    "part": 50,
+    "title": "PersistentVolume",
+    "hidden": false
   },
   {
     "slide": 51,
-    "part": 27,
-    "title": "Volumes",
-    "original": 27,
-    "source": "Kubernetes_3"
+    "part": 51,
+    "title": "PersistentVolume",
+    "hidden": false
   },
   {
     "slide": 52,
-    "part": 73,
-    "title": "Storage objects: the three roles",
-    "original": null,
-    "source": "https://kubernetes.io/docs/concepts/storage/persistent-volumes/"
+    "part": 52,
+    "title": "Access Modes",
+    "hidden": false
   },
   {
     "slide": 53,
-    "part": 28,
-    "title": "PersistentVolume",
-    "original": 28,
-    "source": "Kubernetes_3"
+    "part": 53,
+    "title": "StorageClass",
+    "hidden": false
   },
   {
     "slide": 54,
-    "part": 29,
-    "title": "PersistentVolume",
-    "original": 29,
-    "source": "Kubernetes_3"
+    "part": 54,
+    "title": "PersistentVolumeClaim",
+    "hidden": false
   },
   {
     "slide": 55,
-    "part": 30,
-    "title": "Access Modes",
-    "original": 30,
-    "source": "Kubernetes_3"
+    "part": 55,
+    "title": "PersistentVolumeClaim",
+    "hidden": false
   },
   {
     "slide": 56,
-    "part": 31,
-    "title": "StorageClass",
-    "original": 31,
-    "source": "Kubernetes_3"
+    "part": 56,
+    "title": "PV and PVC with Selectors",
+    "hidden": false
   },
   {
     "slide": 57,
-    "part": 32,
-    "title": "PersistentVolumeClaim",
-    "original": 32,
-    "source": "Kubernetes_3"
+    "part": 57,
+    "title": "Deletion, persistence and the Retain policy",
+    "hidden": false
   },
   {
     "slide": 58,
-    "part": 33,
-    "title": "PersistentVolumeClaim",
-    "original": 33,
-    "source": "Kubernetes_3"
+    "part": 58,
+    "title": "What is a Secret?",
+    "hidden": false
   },
   {
     "slide": 59,
-    "part": 34,
-    "title": "PV and PVC with Selectors",
-    "original": 34,
-    "source": "Kubernetes_3"
+    "part": 59,
+    "title": "Configuration and access to Secrets",
+    "hidden": false
   },
   {
     "slide": 60,
-    "part": 74,
-    "title": "Deletion, persistence and the Retain policy",
-    "original": null,
-    "source": "https://kubernetes.io/docs/concepts/storage/persistent-volumes/"
+    "part": 60,
+    "title": "What is a StatefulSet?",
+    "hidden": false
   },
   {
     "slide": 61,
-    "part": 35,
-    "title": "What is a Secret?",
-    "original": 35,
-    "source": "Kubernetes_3"
+    "part": 61,
+    "title": "StatefulSet ordering guarantees",
+    "hidden": false
   },
   {
     "slide": 62,
-    "part": 75,
-    "title": "Configuration and access to Secrets",
-    "original": null,
-    "source": "Inf06 11, 31; https://kubernetes.io/docs/concepts/configuration/secret/"
+    "part": 62,
+    "title": "Headless Services and stable Pod names",
+    "hidden": false
   },
   {
     "slide": 63,
-    "part": 21,
-    "title": "What is a StatefulSet?",
-    "original": 21,
-    "source": "Kubernetes_3"
+    "part": 63,
+    "title": "Manifest of a StatefulSet",
+    "hidden": false
   },
   {
     "slide": 64,
-    "part": 22,
-    "title": "StatefulSet ordering guarantees",
-    "original": 22,
-    "source": "Kubernetes_3"
+    "part": 64,
+    "title": "StatefulSet",
+    "hidden": false
   },
   {
     "slide": 65,
-    "part": 76,
-    "title": "Headless Services and stable Pod names",
-    "original": null,
-    "source": "https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/ ; https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/"
+    "part": 65,
+    "title": "StatefulSet",
+    "hidden": false
   },
   {
     "slide": 66,
-    "part": 23,
-    "title": "Manifest of a StatefulSet",
-    "original": 23,
-    "source": "Kubernetes_3"
+    "part": 66,
+    "title": "Exercise 13: MongoDB with persistent storage",
+    "hidden": false
   },
   {
     "slide": 67,
-    "part": 24,
-    "title": "StatefulSet",
-    "original": 24,
-    "source": "Kubernetes_3"
+    "part": 67,
+    "title": "Exercise 13: inspect NFS-backed claims",
+    "hidden": false
   },
   {
     "slide": 68,
-    "part": 25,
-    "title": "StatefulSet",
-    "original": 25,
-    "source": "Kubernetes_3"
+    "part": 68,
+    "title": "MongoDB DNS",
+    "hidden": false
   },
   {
     "slide": 69,
-    "part": 36,
-    "title": "Exercise 13: MongoDB with persistent storage",
-    "original": 36,
-    "source": "Kubernetes_3"
+    "part": 69,
+    "title": "Exercise 13: initialize the MongoDB replica set",
+    "hidden": false
   },
   {
     "slide": 70,
-    "part": 37,
-    "title": "Exercise 13: inspect NFS-backed claims",
-    "original": 37,
-    "source": "Kubernetes_3"
+    "part": 70,
+    "title": "Exercise 13: create the first administrator",
+    "hidden": false
   },
   {
     "slide": 71,
-    "part": 38,
-    "title": "MongoDB DNS",
-    "original": 38,
-    "source": "Kubernetes_3"
+    "part": 71,
+    "title": "From individual resources to an application",
+    "hidden": false
   },
   {
     "slide": 72,
-    "part": 39,
-    "title": "Exercise 13: initialize the MongoDB replica set",
-    "original": 39,
-    "source": "Kubernetes_3"
+    "part": 72,
+    "title": "Exercise 14: apply a multi-resource manifest",
+    "hidden": false
   },
   {
     "slide": 73,
-    "part": 40,
-    "title": "Exercise 13: create the first administrator",
-    "original": 40,
-    "source": "Kubernetes_3"
+    "part": 73,
+    "title": "A frontend with a persistent database",
+    "hidden": false
   },
   {
     "slide": 74,
-    "part": 77,
-    "title": "From individual resources to an application",
-    "original": null,
-    "source": "Inf06 31–32; https://kubernetes.io/docs/concepts/cluster-administration/manage-deployment/"
+    "part": 74,
+    "title": "Exercise 15: deploy Adminer and MariaDB",
+    "hidden": false
   },
   {
     "slide": 75,
-    "part": 18,
-    "title": "Exercise 14: apply a multi-resource manifest",
-    "original": 18,
-    "source": "Kubernetes_3"
+    "part": 75,
+    "title": "Exercise 15: prove persistence",
+    "hidden": false
   },
   {
     "slide": 76,
-    "part": 78,
-    "title": "A frontend with a persistent database",
-    "original": null,
-    "source": "Inf06 32; https://kubernetes.io/docs/concepts/storage/persistent-volumes/"
+    "part": 76,
+    "title": "Voting App: follow the data path",
+    "hidden": false
   },
   {
     "slide": 77,
-    "part": 79,
-    "title": "Exercise 15: deploy Adminer and MariaDB",
-    "original": null,
-    "source": "Inf06 33"
+    "part": 77,
+    "title": "Exercise 16: deploy the Voting App",
+    "hidden": false
   },
   {
     "slide": 78,
-    "part": 80,
-    "title": "Exercise 15: prove persistence",
-    "original": null,
-    "source": "Inf06 34; https://kubernetes.io/docs/concepts/storage/persistent-volumes/"
+    "part": 78,
+    "title": "Exercise 16: update and inspect the application",
+    "hidden": false
   },
   {
     "slide": 79,
-    "part": 81,
-    "title": "Voting App: follow the data path",
-    "original": null,
-    "source": "Inf06 35; https://github.com/dockersamples/example-voting-app"
-  },
-  {
-    "slide": 80,
-    "part": 82,
-    "title": "Exercise 16: deploy the Voting App",
-    "original": null,
-    "source": "Inf06 36; https://github.com/dockersamples/example-voting-app"
-  },
-  {
-    "slide": 81,
-    "part": 83,
-    "title": "Exercise 16: update and inspect the application",
-    "original": null,
-    "source": "Inf06 36; https://github.com/dockersamples/example-voting-app"
-  },
-  {
-    "slide": 82,
-    "part": 84,
+    "part": 79,
     "title": "Finish the application labs deliberately",
-    "original": null,
-    "source": "Inf06 34, 36; https://github.com/miciav/minikube-cloud-lab"
+    "hidden": false
   }
 ]

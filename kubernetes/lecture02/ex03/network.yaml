@@ -1,21 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: db
-  namespace: lecture02
+  name: redis-backend
+  namespace: default
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: db
+      app: redis-backend
   template:
     metadata:
       labels:
-        app: db
+        app: redis-backend
         course-lab: lecture02
     spec:
       containers:
-      - name: db
+      - name: redis-backend
         image: redis:7.4-alpine
         resources:
           requests:
@@ -36,12 +36,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: db
-  namespace: lecture02
+  name: redis-backend
+  namespace: default
 spec:
   type: ClusterIP
   selector:
-    app: db
+    app: redis-backend
   ports:
   - port: 6379
     targetPort: 6379
@@ -49,21 +49,21 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: client
-  namespace: lecture02
+  name: redis-client
+  namespace: default
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: client
+      app: redis-client
   template:
     metadata:
       labels:
-        app: client
+        app: redis-client
         course-lab: lecture02
     spec:
       containers:
-      - name: client
+      - name: redis-client
         image: redis:7.4-alpine
         resources:
           requests:

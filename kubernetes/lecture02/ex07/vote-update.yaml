@@ -2,7 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: vote
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 spec:
   replicas: 3
   selector:

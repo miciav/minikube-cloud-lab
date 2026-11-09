@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: node-agent
-  namespace: lecture02
+  namespace: default
 spec:
   selector:
     matchLabels:

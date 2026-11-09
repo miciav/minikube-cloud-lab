@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: constrained
-  namespace: lecture02
+  namespace: default
 spec:
   replicas: 3
   selector:

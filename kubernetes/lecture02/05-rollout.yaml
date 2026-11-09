@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rollout
-  namespace: lecture02
+  namespace: default
 spec:
   replicas: 4
   selector:

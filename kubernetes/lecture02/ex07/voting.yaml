@@ -1,13 +1,10 @@
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: lecture02-vote
----
-apiVersion: v1
 kind: Secret
 metadata:
   name: db-auth
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 type: Opaque
 stringData:
   POSTGRES_USER: postgres
@@ -17,7 +14,9 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: db-data
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 spec:
   storageClassName: cloud-retain
   accessModes:
@@ -30,7 +29,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: db
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 spec:
   replicas: 1
   selector:
@@ -78,7 +79,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: db
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 spec:
   type: ClusterIP
   selector:
@@ -91,7 +94,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 spec:
   replicas: 1
   selector:
@@ -124,7 +129,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 spec:
   type: ClusterIP
   selector:
@@ -137,7 +144,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: vote
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 spec:
   replicas: 1
   selector:
@@ -171,7 +180,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: vote
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 spec:
   type: ClusterIP
   selector:
@@ -184,7 +195,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: result
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 spec:
   replicas: 1
   selector:
@@ -221,7 +234,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: result
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 spec:
   type: ClusterIP
   selector:
@@ -234,7 +249,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: worker
-  namespace: lecture02-vote
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: voting
 spec:
   replicas: 1
   selector:

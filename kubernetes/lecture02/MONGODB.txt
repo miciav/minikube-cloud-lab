@@ -2,7 +2,8 @@ MongoDB — minikube-cloud-lab
 
 1. Selezionare il contesto del proprio laboratorio e verificare il namespace:
    kubectl config current-context
-   kubectl config set-context --current --namespace=default
+   kubectl config view --minify -o 'jsonpath={..namespace}'
+   Verificare default (un valore vuoto indica ugualmente default).
    cd kubernetes/lecture02
 
 2. Su un ambiente nuovo:
