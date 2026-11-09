@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -mod=readonly -trimpath \
     -ldflags="-s -w -X k8s.io/client-go/pkg/version.gitVersion=v1.35.10 -X k8s.io/component-base/version.gitVersion=v1.35.10" -o /out/kubectl .
 
-FROM docker:29.9.2-cli AS docker-cli
+FROM docker:29.9.3-cli AS docker-cli
 
 FROM debian:bookworm-slim AS base
 # Take the Debian release's current security fixes rather than freezing apt package versions.
