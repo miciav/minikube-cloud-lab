@@ -250,7 +250,7 @@ SLIDE 60: What is a StatefulSet?
 SLIDE 61: StatefulSet ordering guarantees
 
 SLIDE 62: Headless Services and stable Pod names
-mongo-0.mongo.default.svc.cluster.local
+mongo-0.mongo.default.svc.cloudlab.internal
 
 SLIDE 63: Manifest of a StatefulSet
 
@@ -277,15 +277,15 @@ cloud volumes list
 SLIDE 68: MongoDB DNS
 kubectl apply -f https://k8s.io/examples/admin/dns/dnsutils.yaml
 kubectl wait --for=condition=Ready pod/dnsutils --timeout=120s
-kubectl exec dnsutils -- nslookup mongo.default.svc.cluster.local
-kubectl exec dnsutils -- nslookup mongo-0.mongo.default.svc.cluster.local
+kubectl exec dnsutils -- nslookup mongo.default.svc.cloudlab.internal
+kubectl exec dnsutils -- nslookup mongo-0.mongo.default.svc.cloudlab.internal
 
 SLIDE 69: Exercise 13: initialize the MongoDB replica set
 kubectl exec -it mongo-0 -- mongo
 rs.initiate({ _id: "MainRepSet", members: [
-  { _id: 0, host: "mongo-0.mongo.default.svc.cluster.local:27017" },
-  { _id: 1, host: "mongo-1.mongo.default.svc.cluster.local:27017" },
-  { _id: 2, host: "mongo-2.mongo.default.svc.cluster.local:27017" }
+  { _id: 0, host: "mongo-0.mongo.default.svc.cloudlab.internal:27017" },
+  { _id: 1, host: "mongo-1.mongo.default.svc.cloudlab.internal:27017" },
+  { _id: 2, host: "mongo-2.mongo.default.svc.cloudlab.internal:27017" }
 ] })
 rs.status().members.map(m => ({name: m.name, state: m.stateStr}))
 

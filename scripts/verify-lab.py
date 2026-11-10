@@ -339,7 +339,7 @@ class Verification:
             },
         )
         self.k("-n", self.name, "wait", "--for=condition=Ready", "pod/client", "--timeout=5m", timeout=330)
-        self.k("-n", self.name, "exec", "client", "--", "nslookup", "kubernetes.default.svc.cluster.local")
+        self.k("-n", self.name, "exec", "client", "--", "nslookup", "kubernetes.default.svc.cloudlab.internal")
         html = self.k("-n", self.name, "exec", "client", "--", "wget", "-qO-", "http://web")
         require("Welcome to nginx" in html, "ClusterIP/DNS HTTP response mismatch")
 

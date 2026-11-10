@@ -193,7 +193,7 @@ func TestClusterLifecycle(t *testing.T) {
 		}
 		time.Sleep(time.Second)
 	}
-	_, err = client.CoreV1().Pods("default").Create(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "dns-check"}, Spec: corev1.PodSpec{RestartPolicy: corev1.RestartPolicyNever, Containers: []corev1.Container{{Name: "lookup", Image: "busybox:1.37.0", Command: []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local && nslookup host.minikube.internal"}}}}}, metav1.CreateOptions{})
+	_, err = client.CoreV1().Pods("default").Create(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "dns-check"}, Spec: corev1.PodSpec{RestartPolicy: corev1.RestartPolicyNever, Containers: []corev1.Container{{Name: "lookup", Image: "busybox:1.37.0", Command: []string{"sh", "-c", "nslookup kubernetes.default.svc.cloudlab.internal && nslookup host.minikube.internal"}}}}}, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

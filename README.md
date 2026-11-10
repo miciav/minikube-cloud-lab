@@ -35,6 +35,11 @@ Kubernetes is pinned to **v1.35.6**, Cluster Autoscaler to **v1.35.0**, and the
 minikube library to **v1.39.0**. Nodes expose the standard instance-type label,
 region `lab-region-1`, and zone `lab-region-1-a`.
 
+New clusters use the internal DNS domain `cloudlab.internal`; service names follow
+`<service>.<namespace>.svc.cloudlab.internal`. Existing clusters retain their
+original DNS domain. Using the new domain requires creating a new cluster with
+the updated cloud software; the lecture02 MongoDB examples assume this domain.
+
 Existing clusters keep their original machine resources. To adopt the smaller
 `lab-small` shape, delete the old cluster through `cloud`, pull the updated
 images, and create a new cluster. The configuration helper does not resize or
