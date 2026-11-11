@@ -94,9 +94,9 @@ kubectl get crd
 # ESERCIZIO 2 — MySQL Operator
 # Prima: verificare con l'operatore umano eventuali dubbi su DNS, storage,
 # architettura, capacità o versione. Non applicare su un'installazione esistente.
-kubectl apply -f mysql-operator-9.1.0-2.2.2/deploy-crds.yaml
-kubectl wait --for=condition=Established crd/innodbclusters.mysql.oracle.com crd/mysqlbackups.mysql.oracle.com crd/clusterkopfpeerings.zalando.org crd/kopfpeerings.zalando.org --timeout=60s
-kubectl apply -f mysql-operator-9.1.0-2.2.2/deploy-operator.yaml
+kubectl apply -f mysql-operator-26.10.0-2.3.1/deploy-crds.yaml
+kubectl wait --for=condition=Established crd/innodbclusters.mysql.oracle.com crd/mysqlbackups.mysql.oracle.com crd/mysqlclustersetfailovers.mysql.oracle.com crd/clusterkopfpeerings.zalando.org crd/kopfpeerings.zalando.org --timeout=60s
+kubectl apply -f mysql-operator-26.10.0-2.3.1/deploy-operator.yaml
 kubectl -n mysql-operator get deployment mysql-operator
 kubectl -n mysql-operator rollout status deployment/mysql-operator --timeout=5m
 
@@ -116,7 +116,7 @@ kubectl -n default get pods,services,pvc
 kubectl -n default describe innodbcluster mycluster
 
 # Stesso tag dell'operatore per evitare il client latest non versionato.
-kubectl -n default run --rm -it myshell --restart=Never --image=container-registry.oracle.com/mysql/community-operator:9.1.0-2.2.2 -- mysqlsh
+kubectl -n default run --rm -it myshell --restart=Never --image=container-registry.oracle.com/mysql/community-operator:26.10.0-2.3.1 -- mysqlsh
 # Dentro MySQL Shell:
 \connect root@mycluster
 # Inserire cloud quando richiesta la password; rispondere N al salvataggio.
@@ -149,8 +149,8 @@ cloud volumes list
 kubectl get pv
 # Solo per l'installazione creata da questa prova, senza altri custom object:
 kubectl get innodbclusters,mysqlbackups -A
-kubectl delete -f mysql-operator-9.1.0-2.2.2/deploy-operator.yaml
-kubectl delete -f mysql-operator-9.1.0-2.2.2/deploy-crds.yaml
+kubectl delete -f mysql-operator-26.10.0-2.3.1/deploy-operator.yaml
+kubectl delete -f mysql-operator-26.10.0-2.3.1/deploy-crds.yaml
 kubectl -n default get pods,deployments,statefulsets,services,hpa,pvc
 kubectl get crd
 # Mantenere il cluster del corso, come indicato nelle slide Kubernetes_4.

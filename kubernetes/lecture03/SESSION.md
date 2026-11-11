@@ -400,3 +400,78 @@ Evidenze locali (cartella esclusa da Git):
 [scale-down](evidence/ca-kubectl-20261111/03-scale-down.log),
 [convergenza](evidence/ca-kubectl-20261111/04-convergence.log),
 [cleanup e verifica DONE finale](evidence/ca-kubectl-20261111/05-cleanup.log).
+
+
+## Automazione del deck e MySQL 26.10 — 11 novembre 2026
+
+Aggiunto `scripts/verify-lecture03.py`, separato da `verify-lab.py` ma basato
+sul suo trasporto Compose e sul formato PASS/FAIL. Ordine: HPA, Cluster
+Autoscaler, KEDA, CRD, MySQL. Usa i manifest locali; modifica soltanto una copia
+temporanea del programma Cron KEDA. Prima della ricreazione richiede il flag
+`--recreate-empty-cluster` e controlla che il laboratorio dedicato sia vuoto.
+I test senza runtime sono inclusi nella CI: **43 test Python passati**,
+compresi quelli dello script preesistente.
+
+Verifiche reali eseguite sul runtime Docker disponibile, con Kubernetes 1.35.6
+su ARM64 e dominio effettivo `cluster.local`:
+
+- HPA: una replica iniziale, crescita sotto carico e ritorno a una replica
+  disponibile senza abbreviare la stabilizzazione; generatore e risorse rimossi.
+- Cluster Autoscaler: Deployment 0 → 4 → 0; nodi 1 → 2 → 1; operazioni ADD_MACHINE
+  e DELETE_MACHINE della prova in DONE, con requester cluster-autoscaler.
+  Rimossi anche ConfigMap di stato e Lease generati.
+- KEDA: finestra 13:23–13:25 UTC, ciclo 0 → 2 → 0; proprietà dell’HPA verificata,
+  risposta HTTP `Hello, KEDA!`; cleanup completo.
+- CRD: CronTab registrato, spec verificato e rimozione completa.
+
+La prima verifica ha individuato un errore del nuovo script: il namespace
+`default` veniva imposto anche ai bundle degli operatori. Corretto sia apply
+sia delete; i bundle conservano i namespace dichiarati nei manifest, mentre
+le risorse didattiche restano esplicitamente in default. Aggiunto un test di
+regressione, compreso KEDA con risorse distribuite su più namespace.
+
+MySQL 9.1 ha superato la query SQL, ma il cleanup con propagazione foreground
+ha eliminato prematuramente il Secret interno `mycluster-privsecrets`, causando
+404 nell’operatore e finalizer bloccati. Lo script si è fermato, conservando il
+cluster. Con autorizzazione esplicita sono stati eliminati il laboratorio e
+soltanto i tre volumi registrati durante la prova. Nessun finalizer forzato.
+La cancellazione di InnoDBCluster ora usa background, come la procedura manuale:
+l’operatore conserva accesso ai propri Secret fino alla fine dei finalizer.
+Anche questa differenza è protetta da un test di regressione.
+
+Su richiesta dell’operatore, sostituiti i manifest locali con il tag ufficiale
+**26.10.0-2.3.1**, senza patch upstream; aggiornati checksum, comandi e client
+MySQL Shell. Aggiunta l’attesa Established della nuova CRD
+`mysqlclustersetfailovers.mysql.oracle.com`. Le annotazioni precedenti di questo
+registro riferite a 9.1 restano cronologia della prima prova.
+
+Ripetuto il solo esercizio MySQL usando i metodi dello script aggiornato, su
+due lab-medium nuovi. Alle **13:45:38 UTC** il cluster riportava ONLINE con tre
+membri. La query attraverso Router ha restituito versione **26.10.0**, tre
+membri ONLINE, uno PRIMARY e due SECONDARY. **Cleanup riuscito**: custom object,
+Pod, PVC, PV, volumi cloud, Secret didattico, operatore e CRD rimossi.
+Le altre quattro prove già riuscite non sono state ripetute dopo questo cambio
+limitato a MySQL e alla chiusura finale; non si presenta il report completo
+precedente, contenente il fallimento del vecchio cleanup, come interamente PASS.
+
+Durante la ripetizione è arrivata la richiesta di eliminare il cluster alla
+fine. La prova già in corso ha concluso il precedente ripristino a un nodo;
+subito dopo è stato eseguito e verificato il nuovo metodo finale
+`delete_empty_cluster`. La versione consegnata elimina direttamente il cluster
+dopo il cleanup MySQL, senza ricreare un nodo aggiuntivo. **Stato finale:
+nessun cluster, nessun volume e nessun container dei nodi lecture03**. I servizi
+cloud restano attivi. In caso di errore o cleanup incompleto lo script si ferma
+per l’operatore, senza eliminare il cluster per nascondere residui.
+
+Evidenze locali, escluse da Git:
+[esecuzione dei cinque esercizi e vecchio cleanup fallito](evidence/automation-20261111/deck/report.json),
+[diagnostica del vecchio cleanup](evidence/automation-20261111/mysql-cleanup-failure.log),
+[ripetizione MySQL 26.10](evidence/automation-20261111/mysql26/report.json),
+[query SQL 26.10](evidence/automation-20261111/mysql26/mysql-query.txt),
+[cancellazione finale](evidence/automation-20261111/final-deletion/report.json).
+
+Fonti: [manifest e note del tag importato](mysql-operator-26.10.0-2.3.1/README.md).
+Non è stata eseguita una prova live su Podman; restano i test senza runtime del
+trasporto condiviso. VPA e le slide nascoste PostgreSQL non fanno parte della
+suite. Il file PPTX esterno al repository non è stato modificato in questa
+attività di automazione e aggiornamento della variante MySQL.
