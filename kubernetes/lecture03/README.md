@@ -1,0 +1,168 @@
+# Kubernetes_5 — lecture03
+
+Esperimenti di autoscaling e Operator pattern da eseguire con minikube-cloud-lab.
+La procedura di accesso al provider riprende `Kubernetes_4.pptx`.
+Per HPA, CRD e MySQL è stata verificata con l'operatore una configurazione dedicata:
+**due nodi `lab-medium`, un control plane e un worker**, con i workload in
+`default`. Eseguire un esercizio alla volta e rimuoverne gli oggetti prima
+che inizi il successivo.
+
+**Verificato l’11 novembre 2026:** HPA 1 → 6 → 1, CRD creata e rimossa,
+MySQL con tre membri ONLINE e connessione SQL riuscita; successivamente
+Cluster Autoscaler 1 → 3 → 1 nodi e KEDA 0 → 2 → 0 repliche. Cleanup completo
+tra gli esercizi; risultati e limiti in [SESSION.md](SESSION.md).
+
+Il nuovo esercizio **Cluster Autoscaler, slide 9–14**, usa invece un cluster
+`lab-small` con minimo 1 / massimo 3 nodi. Seguire
+[CLUSTER_AUTOSCALING.md](CLUSTER_AUTOSCALING.md): i manifest sono in `lecture03/autoscaler/` e `lecture03/load.yaml`.
+Gli studenti creano le risorse con `kubectl apply` e impostano le repliche
+0 → 4 → 0 con `kubectl scale`; i nodi vengono scalati automaticamente.
+**Stato lasciato dopo questa prova:** un nodo lab-small Ready, workload e
+autoscaler rimossi; intervallo cloud 1–3. Prima di MySQL ripristinare il setup
+lab-medium come indicato nella guida, dopo il cleanup.
+
+Subito dopo Cluster Autoscaler, l’esercizio [KEDA Cron scaler](keda/README.md)
+riusa il nodo pulito per una finestra temporale con **0 → 2 → 0 repliche**.
+Include i due manifest didattici e la release ufficiale KEDA 2.21.0 importata
+in `keda/upstream/`. Aggiornare gli orari UTC prima di ogni esecuzione.
+
+## Setup HPA / CRD / MySQL
+
+Dalla radice del progetto, in ogni terminale:
+
+```sh
+source scripts/configure.sh
+docker compose up -d
+cloud clusters list
+cloud machine-types list
+```
+
+Se non esiste un cluster, creare il laboratorio dimensionato per questi esperimenti:
+
+```sh
+cloud clusters create lecture03 --machine-type lab-medium --min-nodes 2 --max-nodes 2
+cloud clusters get-credentials lecture03
+kubectl wait --for=condition=Ready nodes --all --timeout=5m
+kubectl get nodes -o wide
+cloud machines list --cluster lecture03
+```
+
+Se esiste già un cluster del corso adatto, riutilizzarlo sostituendo il nome.
+Il provider gestisce un solo cluster: non eliminare dati o cluster esistenti
+per eseguire questa lezione. Non è possibile cambiare il tipo macchina con
+`resize`: quel comando modifica il numero di nodi.
+
+Ogni `lab-medium` ha un limite di 4 CPU / 8 GiB; i due nodi arrivano quindi
+a 8 CPU / 16 GiB complessivi, oltre ai servizi di supporto. I limiti non
+prenotano memoria fisica: verificare capacità e consumo reale con
+`docker stats --no-stream`, soprattutto su un host da circa 16 GiB.
+Due nodi sullo stesso host non forniscono tolleranza al guasto dell'host.
+
+Le slide 4 partono invece da un `lab-small` e lo espandono a tre nodi.
+Nella prima prova, tre `lab-small` con HPA e MySQL sovrapposti hanno raggiunto
+il limite di memoria del control plane da 2 GiB, con timeout dell'API.
+La scelta dei due nodi più capienti e l'esecuzione sequenziale sono
+adattamenti autorizzati per questa lezione; i dettagli sono in `SESSION.md`.
+Non è stata verificata la variante MySQL isolata su tre `lab-small`.
+
+```sh
+kubectl config current-context
+kubectl config view --minify -o 'jsonpath={..namespace}'
+kubectl get pods,deployments,statefulsets,services,hpa,pvc -A
+kubectl get crd
+kubectl get storageclass
+cloud storage status
+cd kubernetes/lecture03
+```
+
+Verificare contesto, namespace `default` (anche un valore vuoto lo indica),
+capacità e assenza di collisioni con i nomi degli esercizi. Non applicare
+l'intera cartella con `kubectl apply -f .`: CRD e operatori hanno un ordine
+di installazione. `commands.txt` è una traccia manuale con checkpoint,
+non uno script da eseguire senza supervisione.
+
+## Esercizi
+
+| Esercizio nelle slide | File | Obiettivo e criterio di riuscita |
+| --- | --- | --- |
+| 1 — HPA, slide 7–8 duplicate | `php-apache.yml`, `hpa.yml` | Osservare crescita delle repliche sotto carico e ritorno a 1 dopo lo stop |
+| Cluster Autoscaler, nuove slide 9–14 | `CLUSTER_AUTOSCALING.md`, `autoscaler/`, `load.yaml` | Pending per CPU, aggiunta nodi via provider, quattro repliche disponibili e ritorno a un nodo |
+| KEDA Cron scaler, nuove slide 15–19 | `keda/` | Finestra UTC, repliche 0 → 2 → 0; HPA creato da KEDA |
+| 3 — CRD, ora slide 24 | `crontab-crd.yml`, `crontab-example.yml` | Registrare un tipo, attendere Established, creare/leggere/eliminare un oggetto |
+| 2 — MySQL Operator, ora slide 29–30 | `mysql-operator-9.1.0-2.2.2/`, `mycluster.yml` | Operatore disponibile, tre membri ONLINE, connessione SQL attraverso Router |
+
+La numerazione originale è conservata. Le slide nascoste, ora 32–33, su PostgreSQL
+non sono incluse. VPA resta teorico. I nuovi esercizi di Cluster Autoscaler e KEDA
+sono inseriti dopo HPA e prima della sezione sulle estensioni Kubernetes.
+
+### HPA
+
+Il provider installa già Metrics Server: verificare Deployment, API e
+`kubectl top nodes`. Non eseguire `minikube addons enable metrics-server`
+sul profilo personale dell'host. Il carico HTTP delle slide viene generato
+da `busybox:1.28` e interrotto con Ctrl+C nel terminale che lo ha avviato.
+
+La CPU target è il 50% della richiesta di 200m, cioè circa 100m per Pod;
+il limite di 500m non è il denominatore. Le repliche consentite vanno da
+1 a 10. I valori iniziali `<unknown>` possono precedere la prima raccolta
+delle metriche. Attendere `ScalingActive=True` prima di avviare il carico.
+
+Lo scale-down non è necessariamente immediato: la finestra predefinita di
+stabilizzazione è di 300 secondi. Attendere il ritorno a una replica senza
+modificare manualmente il Deployment o accorciare la finestra.
+Vedere il [funzionamento HPA](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/).
+
+### CRD
+
+La CRD aggiunge `CronTab` all'API; il custom object contiene `cronSpec`
+e `image`. Non è il `CronJob` integrato di Kubernetes e non avvia processi:
+in questo esercizio non è presente un controller che interpreti tali campi.
+Prima si attende `Established`, poi si crea l'istanza. Eliminare la CRD
+rimuove anche eventuali istanze: procedere solo se è stata creata per questa
+prova e non contiene oggetti altrui.
+Fonte: [esempio Kubernetes](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/).
+
+### MySQL Operator
+
+I manifest upstream sono conservati localmente al tag delle slide
+`9.1.0-2.2.2`; il relativo default server/router è MySQL `9.1.0`.
+Anche il client MySQL Shell usa quel tag, invece di `latest`.
+
+L'operatore crea e riconcilia StatefulSet, Pod, Service e PVC a partire
+dall'oggetto InnoDBCluster. Il manifest originale richiede tre istanze
+MySQL e un Router. Con due nodi, due istanze possono condividere lo stesso
+nodo: la replica del database non garantisce isolamento dai guasti di nodo.
+Nel laboratorio vengono creati tre PVC da 2 GiB sulla
+StorageClass predefinita `cloud-standard` (6 GiB complessivi).
+Verificare questa classe e il budget prima di applicarlo.
+
+La password `cloud` è il valore pubblico delle slide, destinato solo al
+laboratorio isolato. È creata con `kubectl create secret`; non sono
+inclusi kubeconfig o credenziali private. I certificati MySQL sono
+autofirmati come nell'esempio originale.
+
+Controllare il dominio reale in CoreDNS. Il tag dell'operatore rileva il
+dominio automaticamente; non assumere che ogni versione del provider usi
+lo stesso nome. Nella prova corrente CoreDNS usa `cluster.local`.
+La sola esistenza dei Pod non basta: attendere stato ONLINE con tre membri,
+poi verificare connessione e membership tramite le query in `verify-mysql.sql`.
+
+Fonti: [installazione](https://dev.mysql.com/doc/mysql-operator/en/mysql-operator-installation-kubectl.html),
+[InnoDB Cluster](https://dev.mysql.com/doc/mysql-operator/en/mysql-operator-innodbcluster-simple-kubectl.html),
+[rilevamento DNS nel tag usato](https://github.com/mysql/mysql-operator/blob/9.1.0-2.2.2/mysqloperator/controller/kubeutils.py).
+
+## Cleanup e risultati
+
+Prima di iniziare un nuovo esercizio verificare che il precedente non abbia
+lasciato Pod, Deployment, HPA, custom object o volumi.
+Eliminare solo gli oggetti creati dalla prova. Rimuovere il custom object
+MySQL mentre l'operatore è ancora attivo; verificare i PVC residui e i
+volumi cloud prima di disinstallare l'operatore. Le istruzioni puntuali
+sono in `commands.txt`. Non eliminare namespace `default`, volumi altrui
+o il cluster del corso.
+
+`SESSION.md` distingue risultati osservati, adattamenti e limiti.
+I log locali sono in `evidence/`, esclusa da Git.
+I manifest HPA/MySQL provengono dai materiali originali
+`Cloud 2025 lectures - see Drive/Esercitazioni/K8S-Lecture04`;
+`SHA256SUMS` registra i manifest consegnati.

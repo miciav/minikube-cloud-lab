@@ -1,0 +1,22 @@
+# Adapted from https://keda.sh/docs/2.21/scalers/cron/
+# BEFORE EACH RUN: set start ~2 minutes ahead in UTC, end ~2 minutes later.
+# Cron fields: minute hour day-of-month month day-of-week. Daily schedule.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: keda-http-window
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: keda-http
+  pollingInterval: 5
+  cooldownPeriod: 20
+  minReplicaCount: 0
+  maxReplicaCount: 2
+  triggers:
+    - type: cron
+      metadata:
+        timezone: Etc/UTC
+        start: "29 12 * * *"
+        end: "31 12 * * *"
+        desiredReplicas: "2"

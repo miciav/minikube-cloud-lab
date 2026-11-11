@@ -1,0 +1,156 @@
+# TRACCIA MANUALE — non lanciare l'intero file come script.
+# Fermarsi ai checkpoint. In caso di errore chiedere all'operatore.
+# Cluster Autoscaler (nuove slide 9–14): seguire CLUSTER_AUTOSCALING.md.
+# Richiede lab-small MIN 1 / MAX 3, diverso dal setup qui sotto.
+# Eseguire dal repository minikube-cloud-lab; risultati e limiti in SESSION.md.
+
+source scripts/configure.sh
+docker compose up -d
+cloud clusters list
+cloud machine-types list
+# Solo se non esiste un cluster: dimensionamento scelto per lecture03.
+# Accesso al provider come in Kubernetes_4; due nodi più capienti per MySQL.
+cloud clusters create lecture03 --machine-type lab-medium --min-nodes 2 --max-nodes 2
+cloud clusters get-credentials lecture03
+kubectl wait --for=condition=Ready nodes --all --timeout=5m
+# Per un cluster del corso già esistente usare il suo nome; non eliminarlo.
+cloud machines list
+cloud storage status
+kubectl config current-context
+kubectl version
+kubectl get nodes -o wide
+kubectl get pods,deployments,statefulsets,services,hpa,pvc -A
+kubectl get crd
+kubectl get storageclass
+kubectl -n kube-system get configmap coredns -o yaml
+kubectl -n kube-system get deployment metrics-server
+kubectl get apiservice v1beta1.metrics.k8s.io
+kubectl top nodes
+
+# Checkpoint: cluster corretto; metriche disponibili; nessuna collisione con
+# php-apache, load-generator, mycluster, mypwds, myshell o le CRD previste.
+# Registrare risorse preesistenti. Non sovrascrivere operatori già installati.
+cd kubernetes/lecture03
+
+# ESERCIZIO 1 — HPA
+kubectl -n default apply -f php-apache.yml
+kubectl -n default rollout status deployment/php-apache --timeout=5m
+kubectl -n default apply -f hpa.yml
+kubectl -n default wait --for=condition=ScalingActive hpa/php-apache --timeout=120s
+kubectl -n default get hpa
+
+# Terminale A: lasciare attivo il carico durante l'osservazione.
+kubectl -n default run -i --tty load-generator --rm --image=busybox:1.28 --restart=Never -- /bin/sh -c 'while sleep 0.01; do wget -q -O- http://php-apache; done'
+
+# Terminale B configurato nello stesso modo:
+kubectl -n default get hpa php-apache --watch
+# Registrare CPU e repliche prima e durante il carico; Ctrl+C termina il watch.
+kubectl -n default get deployment php-apache
+kubectl -n default top pods -l run=php-apache
+kubectl -n default describe hpa php-apache
+# Ctrl+C nel terminale A, poi verificare che load-generator sia stato rimosso.
+kubectl -n default get pods
+kubectl -n default get hpa php-apache --watch
+# Checkpoint: repliche tornate a 1. Registrare il tempo effettivo, poi Ctrl+C.
+# Attendere diversi minuti: la stabilizzazione predefinita è di 300 secondi.
+kubectl -n default delete -f hpa.yml -f php-apache.yml
+kubectl -n default wait --for=delete pod -l run=php-apache --timeout=120s
+kubectl -n default get pods,deployments,services,hpa
+# Checkpoint obbligatorio: nessun php-apache o load-generator prima della CRD.
+
+# INTERMEZZO — CLUSTER AUTOSCALER (nuove slide 9–14)
+# Seguire CLUSTER_AUTOSCALING.md: setup dalla radice, poi cd kubernetes/lecture03.
+# Creazione: kubectl apply -f autoscaler/; attendere rollout del controller.
+# Creazione: kubectl apply -f load.yaml (zero repliche).
+# Carico: kubectl -n default scale deployment/lab-load --replicas=4.
+# Attendere quattro repliche disponibili e ADD_MACHINE DONE dal provider.
+# Stop: kubectl -n default scale deployment/lab-load --replicas=0.
+# Attendere un nodo Ready e DELETE_MACHINE DONE prima del cleanup.
+# Cleanup: kubectl delete -f load.yaml; kubectl delete -f autoscaler/ --cascade=foreground.
+# Poi eliminare ConfigMap cluster-autoscaler-status e Lease cluster-autoscaler
+# come indicato nella guida: sono generati dal controller, non dai manifest.
+# Dopo CA: esercizio KEDA (slide 15–19), guida keda/README.md.
+# Riusa il nodo pulito; aggiornare gli orari UTC e osservare 0 → 2 → 0.
+# Rimuovere prima ScaledObject e workload, poi l’installazione KEDA.
+# Per continuare il percorso MySQL qui sotto, ripristinare i due lab-medium
+# con i comandi della sezione 5 della guida; poi tornare in kubernetes/lecture03.
+
+# ESERCIZIO 3 — CRD e custom object
+# Procedere solo se la CRD non esisteva prima del laboratorio.
+kubectl apply -f crontab-crd.yml
+kubectl wait --for=condition=Established crd/crontabs.stable.example.com --timeout=60s
+kubectl describe crd crontabs.stable.example.com
+kubectl -n default apply -f crontab-example.yml
+kubectl -n default get crontabs my-new-cron-object
+kubectl -n default describe crontabs my-new-cron-object
+# Checkpoint: spec presente, nessun controller installato per eseguirla.
+kubectl -n default delete -f crontab-example.yml
+kubectl get crontabs -A
+# Eliminare la CRD solo se non contiene oggetti altrui ed è stata creata qui.
+kubectl delete -f crontab-crd.yml
+kubectl get crd
+# Checkpoint obbligatorio: crontabs.stable.example.com assente prima di MySQL.
+
+# ESERCIZIO 2 — MySQL Operator
+# Prima: verificare con l'operatore umano eventuali dubbi su DNS, storage,
+# architettura, capacità o versione. Non applicare su un'installazione esistente.
+kubectl apply -f mysql-operator-9.1.0-2.2.2/deploy-crds.yaml
+kubectl wait --for=condition=Established crd/innodbclusters.mysql.oracle.com crd/mysqlbackups.mysql.oracle.com crd/clusterkopfpeerings.zalando.org crd/kopfpeerings.zalando.org --timeout=60s
+kubectl apply -f mysql-operator-9.1.0-2.2.2/deploy-operator.yaml
+kubectl -n mysql-operator get deployment mysql-operator
+kubectl -n mysql-operator rollout status deployment/mysql-operator --timeout=5m
+
+# Password pubblica delle slide, solo per il laboratorio isolato.
+kubectl -n default create secret generic mypwds --from-literal=rootUser=root --from-literal=rootHost=% --from-literal=rootPassword=cloud
+kubectl -n default apply -f mycluster.yml
+kubectl -n default get innodbcluster --watch
+# Checkpoint: ONLINE con 3 membri. Ctrl+C chiude il watch.
+# ONLINE da solo non basta: controllare anche ONLINE=3 nella tabella.
+kubectl -n default wait --for=jsonpath='{.status.cluster.onlineInstances}'=3 innodbcluster/mycluster --timeout=10m
+kubectl -n default wait --for=jsonpath='{.status.cluster.status}'=ONLINE innodbcluster/mycluster --timeout=2m
+kubectl -n default wait --for=jsonpath='{.status.availableReplicas}'=1 deployment/mycluster-router --timeout=5m
+kubectl -n default rollout status deployment/mycluster-router --timeout=5m
+kubectl -n default get deployment mycluster-router
+# Checkpoint: Router 1/1.
+kubectl -n default get pods,services,pvc
+kubectl -n default describe innodbcluster mycluster
+
+# Stesso tag dell'operatore per evitare il client latest non versionato.
+kubectl -n default run --rm -it myshell --restart=Never --image=container-registry.oracle.com/mysql/community-operator:9.1.0-2.2.2 -- mysqlsh
+# Dentro MySQL Shell:
+\connect root@mycluster
+# Inserire cloud quando richiesta la password; rispondere N al salvataggio.
+\sql
+SELECT @@hostname, @@version;
+SELECT MEMBER_HOST, MEMBER_STATE, MEMBER_ROLE FROM performance_schema.replication_group_members;
+\disconnect
+# Ctrl+D chiude la shell.
+
+# Cleanup MySQL (aggiunta operativa rispetto alle slide):
+# registrare PVC/PV/volumi creati; confermare che i dati del test siano eliminabili.
+# Lasciare l'operatore attivo durante la cancellazione del custom object.
+kubectl -n default get pvc datadir-mycluster-0 datadir-mycluster-1 datadir-mycluster-2 -o wide
+cloud volumes list
+kubectl -n default delete -f mycluster.yml
+kubectl -n default wait --for=delete pod/mycluster-0 pod/mycluster-1 pod/mycluster-2 --timeout=5m
+kubectl -n default delete secret mypwds
+kubectl -n default get pods,pvc
+cloud volumes list
+# Non cancellare PVC, PV o volumi preesistenti. La pulizia dei volumi residui
+# richiede i nomi effettivamente registrati; non usare delete --all.
+# Disinstallare operatore/CRD soltanto se creati in questa prova e non usati
+# da altri cluster MySQL. Non cancellare il cluster Kubernetes del corso.
+
+# Se i tre PVC registrati sono rimasti e appartengono solo alla prova conclusa:
+kubectl -n default delete pvc datadir-mycluster-0 datadir-mycluster-1 datadir-mycluster-2
+# cloud-standard ha reclaimPolicy Delete: attendere anche il rilascio cloud.
+# Ripetere le osservazioni finché i tre volumi/PV registrati sono assenti.
+cloud volumes list
+kubectl get pv
+# Solo per l'installazione creata da questa prova, senza altri custom object:
+kubectl get innodbclusters,mysqlbackups -A
+kubectl delete -f mysql-operator-9.1.0-2.2.2/deploy-operator.yaml
+kubectl delete -f mysql-operator-9.1.0-2.2.2/deploy-crds.yaml
+kubectl -n default get pods,deployments,statefulsets,services,hpa,pvc
+kubectl get crd
+# Mantenere il cluster del corso, come indicato nelle slide Kubernetes_4.
