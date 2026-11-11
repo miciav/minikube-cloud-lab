@@ -1,6 +1,6 @@
 # TRACCIA MANUALE — non lanciare l'intero file come script.
 # Fermarsi ai checkpoint. In caso di errore chiedere all'operatore.
-# Cluster Autoscaler (nuove slide 9–14): seguire CLUSTER_AUTOSCALING.md.
+# Cluster Autoscaler : seguire CLUSTER_AUTOSCALING.md.
 # Richiede lab-small MIN 1 / MAX 3, diverso dal setup qui sotto.
 # Eseguire dal repository minikube-cloud-lab; risultati e limiti in SESSION.md.
 
@@ -56,9 +56,17 @@ kubectl -n default get hpa php-apache --watch
 kubectl -n default delete -f hpa.yml -f php-apache.yml
 kubectl -n default wait --for=delete pod -l run=php-apache --timeout=120s
 kubectl -n default get pods,deployments,services,hpa
-# Checkpoint obbligatorio: nessun php-apache o load-generator prima della CRD.
+# Checkpoint obbligatorio: nessun php-apache o load-generator prima di VPA.
 
-# INTERMEZZO — CLUSTER AUTOSCALER (nuove slide 9–14)
+# ESERCIZIO — VPA (prima raccomandazioni Off, poi Recreate)
+# Seguire vpa/README.md, riusando i due lab-medium dopo il cleanup HPA.
+# Tutte le risorse vengono create con kubectl apply; il helper Python genera
+# soltanto il Secret TLS. Annotare UID e request CPU prima e dopo Recreate.
+# Checkpoint: due nuovi Pod Ready, CPU maggiore di 50m, limiti e memoria invariati.
+# Rimuovere workload, VPA, controller, CRD, webhook, Secret e Lease come nella guida.
+# Tornare in kubernetes/lecture03 prima dell'esercizio successivo.
+
+# INTERMEZZO — CLUSTER AUTOSCALER
 # Seguire CLUSTER_AUTOSCALING.md: setup dalla radice, poi cd kubernetes/lecture03.
 # Creazione: kubectl apply -f autoscaler/; attendere rollout del controller.
 # Creazione: kubectl apply -f load.yaml (zero repliche).
@@ -69,7 +77,7 @@ kubectl -n default get pods,deployments,services,hpa
 # Cleanup: kubectl delete -f load.yaml; kubectl delete -f autoscaler/ --cascade=foreground.
 # Poi eliminare ConfigMap cluster-autoscaler-status e Lease cluster-autoscaler
 # come indicato nella guida: sono generati dal controller, non dai manifest.
-# Dopo CA: esercizio KEDA (slide 15–19), guida keda/README.md.
+# Dopo CA: esercizio KEDA — guida keda/README.md.
 # Riusa il nodo pulito; aggiornare gli orari UTC e osservare 0 → 2 → 0.
 # Rimuovere prima ScaledObject e workload, poi l’installazione KEDA.
 # Per continuare il percorso MySQL qui sotto, ripristinare i due lab-medium

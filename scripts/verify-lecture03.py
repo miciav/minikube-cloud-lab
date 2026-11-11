@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 
 # Reuse the existing bounded Compose transport and report format, not its exercises.
@@ -23,11 +24,27 @@ LAB = ROOT / 'kubernetes/lecture03'
 SYSTEM_NAMESPACES = {'default', 'kube-system', 'kube-public', 'kube-node-lease', 'kube-flannel', 'yakd-dashboard'}
 MYSQL = 'mysql-operator-26.10.0-2.3.1/'
 KEDA = 'keda/upstream/keda-2.21.0.yaml'
+VPA = 'vpa/upstream/'
 
 
 def namespace_args(relative):
     # Operator bundles declare namespaces, sometimes several in the same file (KEDA).
-    return () if relative.startswith(('autoscaler/', MYSQL, 'keda/upstream/')) else ('-n', 'default')
+    return () if relative.startswith(('autoscaler/', MYSQL, 'keda/upstream/', VPA)) else ('-n', 'default')
+
+
+def cpu_millis(value):
+    factor = {'m': Decimal(1), 'u': Decimal('0.001'), 'n': Decimal('0.000001')}
+    return Decimal(value[:-1]) * factor[value[-1]] if value[-1] in factor else Decimal(value) * 1000
+
+
+def vpa_pod_updated(pod, original_uids):
+    container = pod['spec']['containers'][0]
+    resources = container['resources']
+    return (pod['metadata']['uid'] not in original_uids and not pod['metadata'].get('deletionTimestamp')
+            and container['name'] == 'worker' and 50 < cpu_millis(resources['requests']['cpu']) <= 500
+            and resources['requests']['memory'] == '16Mi'
+            and resources['limits'] == {'cpu': '500m', 'memory': '64Mi'}
+            and any(c['type'] == 'Ready' and c['status'] == 'True' for c in pod.get('status', {}).get('conditions', [])))
 
 
 def keda_window(source, now):
@@ -46,6 +63,7 @@ class Lecture03(base.Verification):
         self.extras = []
         self.active = None
         self.operation_ids = set()
+        self.vpa_tls_created = False
 
     def apply_file(self, relative, data=None, server_side=False):
         self.applied.append(relative)  # Register before apply: a multi-object apply can fail partially.
@@ -115,6 +133,13 @@ class Lecture03(base.Verification):
         for relative in ['autoscaler/cloud-config.yaml', 'autoscaler/rbac.yaml', 'autoscaler/deployment.yaml']:
             require(not self.k('get', '-f', '-', '--ignore-not-found', '-o', 'name', data=(LAB / relative).read_text()),
                     'Autoscaler resources already exist')
+        require(not self.k('get', '-f', '-', '--ignore-not-found', '-o', 'name',
+                           data=(LAB / VPA / 'vpa-rbac.yaml').read_text()), 'VPA RBAC or service accounts already exist')
+        require(not self.k('get', 'mutatingwebhookconfiguration/vpa-webhook-config', '--ignore-not-found', '-o', 'name'),
+                'VPA webhook already exists')
+        require(not self.k('-n', 'kube-system', 'get', 'secret/vpa-tls-certs', 'lease/vpa-updater',
+                           'lease/vpa-recommender', 'lease/vpa-recommender-lease', '--ignore-not-found', '-o', 'name'),
+                'VPA TLS or leader election resources remain')
         require(not self.k('-n', 'kube-system', 'get', 'configmap/cluster-autoscaler-status',
                            'lease/cluster-autoscaler', '--ignore-not-found', '-o', 'name'),
                 'Autoscaler generated resources remain')
@@ -162,6 +187,60 @@ class Lecture03(base.Verification):
         self.delete_extra('pod/load-generator')
         self.wait('HPA back to one replica (300s stabilization)', lambda: self.replicas('php-apache', 1))
         self.snapshot('hpa-after', 'hpa', 'php-apache', '-n', 'default')
+
+    def vpa(self):
+        nodes_before = {n['metadata']['name'] for n in self.ready_nodes()}
+        for relative in ['vpa-v1-crd-gen.yaml', 'vpa-rbac.yaml']:
+            self.apply_file(VPA + relative)
+        self.k('wait', '--for=condition=Established', 'crd/verticalpodautoscalers.autoscaling.k8s.io',
+               'crd/verticalpodautoscalercheckpoints.autoscaling.k8s.io', '--timeout=60s')
+        # Keep private TLS material out of commands.log and out of the repository.
+        secret = subprocess.run([sys.executable, str(LAB / 'vpa/generate-tls.py')],
+                                capture_output=True, text=True, check=True, timeout=120).stdout
+        self.vpa_tls_created = True
+        self.k('apply', '-f', '-', data=secret)
+        for relative in ['recommender-deployment.yaml', 'updater-deployment.yaml',
+                         'admission-controller-service.yaml', 'admission-controller-deployment.yaml']:
+            self.apply_file(VPA + relative)
+        for name in ['vpa-recommender', 'vpa-updater', 'vpa-admission-controller']:
+            self.rollout(name, 'kube-system')
+        self.wait('VPA TLS webhook registered', lambda:
+                  bool(self.obj('mutatingwebhookconfiguration', 'vpa-webhook-config').get('webhooks')))
+        self.apply_file('vpa/deployment.yaml')
+        self.rollout('vpa-demo')
+        original = self.snapshot('vpa-pods-before', 'pods', '-n', 'default', '-l', 'app=vpa-demo')['items']
+        original_uids = {p['metadata']['uid'] for p in original}
+        require(len(original_uids) == 2, 'Expected two initial VPA demo Pods')
+        require(all(p['spec']['containers'][0]['resources']['requests']['cpu'] == '50m' for p in original),
+                'Expected initial CPU requests of 50m')
+        self.apply_file('vpa/vpa.yaml')
+        def recommendation_ready():
+            vpa = self.obj('vpa', 'vpa-demo', '-n', 'default')
+            recommendations = vpa.get('status', {}).get('recommendation', {}).get('containerRecommendations', [])
+            return any(r['containerName'] == 'worker' and 100 < cpu_millis(r['target']['cpu']) <= 500
+                       for r in recommendations)
+        self.wait('VPA recommendation above 100m while Off', recommendation_ready)
+        self.snapshot('vpa-recommendation-off', 'vpa', 'vpa-demo', '-n', 'default')
+        off_pods = self.snapshot('vpa-pods-off', 'pods', '-n', 'default', '-l', 'app=vpa-demo')['items']
+        require({p['metadata']['uid'] for p in off_pods} == original_uids
+                and all(p['spec']['containers'][0]['resources']['requests']['cpu'] == '50m' for p in off_pods),
+                'Off mode unexpectedly replaced or resized a Pod')
+        self.k('-n', 'default', 'top', 'pods', '-l', 'app=vpa-demo')
+        self.k('-n', 'default', 'patch', 'vpa', 'vpa-demo', '--type=merge',
+               '-p', json.dumps({'spec': {'updatePolicy': {'updateMode': 'Recreate'}}}))
+        def recreated():
+            pods = self.obj('pods', '-n', 'default', '-l', 'app=vpa-demo')['items']
+            return len(pods) == 2 and all(vpa_pod_updated(p, original_uids) for p in pods)
+        self.wait('VPA replaces both Pods with higher CPU requests', recreated)
+        self.snapshot('vpa-pods-after', 'pods', '-n', 'default', '-l', 'app=vpa-demo')
+        events = self.snapshot('vpa-events', 'events', '-n', 'default')['items']
+        require(any(e.get('reason') == 'EvictedByVPA' and e['involvedObject'].get('uid') in original_uids for e in events),
+                'No VPA eviction event for the original Pods')
+        deployment = self.snapshot('vpa-deployment-after', 'deployment', 'vpa-demo', '-n', 'default')
+        require(deployment['spec']['replicas'] == 2
+                and deployment['spec']['template']['spec']['containers'][0]['resources']['requests']['cpu'] == '50m',
+                'VPA exercise changed the Deployment replica count or template')
+        require({n['metadata']['name'] for n in self.ready_nodes()} == nodes_before, 'VPA exercise changed nodes')
 
     def ca_operations(self, kind):
         return [o for o in self.api('operations') if o['id'] not in self.operation_ids
@@ -300,6 +379,11 @@ class Lecture03(base.Verification):
             self.delete_extra(name)
         for relative in list(reversed(self.applied)):
             self.delete_file(relative)
+        if self.active == 'vpa' and self.vpa_tls_created:
+            self.k('delete', 'mutatingwebhookconfiguration/vpa-webhook-config', '--ignore-not-found')
+            self.k('-n', 'kube-system', 'delete', 'secret/vpa-tls-certs', 'lease/vpa-updater',
+                   'lease/vpa-recommender', 'lease/vpa-recommender-lease', '--ignore-not-found')
+            self.vpa_tls_created = False
         if self.active == 'ca':
             self.k('-n', 'kube-system', 'delete', 'configmap/cluster-autoscaler-status',
                    'lease/cluster-autoscaler', '--ignore-not-found')
@@ -317,6 +401,8 @@ class Lecture03(base.Verification):
             except Exception as exc:
                 self.log.write(f'Diagnostics {label}: {exc}\n')
         for namespace, deployment in [('kube-system', 'cluster-autoscaler'), ('keda', 'keda-operator'),
+                                      ('kube-system', 'vpa-recommender'), ('kube-system', 'vpa-updater'),
+                                      ('kube-system', 'vpa-admission-controller'),
                                       ('mysql-operator', 'mysql-operator')]:
             try:
                 (self.directory / ('failure-' + deployment + '.log')).write_text(
@@ -331,7 +417,7 @@ class Lecture03(base.Verification):
             if not self.check('preflight: disposable empty cluster and manifest checksums', self.preflight):
                 return 1
             for name, shape, minimum, maximum in [
-                ('hpa', 'lab-medium', 2, 2), ('ca', 'lab-small', 1, 3),
+                ('hpa', 'lab-medium', 2, 2), ('vpa', 'lab-medium', 2, 2), ('ca', 'lab-small', 1, 3),
                 ('keda', 'lab-small', 1, 3), ('crd', 'lab-small', 1, 3), ('mysql', 'lab-medium', 2, 2),
             ]:
                 if not self.check('setup ' + name, lambda: self.configure_cluster(shape, minimum, maximum)):

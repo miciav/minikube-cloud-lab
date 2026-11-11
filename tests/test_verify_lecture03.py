@@ -1,5 +1,8 @@
 """Safety and result checks for the lecture03 runner; no cluster required."""
 import argparse
+import base64
+import subprocess
+import tempfile
 import importlib.util
 import json
 import shutil
@@ -20,6 +23,22 @@ class Lecture03Test(unittest.TestCase):
             runtime='docker', cluster='lecture03', timeout=1, recreate_empty_cluster=True))
         self.addCleanup(shutil.rmtree, self.suite.directory)
         self.addCleanup(self.suite.log.close)
+
+    def test_generated_vpa_tls_certificate_has_valid_ca_and_service_hostname(self):
+        spec = importlib.util.spec_from_file_location('vpa_tls', verify.LAB / 'vpa/generate-tls.py')
+        tls = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tls)
+        secret = tls.generate_secret()
+        self.assertEqual(secret['metadata'], {'name': 'vpa-tls-certs', 'namespace': 'kube-system'})
+        self.assertEqual(set(secret['data']), {'caKey.pem', 'caCert.pem', 'serverKey.pem', 'serverCert.pem'})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ['caCert.pem', 'serverCert.pem']:
+                (root / name).write_bytes(base64.b64decode(secret['data'][name]))
+            subprocess.run(['openssl', 'verify', '-CAfile', str(root / 'caCert.pem'), str(root / 'serverCert.pem')],
+                           check=True, capture_output=True)
+            subprocess.run(['openssl', 'x509', '-in', str(root / 'serverCert.pem'),
+                            '-checkhost', 'vpa-webhook.kube-system.svc', '-noout'], check=True, capture_output=True)
 
     def test_recreation_requires_explicit_consent(self):
         self.suite.args.recreate_empty_cluster = False
@@ -119,7 +138,7 @@ class Lecture03Test(unittest.TestCase):
         self.assertEqual(self.suite.applied, [])
 
     def test_operator_manifests_keep_their_own_namespaces(self):
-        for relative in ['autoscaler/cloud-config.yaml', verify.KEDA, verify.MYSQL + 'deploy-operator.yaml']:
+        for relative in ['autoscaler/cloud-config.yaml', verify.KEDA, verify.MYSQL + 'deploy-operator.yaml', 'vpa/upstream/recommender-deployment.yaml']:
             with self.subTest(relative=relative):
                 self.suite.k = Mock(return_value='')
                 self.suite.apply_file(relative)
@@ -169,14 +188,14 @@ class Lecture03Test(unittest.TestCase):
         self.suite.preflight = Mock()
         self.suite.configure_cluster = Mock()
         self.suite.assert_clean = Mock()
-        for name in ('hpa', 'ca', 'keda', 'crd', 'mysql'):
+        for name in ('hpa', 'vpa', 'ca', 'keda', 'crd', 'mysql'):
             setattr(self.suite, name, Mock(side_effect=lambda name=name: order.append(name)))
         self.suite.cleanup_exercise = Mock(side_effect=lambda: order.append('cleanup ' + self.suite.active))
         self.suite.delete_empty_cluster = Mock()
         self.assertEqual(self.suite.execute(), 0)
-        self.assertEqual(order, ['hpa', 'cleanup hpa', 'ca', 'cleanup ca', 'keda', 'cleanup keda',
+        self.assertEqual(order, ['hpa', 'cleanup hpa', 'vpa', 'cleanup vpa', 'ca', 'cleanup ca', 'keda', 'cleanup keda',
                                  'crd', 'cleanup crd', 'mysql', 'cleanup mysql'])
-        self.assertEqual(self.suite.configure_cluster.call_count, 5)
+        self.assertEqual(self.suite.configure_cluster.call_count, 6)
         self.suite.delete_empty_cluster.assert_called_once()
 
     def test_final_deletion_requires_clean_cluster(self):
@@ -192,6 +211,19 @@ class Lecture03Test(unittest.TestCase):
         self.suite.api = Mock(side_effect=[[{'name': 'lecture03'}], [], []])
         self.suite.delete_empty_cluster()
         self.suite.cloud.assert_called_once_with('clusters', 'delete', 'lecture03', timeout=900)
+
+    def test_vpa_requires_new_uids_and_changed_cpu_with_unchanged_limits(self):
+        pod = {'metadata': {'uid': 'new'}, 'spec': {'containers': [{'name': 'worker', 'resources': {
+            'requests': {'cpu': '500m', 'memory': '16Mi'}, 'limits': {'cpu': '500m', 'memory': '64Mi'}}}]},
+            'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}
+        self.assertTrue(verify.vpa_pod_updated(pod, {'old'}))
+        self.assertFalse(verify.vpa_pod_updated(pod, {'new'}))
+        pod['spec']['containers'][0]['resources']['requests']['cpu'] = '50m'
+        self.assertFalse(verify.vpa_pod_updated(pod, {'old'}))
+        pod['spec']['containers'][0]['resources']['requests']['cpu'] = '0.5'
+        self.assertTrue(verify.vpa_pod_updated(pod, {'old'}))
+        pod['spec']['containers'][0]['resources']['limits']['cpu'] = '1'
+        self.assertFalse(verify.vpa_pod_updated(pod, {'old'}))
 
     def test_failure_cleans_active_exercise_and_stops(self):
         self.suite.preflight = Mock()

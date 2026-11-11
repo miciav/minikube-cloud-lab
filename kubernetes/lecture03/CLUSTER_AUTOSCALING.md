@@ -1,6 +1,6 @@
 # Esercizio — Cluster autoscaling
 
-Slide 9–14 di `Kubernetes_5.pptx`. Un esercizio alla volta, con cleanup
+Sezione «Cluster autoscaling» di `Kubernetes_5.pptx`. Un esercizio alla volta, con cleanup
 prima del successivo. Partire dalla **radice di minikube-cloud-lab** per
 configurare l’accesso, poi entrare in **kubernetes/lecture03** per i manifest.
 Le risorse Kubernetes si creano con `kubectl apply`; il carico si aumenta

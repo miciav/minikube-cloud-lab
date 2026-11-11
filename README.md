@@ -534,7 +534,7 @@ The suite writes a PASS/FAIL/SKIP report and diagnostic logs. See
 [scope, prerequisites and cleanup behavior](docs/podman-rootless.md#automated-live-verification).
 
 
-For the lecture03 deck (HPA, Cluster Autoscaler, KEDA, CRD and MySQL Operator),
+For the lecture03 deck (HPA, VPA, Cluster Autoscaler, KEDA, CRD and MySQL Operator),
 use the separate [lecture03 runner](kubernetes/lecture03/README.md#esecuzione-automatica-del-deck):
 `python3 scripts/verify-lecture03.py --recreate-empty-cluster`.
 It requires a running platform and an empty, disposable `lecture03` cluster

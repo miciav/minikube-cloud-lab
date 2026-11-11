@@ -2,7 +2,7 @@
 
 Esperimenti di autoscaling e Operator pattern da eseguire con minikube-cloud-lab.
 La procedura di accesso al provider riprende `Kubernetes_4.pptx`.
-Per HPA, CRD e MySQL è stata verificata con l'operatore una configurazione dedicata:
+Per HPA, VPA, CRD e MySQL è stata verificata con l'operatore una configurazione dedicata:
 **due nodi `lab-medium`, un control plane e un worker**, con i workload in
 `default`. Eseguire un esercizio alla volta e rimuoverne gli oggetti prima
 che inizi il successivo.
@@ -12,7 +12,7 @@ MySQL con tre membri ONLINE e connessione SQL riuscita; successivamente
 Cluster Autoscaler 1 → 3 → 1 nodi e KEDA 0 → 2 → 0 repliche. Cleanup completo
 tra gli esercizi; risultati e limiti in [SESSION.md](SESSION.md).
 
-Il nuovo esercizio **Cluster Autoscaler, slide 9–14**, usa invece un cluster
+Il nuovo esercizio **Cluster Autoscaler**, usa invece un cluster
 `lab-small` con minimo 1 / massimo 3 nodi. Seguire
 [CLUSTER_AUTOSCALING.md](CLUSTER_AUTOSCALING.md): i manifest sono in `lecture03/autoscaler/` e `lecture03/load.yaml`.
 Gli studenti creano le risorse con `kubectl apply` e impostano le repliche
@@ -28,7 +28,7 @@ riusa il nodo pulito per una finestra temporale con **0 → 2 → 0 repliche**.
 Include i due manifest didattici e la release ufficiale KEDA 2.21.0 importata
 in `keda/upstream/`. Aggiornare gli orari UTC prima di ogni esecuzione.
 
-## Setup HPA / CRD / MySQL
+## Setup HPA / VPA / CRD / MySQL
 
 Dalla radice del progetto, in ogni terminale:
 
@@ -85,17 +85,27 @@ non uno script da eseguire senza supervisione.
 
 ## Esercizi
 
-| Esercizio nelle slide | File | Obiettivo e criterio di riuscita |
+| Esercizio | File | Obiettivo e criterio di riuscita |
 | --- | --- | --- |
-| 1 — HPA, slide 7–8 duplicate | `php-apache.yml`, `hpa.yml` | Osservare crescita delle repliche sotto carico e ritorno a 1 dopo lo stop |
-| Cluster Autoscaler, nuove slide 9–14 | `CLUSTER_AUTOSCALING.md`, `autoscaler/`, `load.yaml` | Pending per CPU, aggiunta nodi via provider, quattro repliche disponibili e ritorno a un nodo |
-| KEDA Cron scaler, nuove slide 15–19 | `keda/` | Finestra UTC, repliche 0 → 2 → 0; HPA creato da KEDA |
-| 3 — CRD, ora slide 24 | `crontab-crd.yml`, `crontab-example.yml` | Registrare un tipo, attendere Established, creare/leggere/eliminare un oggetto |
-| 2 — MySQL Operator, ora slide 29–30 | `mysql-operator-26.10.0-2.3.1/`, `mycluster.yml` | Operatore disponibile, tre membri ONLINE, connessione SQL attraverso Router |
+| HPA | `php-apache.yml`, `hpa.yml` | Aumento delle repliche sotto carico e ritorno a 1 |
+| VPA | `vpa/` | Off: solo raccomandazione; Recreate: nuovi Pod con request CPU maggiori, due repliche |
+| Cluster Autoscaler | `CLUSTER_AUTOSCALING.md`, `autoscaler/`, `load.yaml` | Pending per CPU, aggiunta nodi, quattro repliche disponibili e ritorno a un nodo |
+| KEDA Cron scaler | `keda/` | Finestra UTC, repliche 0 → 2 → 0; HPA creato da KEDA |
+| CRD | `crontab-crd.yml`, `crontab-example.yml` | Registrare un tipo e creare/leggere/eliminare un oggetto |
+| MySQL Operator | `mysql-operator-26.10.0-2.3.1/`, `mycluster.yml` | Tre membri ONLINE e connessione SQL attraverso Router |
 
-La numerazione originale è conservata. Le slide nascoste, ora 32–33, su PostgreSQL
-non sono incluse. VPA resta teorico. I nuovi esercizi di Cluster Autoscaler e KEDA
-sono inseriti dopo HPA e prima della sezione sulle estensioni Kubernetes.
+VPA segue HPA; Cluster Autoscaler e KEDA precedono le estensioni Kubernetes.
+Le slide nascoste su PostgreSQL non sono incluse. I riferimenti usano i titoli
+per rimanere validi quando il docente inserisce altre slide.
+
+### VPA
+
+Seguire [vpa/README.md](vpa/README.md). L'esercizio riusa i due lab-medium dopo
+il cleanup HPA. VPA 1.7.1 osserva due Pod che consumano CPU: prima raccomanda
+in modalità `Off`, poi li sostituisce in `Recreate`. Controlla soltanto le
+request CPU, mantenendo limiti, memoria, repliche e nodi.
+**Prova riuscita:** request 50m → 500m su entrambi i nuovi Pod; cleanup completo
+e cluster eliminato. Manifest upstream e generatore TLS sono inclusi.
 
 ### HPA
 
@@ -199,15 +209,17 @@ La sequenza segue il deck:
 
 1. **HPA**, due lab-medium: da una a più repliche disponibili e ritorno a una,
    attendendo la stabilizzazione standard dopo la rimozione del generatore.
-2. **Cluster Autoscaler**, lab-small min 1 / max 3: apply dei file locali,
+2. **VPA**, stessi due lab-medium: raccomandazione Off senza modifiche, poi
+   Recreate con due nuovi UID e request CPU maggiori; memoria e limiti invariati.
+3. **Cluster Autoscaler**, lab-small min 1 / max 3: apply dei file locali,
    scale 0 → 4 → 0, Pod Pending per CPU, almeno due nodi Ready, operazioni
    cloud ADD_MACHINE e DELETE_MACHINE della prova terminate in DONE.
-3. **KEDA**, stesso nodo pulito: installazione, finestra UTC 0 → 2 → 0,
+4. **KEDA**, stesso nodo pulito: installazione, finestra UTC 0 → 2 → 0,
    HPA posseduto dallo ScaledObject e risposta HTTP `Hello, KEDA!`.
    Gli orari vengono aggiornati in una copia temporanea; il file nel repository
    e il suo checksum restano invariati, anche attraversando la mezzanotte UTC.
-4. **CRD**, stesso nodo: registrazione di CronTab, verifica dello spec e cleanup.
-5. **MySQL Operator**, due lab-medium: tre membri ONLINE, Router disponibile,
+5. **CRD**, stesso nodo: registrazione di CronTab, verifica dello spec e cleanup.
+6. **MySQL Operator**, due lab-medium: tre membri ONLINE, Router disponibile,
    query SQL attraverso Router e rilascio di PVC, PV e volumi cloud.
 
 Ogni esercizio viene ripulito prima del successivo. Per InnoDBCluster si usa
@@ -216,7 +228,7 @@ fino al completamento dei finalizer. La propagazione `foreground` resta usata
 per gli altri manifest, incluso il Deployment del Cluster Autoscaler.
 Alla fine lo script **elimina il cluster lecture03** e verifica che il provider
 non contenga cluster o volumi residui. I servizi cloud Compose restano attivi.
-Prevedere 30–60 minuti, immagini scaricabili e risorse host per due nodi da
+Prevedere 40–75 minuti, immagini scaricabili e risorse host per due nodi da
 4 CPU / 8 GiB; i limiti sono per nodo, il consumo effettivo può essere inferiore.
 `--timeout SECONDI` cambia il limite delle attese di convergenza (default 900);
 le singole chiamate e i rollout hanno limiti propri.

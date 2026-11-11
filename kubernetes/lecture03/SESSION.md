@@ -1,6 +1,6 @@
 # Registro prove — 11 novembre 2026
 
-**Esito: HPA, CRD, MySQL, Cluster Autoscaler e KEDA riusciti,
+**Esito: HPA, VPA, CRD, MySQL, Cluster Autoscaler e KEDA riusciti,
 eseguiti separatamente con cleanup verificato.**
 Le nuove prove CA e KEDA usano un nodo lab-small, con cleanup separato;
 la precedente configurazione a due lab-medium è descritta come storico.
@@ -472,6 +472,37 @@ Evidenze locali, escluse da Git:
 
 Fonti: [manifest e note del tag importato](mysql-operator-26.10.0-2.3.1/README.md).
 Non è stata eseguita una prova live su Podman; restano i test senza runtime del
-trasporto condiviso. VPA e le slide nascoste PostgreSQL non fanno parte della
-suite. Il file PPTX esterno al repository non è stato modificato in questa
+trasporto condiviso. In quella versione della suite VPA e le slide nascoste
+PostgreSQL non erano inclusi; VPA viene aggiunto nella prova descritta sotto. Il file PPTX esterno al repository non è stato modificato in questa
 attività di automazione e aggiornamento della variante MySQL.
+
+
+## VPA 1.7.1 — Off e Recreate
+
+Prova separata dell'11 novembre 2026, Docker ARM64, Kubernetes 1.35.6,
+cluster lecture03 con due lab-medium. Il nuovo passo è incluso nel runner
+subito dopo HPA; le altre cinque prove già verificate non sono state rieseguite
+in questa sessione VPA.
+
+| Checkpoint | Risultato osservato |
+| --- | --- |
+| Setup | Tre controller disponibili, webhook TLS registrato |
+| Iniziale | Due Pod, request CPU 50m, memory 16Mi, limiti 500m / 64Mi |
+| Off | Target CPU 500m (uncappedTarget 587m); stessi due UID e request 50m |
+| Recreate | Due nuovi UID Ready, entrambe le request CPU 500m, eventi EvictedByVPA |
+| Invarianti | Due repliche, template CPU 50m, memoria e limiti invariati, stessi due nodi |
+| Cleanup | Workload, CRD, RBAC, controller, webhook, TLS Secret e Lease rimossi |
+| Fine | Cluster lecture03 eliminato; nessun cluster o volume residuo |
+
+Report e snapshot: [evidence/vpa-1.7.1/](evidence/vpa-1.7.1/), esclusa da Git.
+Tutti i cinque passi della prova mirata sono PASS. I 45 test Python del runner
+sono passati, inclusi verifica dei certificati TLS e confronto dei nuovi Pod.
+Non verificati: runtime Podman e aggiornamento delle risorse in-place.
+Il valore 500m è l'esito di questa prova con maxAllowed=500m, non una promessa
+per qualsiasi carico. La demo mostra il meccanismo, non il dimensionamento
+ottimale di un servizio con pochi minuti di osservazione.
+
+Materiale didattico: cinque slide VPA dopo la teoria, nella copia separata
+`Kubernetes_5_con_VPA.pptx` (38 slide), con note e fonti. Verificate in PowerPoint.
+Preservato il deck originale in modifica; corretti nella copia i riferimenti
+MySQL a lecture04 e alla vecchia release.
