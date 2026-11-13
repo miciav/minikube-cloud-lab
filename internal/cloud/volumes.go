@@ -183,29 +183,28 @@ func (s *Service) deleteVolume(i int) error {
 			return err
 		}
 	}
+	remove := func(context.Context) error {
+		root, err := s.volumeRoot()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = root.Close() }()
+		return root.RemoveAll(v.ID)
+	}
 	if v.Enforced || v.Backend == "directory" {
 		if s.storage == nil {
 			return fmt.Errorf("%w: storage backend unavailable", ErrFailedPrecondition)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), storageOperationTimeout)
-		defer cancel()
 		backend := s.storage
-		s.mu.Unlock()
-		err := backend.Delete(ctx, v.ID)
-		s.mu.Lock()
-		if err != nil {
-			return err
-		}
-		next := s.state.clone()
-		next.Volumes = slices.DeleteFunc(next.Volumes, func(x Volume) bool { return x.ID == v.ID })
-		return s.store(next)
+		remove = func(ctx context.Context) error { return backend.Delete(ctx, v.ID) }
 	}
-	root, err := s.volumeRoot()
+	ctx, cancel := context.WithTimeout(context.Background(), storageOperationTimeout)
+	defer cancel()
+	// volumeMu still excludes other volume mutations; readers need not wait for disk work.
+	s.mu.Unlock()
+	err := remove(ctx)
+	s.mu.Lock()
 	if err != nil {
-		return err
-	}
-	defer func() { _ = root.Close() }()
-	if err := root.RemoveAll(v.ID); err != nil {
 		return err
 	}
 	next := s.state.clone()
