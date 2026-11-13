@@ -88,16 +88,20 @@ func (i *Infra) reconcileServices(ctx context.Context, client *dockerclient.Clie
 				failures = append(failures, err)
 				break
 			}
-			hostname, err := os.Hostname()
-			if err != nil {
-				return err
+			if i.relayImage == "" {
+				hostname, err := os.Hostname()
+				if err != nil {
+					return err
+				}
+				cloud, err := client.ContainerInspect(ctx, hostname)
+				if err != nil {
+					failures = append(failures, err)
+					break
+				}
+				// The cloud container's own image never changes while this process runs.
+				i.relayImage = cloud.Image
 			}
-			cloud, err := client.ContainerInspect(ctx, hostname)
-			if err != nil {
-				failures = append(failures, err)
-				break
-			}
-			manager := serviceexposure.NewManager(client, i.network, cloud.Image)
+			manager := serviceexposure.NewManager(client, i.network, i.relayImage)
 			failures = append(failures, serviceexposure.Reconcile(ctx, kube, manager, entry.Name(), node.IP))
 			break
 		}

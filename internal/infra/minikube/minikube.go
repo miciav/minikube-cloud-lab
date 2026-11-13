@@ -48,7 +48,10 @@ var (
 
 type (
 	// Infra manages a dedicated minikube home.
-	Infra     struct{ home, network, providerIP string }
+	Infra struct {
+		home, network, providerIP string
+		relayImage                string // guarded by libraryMu
+	}
 	logWriter struct{}
 )
 
