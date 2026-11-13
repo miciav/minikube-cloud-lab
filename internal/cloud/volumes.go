@@ -247,11 +247,15 @@ func (s *Service) retryVolumeDeletions() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := 0; i < len(s.state.Volumes); {
-		if s.state.Volumes[i].Status != "Deleting" {
+		v := s.state.Volumes[i]
+		// volumeMu excludes in-flight allocations, so an unclaimed Creating volume is abandoned.
+		abandoned := v.Status == "Creating" && v.Claim == "" && !v.Static
+		needsBackend := v.Enforced || v.Backend == "directory"
+		if v.Status != "Deleting" && !abandoned || needsBackend && s.storage == nil {
 			i++
 			continue
 		}
-		id := s.state.Volumes[i].ID
+		id := v.ID
 		if err := s.deleteVolume(i); err != nil {
 			s.logger.Error("volume cleanup failed", "volume", id, "error", err)
 			i++

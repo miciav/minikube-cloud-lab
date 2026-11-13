@@ -195,7 +195,7 @@ func (s *Service) releaseClaims(ctx context.Context, client kubernetes.Interface
 }
 
 func (s *Service) releaseClaim(ctx context.Context, client kubernetes.Interface, cluster, server string, claims []corev1.PersistentVolumeClaim, volume Volume) error {
-	if volume.Static || volume.Cluster != cluster || volume.Status != "Bound" {
+	if volume.Static || volume.Cluster != cluster || volume.Status != "Bound" && volume.Status != "Creating" {
 		return nil
 	}
 	found := false
@@ -207,6 +207,10 @@ func (s *Service) releaseClaim(ctx context.Context, client kubernetes.Interface,
 	}
 	if found {
 		return nil
+	}
+	if volume.Status == "Creating" {
+		// No PV exists before allocation completes; the claim's reservation is simply abandoned.
+		return s.DeleteVolume(volume.ID) //nolint:contextcheck // durable deletion intent survives worker shutdown.
 	}
 	policy, ready, err := releasedVolumePolicy(ctx, client, server, volume)
 	if err != nil || !ready {
