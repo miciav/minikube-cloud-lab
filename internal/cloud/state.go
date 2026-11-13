@@ -68,6 +68,10 @@ var (
 	ErrInvalid            = errors.New("invalid request")
 )
 
+// MaxMachines bounds each cluster, so one request cannot queue unbounded work.
+// ponytail: fixed lab ceiling; make it configurable if hosts outgrow it.
+const MaxMachines = 32
+
 // MachineTypes returns the fixed cloud catalog.
 func MachineTypes() []MachineType {
 	return []MachineType{{Name: "lab-small", CPUs: 2, MemoryMiB: 2048}, {Name: "lab-medium", CPUs: 4, MemoryMiB: 8192}}

@@ -765,7 +765,7 @@ function CloudApp() {
                           aria-label="Minimum nodes"
                           type="number"
                           min={1}
-                          max={2147483647}
+                          max={32}
                           required
                           value={form.minNodes}
                           onChange={(_, v) => field("minNodes", v.value)}
@@ -776,7 +776,7 @@ function CloudApp() {
                           aria-label="Maximum nodes"
                           type="number"
                           min={Number(form.minNodes) || 1}
-                          max={2147483647}
+                          max={32}
                           required
                           value={form.maxNodes}
                           onChange={(_, v) => field("maxNodes", v.value)}
