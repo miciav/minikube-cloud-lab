@@ -112,7 +112,7 @@ func (s *Service) releaseVolumeFor(id, cluster, claim, uid, policy string) error
 		if policy == "" {
 			policy = v.Policy
 		}
-		if policy != "Delete" && policy != "Retain" {
+		if !validPolicy(policy) {
 			return ErrInvalid
 		}
 		if policy == "Delete" {
@@ -173,7 +173,7 @@ func (s *Service) DeleteVolume(id string) error {
 
 func (s *Service) deleteVolume(i int) error {
 	v := s.state.Volumes[i]
-	if len(validation.IsDNS1123Label(v.ID)) != 0 || !strings.HasPrefix(v.ID, "pvc-") {
+	if !validVolumeID(v.ID) {
 		return fmt.Errorf("%w: invalid stored volume", ErrInvalid)
 	}
 	if v.Status != "Deleting" {
@@ -263,7 +263,13 @@ func (s *Service) retryVolumeDeletions() {
 	}
 }
 
+func validVolumeID(id string) bool {
+	return strings.HasPrefix(id, "pvc-") && len(validation.IsDNS1123Label(id)) == 0
+}
+
+func validPolicy(policy string) bool { return policy == "Retain" || policy == "Delete" }
+
 func validVolumeRequest(id, cluster, claim, capacity, policy string) bool {
 	size, err := resource.ParseQuantity(capacity)
-	return strings.HasPrefix(id, "pvc-") && len(validation.IsDNS1123Label(id)) == 0 && cluster != "" && claim != "" && err == nil && size.Sign() > 0 && (policy == "Retain" || policy == "Delete")
+	return validVolumeID(id) && cluster != "" && claim != "" && err == nil && size.Sign() > 0 && validPolicy(policy)
 }

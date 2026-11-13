@@ -179,12 +179,9 @@ func (s *server) NodeGroupTemplateNodeInfo(_ context.Context, req *protos.NodeGr
 	if err != nil {
 		return nil, err
 	}
-	var shape cloud.MachineType
-	for _, kind := range cloud.MachineTypes() {
-		if kind.Name == c.MachineType {
-			shape = kind
-			break
-		}
+	shape, err := cloud.LookupMachineType(c.MachineType)
+	if err != nil {
+		return nil, rpcError(err)
 	}
 	labels := cloud.NodeLabels(c.MachineType)
 	labels["node-role.kubernetes.io/worker"] = "worker"

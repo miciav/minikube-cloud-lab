@@ -109,10 +109,7 @@ func (s *Service) allocateVolume(id, cluster, claim, capacity, policy string) (V
 		n = 16 << 20
 	}
 	n = (n + (1 << 20) - 1) / (1 << 20) * (1 << 20)
-	if !validVolumeRequest(id, "validation", "validation", storageQuantity(n), policy) {
-		return Volume{}, ErrInvalid
-	}
-	if (cluster == "") != (claim == "") {
+	if !validVolumeID(id) || !validPolicy(policy) || (cluster == "") != (claim == "") {
 		return Volume{}, ErrInvalid
 	}
 	s.mu.Lock()
@@ -210,13 +207,5 @@ func (s *Service) ConfigureDirectoryStorage(root, total string) error {
 	if !filepath.IsAbs(root) {
 		return ErrInvalid
 	}
-	if err := s.ConfigureStorage(storage.NewDirectory(root), total, "127.0.0.1"); err != nil {
-		return err
-	}
-	for _, v := range s.Volumes() {
-		if v.Backend != "directory" {
-			return fmt.Errorf("%w: use dedicated rootless state", ErrFailedPrecondition)
-		}
-	}
-	return nil
+	return s.ConfigureStorage(storage.NewDirectory(root), total, "127.0.0.1")
 }

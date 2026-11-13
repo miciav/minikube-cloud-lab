@@ -144,7 +144,7 @@ func (s *Service) CreateCluster(name, kind string, minM, maxM int, requester str
 	if len(s.state.Clusters) > 0 {
 		return Operation{}, fmt.Errorf("%w: a cluster already exists: %s", ErrConflict, s.state.Clusters[0].Name)
 	}
-	shape, err := machineType(kind)
+	shape, err := LookupMachineType(kind)
 	if err != nil {
 		return Operation{}, err
 	}

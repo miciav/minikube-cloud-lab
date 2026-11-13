@@ -82,7 +82,8 @@ func NodeLabels(kind string) map[string]string {
 	return map[string]string{"node.kubernetes.io/instance-type": kind, "topology.kubernetes.io/region": "lab-region-1", "topology.kubernetes.io/zone": "lab-region-1-a"}
 }
 
-func machineType(name string) (MachineType, error) {
+// LookupMachineType returns a catalog entry by name.
+func LookupMachineType(name string) (MachineType, error) {
 	for _, kind := range MachineTypes() {
 		if kind.Name == name {
 			return kind, nil

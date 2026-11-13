@@ -57,7 +57,7 @@ func NewServer(svc *cloud.Service) http.Handler {
 		var request struct {
 			Capacity string `json:"capacity"`
 		}
-		if err := decodeStorageRequest(w, r, &request); err != nil {
+		if err := decodeJSON(w, r, &request); err != nil {
 			respond(w, 400, nil, cloud.ErrInvalid)
 			return
 		}
@@ -68,7 +68,7 @@ func NewServer(svc *cloud.Service) http.Handler {
 		var request struct {
 			Cluster string `json:"cluster"`
 		}
-		if err := decodeStorageRequest(w, r, &request); err != nil {
+		if err := decodeJSON(w, r, &request); err != nil {
 			respond(w, 400, nil, cloud.ErrInvalid)
 			return
 		}
@@ -93,14 +93,8 @@ func NewServer(svc *cloud.Service) http.Handler {
 	mux.HandleFunc("GET /v1/machine-types", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, cloud.MachineTypes(), nil) })
 	mux.HandleFunc("GET /v1/clusters", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Clusters(), nil) })
 	mux.HandleFunc("POST /v1/clusters", func(w http.ResponseWriter, r *http.Request) {
-		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
-		decoder.DisallowUnknownFields()
 		var request createRequest
-		if err := decoder.Decode(&request); err != nil {
-			respond(w, 400, nil, cloud.ErrInvalid)
-			return
-		}
-		if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		if err := decodeJSON(w, r, &request); err != nil {
 			respond(w, 400, nil, cloud.ErrInvalid)
 			return
 		}
@@ -127,7 +121,7 @@ func NewServer(svc *cloud.Service) http.Handler {
 		var request struct {
 			Nodes int `json:"nodes"`
 		}
-		if err := decodeStorageRequest(w, r, &request); err != nil {
+		if err := decodeJSON(w, r, &request); err != nil {
 			respond(w, 400, nil, cloud.ErrInvalid)
 			return
 		}
@@ -161,7 +155,8 @@ func NewServer(svc *cloud.Service) http.Handler {
 	return Management(mux)
 }
 
-func decodeStorageRequest(w http.ResponseWriter, r *http.Request, value any) error {
+// decodeJSON accepts exactly one small JSON object without unknown fields.
+func decodeJSON(w http.ResponseWriter, r *http.Request, value any) error {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(value); err != nil {
