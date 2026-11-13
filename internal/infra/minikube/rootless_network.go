@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
-	dockerclient "github.com/docker/docker/client"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -22,7 +21,7 @@ func rootlessLinkScript(mac string) (string, error) {
 }
 
 func restoreRootlessMAC(ctx context.Context, name, network string) error {
-	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	client, err := dockerClient()
 	if err != nil {
 		return err
 	}

@@ -29,7 +29,7 @@ func (i *Infra) RunServiceExposure(ctx context.Context) error {
 		<-ctx.Done()
 		return nil
 	}
-	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	client, err := dockerClient()
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func (i *Infra) deleteServiceExposure(ctx context.Context, name string) error {
 	if i.network == "" {
 		return nil
 	}
-	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	client, err := dockerClient()
 	if err != nil {
 		return err
 	}

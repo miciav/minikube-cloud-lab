@@ -12,8 +12,12 @@ import (
 	"github.com/miciav/minikube-cloud-lab/internal/infra"
 )
 
+func dockerClient() (*dockerclient.Client, error) {
+	return dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+}
+
 func forwardedAPIServer(ctx context.Context, name string) (string, error) {
-	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	client, err := dockerClient()
 	if err != nil {
 		return "", err
 	}
@@ -35,7 +39,7 @@ func forwardedAPIServer(ctx context.Context, name string) (string, error) {
 
 // Upstream skips CPU quotas on Linux cgroup v2 because it checks cgroup v1 paths.
 func setMachineResources(ctx context.Context, name string, shape infra.MachineShape) error {
-	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	client, err := dockerClient()
 	if err != nil {
 		return err
 	}
