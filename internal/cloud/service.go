@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -145,12 +144,12 @@ func (s *Service) CreateCluster(name, kind string, minM, maxM int, requester str
 	if len(s.state.Clusters) > 0 {
 		return Operation{}, fmt.Errorf("%w: a cluster already exists: %s", ErrConflict, s.state.Clusters[0].Name)
 	}
-	shape, err := machineType(kind)
+	shape, err := LookupMachineType(kind)
 	if err != nil {
 		return Operation{}, err
 	}
-	if len(validation.IsDNS1123Label(name)) > 0 || minM < 1 || maxM < minM || maxM > math.MaxInt32 {
-		return Operation{}, fmt.Errorf("%w: require a DNS-1123 name and 1 <= min <= max <= 2147483647", ErrInvalid)
+	if len(validation.IsDNS1123Label(name)) > 0 || minM < 1 || maxM < minM || maxM > MaxMachines {
+		return Operation{}, fmt.Errorf("%w: require a DNS-1123 name and 1 <= min <= max <= %d", ErrInvalid, MaxMachines)
 	}
 	next := s.state.clone()
 	c := Cluster{Name: name, MachineType: kind, MinMachines: minM, MaxMachines: maxM, Status: "PROVISIONING", CreatedAt: time.Now().UTC()}
@@ -279,6 +278,17 @@ func (s *Service) Machines(name string) ([]Machine, error) {
 	return result, nil
 }
 
+// TargetSize counts machines that exist or are being created, as Cluster Autoscaler expects.
+func TargetSize(machines []Machine) int {
+	n := 0
+	for _, m := range machines {
+		if m.Status != "DELETING" {
+			n++
+		}
+	}
+	return n
+}
+
 // AddMachines reserves capacity before queuing asynchronous worker creation.
 func (s *Service) AddMachines(name string, n int, requester string) ([]Operation, error) {
 	s.mu.Lock()
@@ -287,12 +297,7 @@ func (s *Service) AddMachines(name string, n int, requester string) ([]Operation
 	if err != nil {
 		return nil, err
 	}
-	target := 0
-	for _, m := range s.state.Machines {
-		if m.Status != "DELETING" {
-			target++
-		}
-	}
+	target := TargetSize(s.state.Machines)
 	if n <= 0 {
 		return nil, fmt.Errorf("%w: increase must be positive", ErrInvalid)
 	}

@@ -3,12 +3,35 @@ package cloud
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 )
 
+// maxFinishedOperations bounds the persisted history; running operations are always kept.
+const maxFinishedOperations = 100
+
 func (st *snapshot) newOperation(kind, target, requester string) Operation {
-	op := Operation{ID: fmt.Sprintf("op-%06d", len(st.Operations)+1), Type: kind, Target: target, Requester: requester, Status: "RUNNING", StartedAt: time.Now().UTC()}
+	next := 1
+	if n := len(st.Operations); n > 0 {
+		// Operations are appended in order, so the last one holds the highest ID.
+		_, _ = fmt.Sscanf(st.Operations[n-1].ID, "op-%d", &next)
+		next++
+	}
+	op := Operation{ID: fmt.Sprintf("op-%06d", next), Type: kind, Target: target, Requester: requester, Status: "RUNNING", StartedAt: time.Now().UTC()}
+	finished := 0
+	for _, existing := range st.Operations {
+		if existing.Status != "RUNNING" {
+			finished++
+		}
+	}
+	for i := 0; finished >= maxFinishedOperations && i < len(st.Operations); {
+		if st.Operations[i].Status == "RUNNING" {
+			i++
+			continue
+		}
+		st.Operations = slices.Delete(st.Operations, i, i+1)
+		finished--
+	}
 	st.Operations = append(st.Operations, op)
 	return op
 }
@@ -66,7 +89,7 @@ func (s *Service) Operations() []Operation {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ops := append([]Operation{}, s.state.Operations...)
-	sort.SliceStable(ops, func(i, j int) bool { return ops[i].StartedAt.After(ops[j].StartedAt) })
+	slices.Reverse(ops) // appended in start order
 	return ops
 }
 

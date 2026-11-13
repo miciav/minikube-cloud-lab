@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -111,7 +112,7 @@ func (s *Service) releaseVolumeFor(id, cluster, claim, uid, policy string) error
 		if policy == "" {
 			policy = v.Policy
 		}
-		if policy != "Delete" && policy != "Retain" {
+		if !validPolicy(policy) {
 			return ErrInvalid
 		}
 		if policy == "Delete" {
@@ -172,7 +173,7 @@ func (s *Service) DeleteVolume(id string) error {
 
 func (s *Service) deleteVolume(i int) error {
 	v := s.state.Volumes[i]
-	if len(validation.IsDNS1123Label(v.ID)) != 0 || !strings.HasPrefix(v.ID, "pvc-") {
+	if !validVolumeID(v.ID) {
 		return fmt.Errorf("%w: invalid stored volume", ErrInvalid)
 	}
 	if v.Status != "Deleting" {
@@ -182,33 +183,32 @@ func (s *Service) deleteVolume(i int) error {
 			return err
 		}
 	}
+	remove := func(context.Context) error {
+		root, err := s.volumeRoot()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = root.Close() }()
+		return root.RemoveAll(v.ID)
+	}
 	if v.Enforced || v.Backend == "directory" {
 		if s.storage == nil {
 			return fmt.Errorf("%w: storage backend unavailable", ErrFailedPrecondition)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), storageOperationTimeout)
-		defer cancel()
 		backend := s.storage
-		s.mu.Unlock()
-		err := backend.Delete(ctx, v.ID)
-		s.mu.Lock()
-		if err != nil {
-			return err
-		}
-		next := s.state.clone()
-		next.Volumes = append(next.Volumes[:i], next.Volumes[i+1:]...)
-		return s.store(next)
+		remove = func(ctx context.Context) error { return backend.Delete(ctx, v.ID) }
 	}
-	root, err := s.volumeRoot()
+	ctx, cancel := context.WithTimeout(context.Background(), storageOperationTimeout)
+	defer cancel()
+	// volumeMu still excludes other volume mutations; readers need not wait for disk work.
+	s.mu.Unlock()
+	err := remove(ctx)
+	s.mu.Lock()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = root.Close() }()
-	if err := root.RemoveAll(v.ID); err != nil {
-		return err
-	}
 	next := s.state.clone()
-	next.Volumes = append(next.Volumes[:i], next.Volumes[i+1:]...)
+	next.Volumes = slices.DeleteFunc(next.Volumes, func(x Volume) bool { return x.ID == v.ID })
 	return s.store(next)
 }
 
@@ -247,11 +247,15 @@ func (s *Service) retryVolumeDeletions() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := 0; i < len(s.state.Volumes); {
-		if s.state.Volumes[i].Status != "Deleting" {
+		v := s.state.Volumes[i]
+		// volumeMu excludes in-flight allocations, so an unclaimed Creating volume is abandoned.
+		abandoned := v.Status == "Creating" && v.Claim == "" && !v.Static
+		needsBackend := v.Enforced || v.Backend == "directory"
+		if v.Status != "Deleting" && !abandoned || needsBackend && s.storage == nil {
 			i++
 			continue
 		}
-		id := s.state.Volumes[i].ID
+		id := v.ID
 		if err := s.deleteVolume(i); err != nil {
 			s.logger.Error("volume cleanup failed", "volume", id, "error", err)
 			i++
@@ -259,7 +263,13 @@ func (s *Service) retryVolumeDeletions() {
 	}
 }
 
+func validVolumeID(id string) bool {
+	return strings.HasPrefix(id, "pvc-") && len(validation.IsDNS1123Label(id)) == 0
+}
+
+func validPolicy(policy string) bool { return policy == "Retain" || policy == "Delete" }
+
 func validVolumeRequest(id, cluster, claim, capacity, policy string) bool {
 	size, err := resource.ParseQuantity(capacity)
-	return strings.HasPrefix(id, "pvc-") && len(validation.IsDNS1123Label(id)) == 0 && cluster != "" && claim != "" && err == nil && size.Sign() > 0 && (policy == "Retain" || policy == "Delete")
+	return validVolumeID(id) && cluster != "" && claim != "" && err == nil && size.Sign() > 0 && validPolicy(policy)
 }

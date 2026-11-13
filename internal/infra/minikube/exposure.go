@@ -5,19 +5,17 @@ import (
 	"errors"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
 
 	dockerclient "github.com/docker/docker/client"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/minikube/pkg/minikube/config"
 
 	"github.com/miciav/minikube-cloud-lab/internal/serviceexposure"
 )
 
 func (i *Infra) exposureClient(name string) (kubernetes.Interface, error) {
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: filepath.Join(i.home, "kubeconfig")}, &clientcmd.ConfigOverrides{CurrentContext: name}).ClientConfig()
+	cfg, err := managedConfig(name)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +29,7 @@ func (i *Infra) RunServiceExposure(ctx context.Context) error {
 		<-ctx.Done()
 		return nil
 	}
-	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	client, err := dockerClient()
 	if err != nil {
 		return err
 	}
@@ -90,16 +88,20 @@ func (i *Infra) reconcileServices(ctx context.Context, client *dockerclient.Clie
 				failures = append(failures, err)
 				break
 			}
-			hostname, err := os.Hostname()
-			if err != nil {
-				return err
+			if i.relayImage == "" {
+				hostname, err := os.Hostname()
+				if err != nil {
+					return err
+				}
+				cloud, err := client.ContainerInspect(ctx, hostname)
+				if err != nil {
+					failures = append(failures, err)
+					break
+				}
+				// The cloud container's own image never changes while this process runs.
+				i.relayImage = cloud.Image
 			}
-			cloud, err := client.ContainerInspect(ctx, hostname)
-			if err != nil {
-				failures = append(failures, err)
-				break
-			}
-			manager := serviceexposure.NewManager(client, i.network, cloud.Image)
+			manager := serviceexposure.NewManager(client, i.network, i.relayImage)
 			failures = append(failures, serviceexposure.Reconcile(ctx, kube, manager, entry.Name(), node.IP))
 			break
 		}
@@ -111,7 +113,7 @@ func (i *Infra) deleteServiceExposure(ctx context.Context, name string) error {
 	if i.network == "" {
 		return nil
 	}
-	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	client, err := dockerClient()
 	if err != nil {
 		return err
 	}

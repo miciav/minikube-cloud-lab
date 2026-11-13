@@ -2,7 +2,6 @@ package cloud_test
 
 import (
 	"errors"
-	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,7 +21,7 @@ func TestResizeDurabilityAndBounds(t *testing.T) {
 	if _, err := s.ResizeClusterIfUnchanged("demo", 3, "student", &stale); !errors.Is(err, cloud.ErrFailedPrecondition) {
 		t.Fatal("stale generation accepted", err)
 	}
-	for _, n := range []int{-1, 0, math.MaxInt32 + 1} {
+	for _, n := range []int{-1, 0, cloud.MaxMachines + 1} {
 		if _, err := s.ResizeCluster("demo", n, "student"); !errors.Is(err, cloud.ErrInvalid) {
 			t.Fatal("invalid size accepted", n, err)
 		}

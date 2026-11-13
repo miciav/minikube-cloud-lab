@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"time"
+
+	"github.com/miciav/minikube-cloud-lab/internal/atomicfile"
 )
 
 // ClusterStatus describes the cluster lifecycle.
@@ -68,6 +69,10 @@ var (
 	ErrInvalid            = errors.New("invalid request")
 )
 
+// MaxMachines bounds each cluster, so one request cannot queue unbounded work.
+// ponytail: fixed lab ceiling; make it configurable if hosts outgrow it.
+const MaxMachines = 32
+
 // MachineTypes returns the fixed cloud catalog.
 func MachineTypes() []MachineType {
 	return []MachineType{{Name: "lab-small", CPUs: 2, MemoryMiB: 2048}, {Name: "lab-medium", CPUs: 4, MemoryMiB: 8192}}
@@ -78,7 +83,8 @@ func NodeLabels(kind string) map[string]string {
 	return map[string]string{"node.kubernetes.io/instance-type": kind, "topology.kubernetes.io/region": "lab-region-1", "topology.kubernetes.io/zone": "lab-region-1-a"}
 }
 
-func machineType(name string) (MachineType, error) {
+// LookupMachineType returns a catalog entry by name.
+func LookupMachineType(name string) (MachineType, error) {
 	for _, kind := range MachineTypes() {
 		if kind.Name == name {
 			return kind, nil
@@ -118,30 +124,5 @@ func save(dir string, st snapshot) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(dir, ".state-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(f.Name()) }()
-	if _, err = f.Write(data); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(f.Name(), filepath.Join(dir, "state.json")); err != nil {
-		return err
-	}
-	// #nosec G304 -- dir is the operator-selected cloud state directory.
-	directory, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	syncErr := directory.Sync()
-	return errors.Join(syncErr, directory.Close())
+	return atomicfile.Write(filepath.Join(dir, "state.json"), data)
 }

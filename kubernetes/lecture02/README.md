@@ -97,7 +97,7 @@ there is no intermediate shrink step. Existing workloads remain available.
 | 9 | `00_es01_nginx_deployment.yml`, `00_es02_nginx_deployment.yml` | Declarative update, rollback and manifest realignment |
 | 10 | `05-rollout.yaml` | Four replicas, update budget observed, rollback |
 | 11 | `daemonset.yaml` | One node-agent Pod per eligible node |
-| 12 | drain / uncordon | Selected workloads leave the worker; scheduling re-enabled |
+| 12 | drain / uncordon | Deployment Pods are replaced on other nodes; DaemonSet Pods remain; scheduling re-enabled |
 | 13 | `00_es03_*`, `01_es03_*`, `02_es03_*`, `03_es03_mongo-init.js` | NFS PVCs, DNS, one PRIMARY and two SECONDARY members |
 | 14 | Kubernetes nginx-app example | Several objects from one YAML file |
 | 15 | `ex06/app.yaml` | Adminer login and a MariaDB row surviving Pod replacement |
@@ -142,9 +142,12 @@ Inspect `spec.nfs.server` and `spec.nfs.path` in `kubectl get pv -o yaml` and us
 ## Cleanup
 
 Stop port-forwards first. Remove constrained/Redis workloads before drain.
-Drain selects only Pods labelled `course-lab=lecture02` and ignores DaemonSets; investigate blocking Pods
-instead of adding force or emptyDir-deletion flags. Uncordon does not rebalance
-existing Pods.
+Drain has no Pod label filter: it attempts to evict all evictable Pods on the worker,
+across namespaces, including workloads outside this exercise. DaemonSet Pods remain.
+Check that the chosen worker hosts Deployment Pods, watch their replacements, and
+wait for the nginx, rollout and web Deployments to become available before uncordoning.
+Investigate blocking Pods or pending replacements instead of adding force or
+emptyDir-deletion flags. Uncordon does not rebalance existing Pods.
 
 Before deleting a persistent application, record its PVC's `spec.volumeName`
 (`mariadb-data` for Adminer/MariaDB, `db-data` for Voting App) and inspect

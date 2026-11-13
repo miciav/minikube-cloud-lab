@@ -279,6 +279,7 @@ class Verification:
         self.control = next(
             n["metadata"]["name"] for n in nodes if "node-role.kubernetes.io/control-plane" in n["metadata"]["labels"]
         )
+        # Set before creating: cleanup must also cover a create interrupted after the API accepted it.
         self.namespace_created = True
         self.k(
             "create",
@@ -288,7 +289,6 @@ class Verification:
                 {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": self.name, "labels": {LABEL: self.name}}}
             ),
         )
-        self.namespace_created = True
 
     def limits(self):
         shapes = {s["name"]: s for s in self.api("machine-types")}

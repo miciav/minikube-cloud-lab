@@ -56,3 +56,27 @@ it("does not overlap polling and pauses while hidden", async () => {
   unmount();
   expect(fetch.mock.calls[1][1].signal.aborted).toBe(true);
 });
+it("keeps current data while a refresh is in flight", async () => {
+  let resolve!: (v: Response) => void;
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ name: "first" })))
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((r) => {
+          resolve = r;
+        }),
+    );
+  vi.stubGlobal("fetch", fetch);
+  const { result, rerender } = renderHook(
+    ({ refresh }) => useResource<{ name: string }>("clusters", refresh),
+    { initialProps: { refresh: 0 } },
+  );
+  await waitFor(() => expect(result.current.data?.name).toBe("first"));
+  rerender({ refresh: 1 });
+  expect(result.current.data?.name).toBe("first");
+  await act(async () =>
+    resolve(new Response(JSON.stringify({ name: "second" }))),
+  );
+  expect(result.current.data?.name).toBe("second");
+});

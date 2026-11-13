@@ -48,7 +48,9 @@ func (s *Service) PublishVolume(ctx context.Context, id, cluster string) error {
 
 // PublishVolumeIfUnchanged checks the selected cluster generation before reserving the volume.
 func (s *Service) PublishVolumeIfUnchanged(ctx context.Context, id, cluster string, expected *time.Time) error {
-	s.workMu.Lock()
+	if err := s.lockWork(ctx); err != nil {
+		return err
+	}
 	defer s.workMu.Unlock()
 	if err := s.reservePublication(id, cluster, expected); err != nil {
 		return err
@@ -58,6 +60,22 @@ func (s *Service) PublishVolumeIfUnchanged(ctx context.Context, id, cluster stri
 		return err
 	}
 	return s.syncPublication(ctx, client, id)
+}
+
+// lockWork waits briefly for a storage tick, but not for a long cluster or machine operation.
+func (s *Service) lockWork(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for !s.workMu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: an infrastructure operation is running; retry later", ErrFailedPrecondition)
+		case <-ticker.C:
+		}
+	}
+	return nil
 }
 
 func (s *Service) reservePublication(id, cluster string, expected *time.Time) error {
@@ -100,8 +118,12 @@ func (s *Service) syncPublication(ctx context.Context, client kubernetes.Interfa
 	if !v.Static || v.Status == "Unpublishing" {
 		return ErrFailedPrecondition
 	}
+	capacity, err := resource.ParseQuantity(v.Capacity)
+	if err != nil {
+		return fmt.Errorf("%w: invalid stored volume capacity", ErrFailedPrecondition)
+	}
 	pv := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: v.ID, Labels: map[string]string{"cloud.minikube.local/volume": v.ID}}, Spec: corev1.PersistentVolumeSpec{
-		Capacity: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(v.Capacity)}, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain, StorageClassName: "cloud-static", MountOptions: []string{nfsMountVersion}, PersistentVolumeSource: corev1.PersistentVolumeSource{NFS: &corev1.NFSVolumeSource{Server: s.storageServer, Path: "/data/volumes/" + v.ID}},
+		Capacity: corev1.ResourceList{corev1.ResourceStorage: capacity}, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain, StorageClassName: "cloud-static", MountOptions: []string{nfsMountVersion}, PersistentVolumeSource: corev1.PersistentVolumeSource{NFS: &corev1.NFSVolumeSource{Server: s.storageServer, Path: "/data/volumes/" + v.ID}},
 	}}
 	setDirectoryPV(pv, v)
 	var current *corev1.PersistentVolume
@@ -129,8 +151,13 @@ func (s *Service) syncPublication(ctx context.Context, client kubernetes.Interfa
 	return s.replaceVolume(v, next)
 }
 
+func capacityEquals(pv *corev1.PersistentVolume, v Volume) bool {
+	want, err := resource.ParseQuantity(v.Capacity)
+	return err == nil && pv.Spec.Capacity.Storage().Cmp(want) == 0
+}
+
 func (s *Service) checkStaticPV(v Volume, pv *corev1.PersistentVolume) error {
-	if pv.Labels["cloud.minikube.local/volume"] != v.ID || !volumeSourceMatches(pv, s.storageServer, v) || pv.Spec.StorageClassName != "cloud-static" || pv.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimRetain || pv.Spec.Capacity.Storage().Cmp(resource.MustParse(v.Capacity)) != 0 || len(pv.Spec.AccessModes) != 1 || pv.Spec.AccessModes[0] != corev1.ReadWriteOnce {
+	if pv.Labels["cloud.minikube.local/volume"] != v.ID || !volumeSourceMatches(pv, s.storageServer, v) || pv.Spec.StorageClassName != "cloud-static" || pv.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimRetain || !capacityEquals(pv, v) || len(pv.Spec.AccessModes) != 1 || pv.Spec.AccessModes[0] != corev1.ReadWriteOnce {
 		return fmt.Errorf("%w: static persistent volume identity differs", ErrConflict)
 	}
 	if v.PVUID != "" && string(pv.UID) != v.PVUID {
@@ -141,7 +168,9 @@ func (s *Service) checkStaticPV(v Volume, pv *corev1.PersistentVolume) error {
 
 // UnpublishVolume removes only an unused owned PV and preserves the cloud data.
 func (s *Service) UnpublishVolume(ctx context.Context, id string) error {
-	s.workMu.Lock()
+	if err := s.lockWork(ctx); err != nil {
+		return err
+	}
 	defer s.workMu.Unlock()
 	v, err := s.volume(id)
 	if err != nil {
@@ -173,7 +202,8 @@ func (s *Service) unpublishVolume(ctx context.Context, client kubernetes.Interfa
 	}
 	pv, err := client.CoreV1().PersistentVolumes().Get(ctx, id, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		if v.Status != "Unpublishing" {
+		// pv-protection keeps a PV while a claim is bound, so only a Bound record is unsafe.
+		if v.Status == "Bound" {
 			return fmt.Errorf("%w: missing PV does not prove safe detachment", ErrFailedPrecondition)
 		}
 		return s.finishUnpublish(v)
@@ -198,8 +228,7 @@ func (s *Service) unpublishVolume(ctx context.Context, client kubernetes.Interfa
 		}
 		v = next
 	}
-	options := metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &pv.UID, ResourceVersion: &pv.ResourceVersion}}
-	if err = client.CoreV1().PersistentVolumes().Delete(ctx, id, options); err != nil && !apierrors.IsNotFound(err) {
+	if err = deleteObservedPV(ctx, client, pv); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	err = wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 5*time.Second, true, func(ctx context.Context) (bool, error) {
@@ -230,28 +259,28 @@ func (s *Service) finishUnpublish(v Volume) error {
 	return s.replaceVolume(v, next)
 }
 
-func (s *Service) reconcileStatic(ctx context.Context, client kubernetes.Interface, cluster string, claims []corev1.PersistentVolumeClaim) error {
+func (s *Service) reconcileStatic(ctx context.Context, client kubernetes.Interface, cluster string, claims []corev1.PersistentVolumeClaim, pvs map[string]*corev1.PersistentVolume) error {
 	var result error
 	for _, v := range s.Volumes() {
 		if v.Static && v.Cluster == cluster {
-			result = errors.Join(result, s.reconcileStaticVolume(ctx, client, v, claims))
+			result = errors.Join(result, s.reconcileStaticVolume(ctx, client, v, claims, pvs[v.ID]))
 		}
 	}
 	return result
 }
 
-func (s *Service) reconcileStaticVolume(ctx context.Context, client kubernetes.Interface, v Volume, claims []corev1.PersistentVolumeClaim) error {
+// pv is the listed PV for v, or nil when this pass did not observe one.
+func (s *Service) reconcileStaticVolume(ctx context.Context, client kubernetes.Interface, v Volume, claims []corev1.PersistentVolumeClaim, pv *corev1.PersistentVolume) error {
 	if v.Status == "Publishing" {
 		return s.syncPublication(ctx, client, v.ID)
 	}
 	if v.Status == "Unpublishing" {
 		return s.unpublishVolume(ctx, client, v.ID)
 	}
-	pv, err := client.CoreV1().PersistentVolumes().Get(ctx, v.ID, metav1.GetOptions{})
-	if err != nil {
-		return err
+	if pv == nil {
+		return fmt.Errorf("%w: static persistent volume %s not observed; unpublish it to return it to the pool", ErrFailedPrecondition, v.ID)
 	}
-	if err = s.checkStaticPV(v, pv); err != nil {
+	if err := s.checkStaticPV(v, pv); err != nil {
 		return err
 	}
 	next := v
@@ -290,7 +319,6 @@ func (s *Service) clusterStorageClient(cluster string) (kubernetes.Interface, er
 	if err != nil {
 		return nil, err
 	}
-	cfg.Timeout = 5 * time.Second
 	return kubernetes.NewForConfig(cfg)
 }
 

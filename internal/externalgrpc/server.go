@@ -105,13 +105,8 @@ func (s *server) NodeGroupTargetSize(_ context.Context, req *protos.NodeGroupTar
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	var target int32
-	for _, m := range machines {
-		if m.Status != "DELETING" {
-			target++
-		}
-	}
-	return &protos.NodeGroupTargetSizeResponse{TargetSize: target}, nil
+	// #nosec G115 -- cloud bounds every cluster at MaxMachines.
+	return &protos.NodeGroupTargetSizeResponse{TargetSize: int32(cloud.TargetSize(machines))}, nil
 }
 
 func (s *server) NodeGroupIncreaseSize(_ context.Context, req *protos.NodeGroupIncreaseSizeRequest) (*protos.NodeGroupIncreaseSizeResponse, error) {
@@ -179,12 +174,9 @@ func (s *server) NodeGroupTemplateNodeInfo(_ context.Context, req *protos.NodeGr
 	if err != nil {
 		return nil, err
 	}
-	var shape cloud.MachineType
-	for _, kind := range cloud.MachineTypes() {
-		if kind.Name == c.MachineType {
-			shape = kind
-			break
-		}
+	shape, err := cloud.LookupMachineType(c.MachineType)
+	if err != nil {
+		return nil, rpcError(err)
 	}
 	labels := cloud.NodeLabels(c.MachineType)
 	labels["node-role.kubernetes.io/worker"] = "worker"

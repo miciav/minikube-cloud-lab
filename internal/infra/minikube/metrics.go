@@ -14,6 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/minikube/pkg/minikube/config"
 	"k8s.io/minikube/pkg/minikube/kubeconfig"
@@ -25,20 +27,34 @@ import (
 //go:embed manifests/metrics-server.yaml
 var metricsManifest []byte
 
-func enableMetrics(ctx context.Context, cc *config.ClusterConfig) error {
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfig.PathFromEnv()}, &clientcmd.ConfigOverrides{CurrentContext: cc.Name}).ClientConfig()
+// managedConfig selects one cluster from the private kubeconfig without its current context.
+func managedConfig(name string) (*rest.Config, error) {
+	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfig.PathFromEnv()}, &clientcmd.ConfigOverrides{CurrentContext: name}).ClientConfig()
+}
+
+func managedClient(name string) (kubernetes.Interface, error) {
+	cfg, err := managedConfig(name)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	client, err := dynamic.NewForConfig(cfg)
+	return kubernetes.NewForConfig(cfg)
+}
+
+func managedDynamicClient(name string) (dynamic.Interface, error) {
+	cfg, err := managedConfig(name)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(metricsManifest), 4096)
+	return dynamic.NewForConfig(cfg)
+}
+
+// applyManifest server-side applies every document of a trusted bundled manifest.
+func applyManifest(ctx context.Context, client dynamic.Interface, manifest []byte, manager, what string) error {
+	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifest), 4096)
 	for {
 		o := &unstructured.Unstructured{}
 		if err := decoder.Decode(o); errors.Is(err, io.EOF) {
-			break
+			return nil
 		} else if err != nil {
 			return err
 		}
@@ -50,9 +66,16 @@ func enableMetrics(ctx context.Context, cc *config.ClusterConfig) error {
 		if err != nil {
 			return err
 		}
-		if _, err := client.Resource(resource).Namespace(o.GetNamespace()).Patch(ctx, o.GetName(), types.ApplyPatchType, body, metav1.PatchOptions{FieldManager: "cloud-metrics"}); err != nil {
-			return fmt.Errorf("apply Metrics Server %s: %w", o.GetKind(), err)
+		if _, err := client.Resource(resource).Namespace(o.GetNamespace()).Patch(ctx, o.GetName(), types.ApplyPatchType, body, metav1.PatchOptions{FieldManager: manager}); err != nil {
+			return fmt.Errorf("apply %s %s: %w", what, o.GetKind(), err)
 		}
 	}
-	return nil
+}
+
+func enableMetrics(ctx context.Context, cc *config.ClusterConfig) error {
+	client, err := managedDynamicClient(cc.Name)
+	if err != nil {
+		return err
+	}
+	return applyManifest(ctx, client, metricsManifest, "cloud-metrics", "Metrics Server")
 }

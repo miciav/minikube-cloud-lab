@@ -3,11 +3,11 @@ package cloud
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	"github.com/miciav/minikube-cloud-lab/internal/serviceexposure"
 )
@@ -19,39 +19,27 @@ type DashboardEndpoint struct {
 
 // Dashboard returns the known YAKD Service's endpoint once its deployment is available.
 func (s *Service) Dashboard(ctx context.Context, cluster string) (DashboardEndpoint, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	before, err := s.monitoringCluster(cluster)
+	var port int
+	_, err := s.observeCluster(ctx, cluster, func(ctx context.Context, cfg *rest.Config) error {
+		k, err := kubernetes.NewForConfig(cfg)
+		if err != nil {
+			return ErrUnavailable
+		}
+		svc, err := k.CoreV1().Services("yakd-dashboard").Get(ctx, "yakd-dashboard", metav1.GetOptions{})
+		if err != nil {
+			return ErrUnavailable
+		}
+		if port = dashboardPort(svc); port == 0 {
+			return ErrUnavailable
+		}
+		deployment, err := k.AppsV1().Deployments("yakd-dashboard").Get(ctx, "yakd-dashboard", metav1.GetOptions{})
+		if err != nil || deployment.Status.AvailableReplicas < 1 {
+			return ErrUnavailable
+		}
+		return nil
+	})
 	if err != nil {
 		return DashboardEndpoint{}, err
-	}
-	cfg, err := s.clusterRESTConfig(cluster)
-	if err != nil {
-		return DashboardEndpoint{}, ErrUnavailable
-	}
-	cfg.Timeout = 5 * time.Second
-	k, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		return DashboardEndpoint{}, ErrUnavailable
-	}
-	svc, err := k.CoreV1().Services("yakd-dashboard").Get(ctx, "yakd-dashboard", metav1.GetOptions{})
-	if err != nil {
-		return DashboardEndpoint{}, ErrUnavailable
-	}
-	port := dashboardPort(svc)
-	if port == 0 {
-		return DashboardEndpoint{}, ErrUnavailable
-	}
-	deployment, err := k.AppsV1().Deployments("yakd-dashboard").Get(ctx, "yakd-dashboard", metav1.GetOptions{})
-	if err != nil || deployment.Status.AvailableReplicas < 1 {
-		return DashboardEndpoint{}, ErrUnavailable
-	}
-	after, err := s.monitoringCluster(cluster)
-	if err != nil {
-		return DashboardEndpoint{}, err
-	}
-	if !before.CreatedAt.Equal(after.CreatedAt) {
-		return DashboardEndpoint{}, ErrConflict
 	}
 	return DashboardEndpoint{Port: port}, nil
 }

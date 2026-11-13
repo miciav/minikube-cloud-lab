@@ -265,3 +265,18 @@ func TestDockerErrorsReturnNoEndpointAndCleanCandidates(t *testing.T) {
 		})
 	}
 }
+
+func TestDockerStoppedRelayKeepsItsAddressReserved(t *testing.T) {
+	f, m := newDockerFixture(t)
+	first, err := m.Ensure(t.Context(), "demo", testService("one", corev1.ServiceTypeLoadBalancer), "172.30.0.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.objects["proxy-1"].running = false
+	f.mu.Unlock()
+	second, err := m.Ensure(t.Context(), "other", testService("two", corev1.ServiceTypeLoadBalancer), "172.30.0.2")
+	if err != nil || second.IP == first.IP {
+		t.Fatalf("stopped relay address reassigned: %s %+v %v", first.IP, second, err)
+	}
+}

@@ -48,7 +48,7 @@ func Reconcile(ctx context.Context, kube kubernetes.Interface, m *Manager, clust
 		keep = append(keep, svc.UID)
 	}
 	// Free stale fixed NodePorts before a replacement UID tries to claim them.
-	if err := m.Prune(ctx, cluster, keep); err != nil {
+	if err := m.prune(ctx, owned, keep); err != nil {
 		return err
 	}
 	var failures []error

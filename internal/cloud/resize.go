@@ -2,7 +2,6 @@ package cloud
 
 import (
 	"fmt"
-	"math"
 	"time"
 )
 
@@ -15,8 +14,8 @@ func (s *Service) ResizeCluster(name string, nodes int, requester string) ([]Ope
 func (s *Service) ResizeClusterIfUnchanged(name string, nodes int, requester string, expected *time.Time) ([]Operation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if nodes < 1 || nodes > math.MaxInt32 {
-		return nil, fmt.Errorf("%w: require 1 <= nodes <= 2147483647", ErrInvalid)
+	if nodes < 1 || nodes > MaxMachines {
+		return nil, fmt.Errorf("%w: require 1 <= nodes <= %d", ErrInvalid, MaxMachines)
 	}
 	c, err := s.ready(name)
 	if err != nil {

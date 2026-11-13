@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   Button,
   useRestoreFocusTarget,
@@ -23,6 +23,15 @@ import { request, downloadKubeconfig } from "./api";
 import { Monitoring } from "./Monitoring";
 import { Dashboard } from "./Dashboard";
 import { useResource } from "./useResource";
+import {
+  ClusterList,
+  MachinesSection,
+  OperationsSection,
+  OverviewSection,
+  Status,
+  VolumesSection,
+  type Action,
+} from "./sections";
 import type {
   Cluster,
   Machine,
@@ -32,17 +41,6 @@ import type {
   StorageCapacity,
 } from "./types";
 
-type Action = {
-  kind:
-    | "createCluster"
-    | "deleteCluster"
-    | "createVolume"
-    | "deleteVolume"
-    | "publish"
-    | "unpublish";
-  target?: string;
-  generation?: string;
-};
 const headings = {
   createCluster: "Create cluster",
   deleteCluster: "Delete cluster",
@@ -59,49 +57,6 @@ const labels = {
   publish: "Publish",
   unpublish: "Unpublish",
 };
-function Table({
-  columns,
-  children,
-}: {
-  columns: string[];
-  children: ReactNode;
-}) {
-  return (
-    <div className="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            {columns.map((v) => (
-              <th key={v} scope="col">
-                {v}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
-  );
-}
-function Status({ value }: { value: string }) {
-  return (
-    <Badge
-      appearance="tint"
-      color={
-        value === "RUNNING" || value === "DONE" || value === "Available"
-          ? "success"
-          : value === "ERROR"
-            ? "danger"
-            : "informative"
-      }
-    >
-      {value}
-    </Badge>
-  );
-}
-function Empty() {
-  return <p className="empty">No resources yet.</p>;
-}
 
 export function App() {
   return (
@@ -412,117 +367,15 @@ function CloudApp() {
             </Button>
           </div>
           {section === "overview" && (
-            <>
-              <div className="stat-grid">
-                <section className="stat">
-                  <span>Clusters</span>
-                  <strong>{clusters.length}</strong>
-                  <small>
-                    {clusters.filter((c) => c.status === "RUNNING").length}{" "}
-                    running
-                  </small>
-                </section>
-                <section className="stat">
-                  <span>Machines</span>
-                  <strong>{machines.length}</strong>
-                  <small>Control plane and workers</small>
-                </section>
-                <section className="stat">
-                  <span>Storage allocated</span>
-                  <strong>
-                    {storageData.data?.allocated ?? "Unavailable"}
-                  </strong>
-                  <small>
-                    of {storageData.data?.total ?? "—"} cloud budget
-                  </small>
-                </section>
-              </div>
-              <section className="panel">
-                <Title2>Get started</Title2>
-                <p>
-                  Create a Kubernetes cluster, manage persistent volumes, and
-                  inspect cluster health.
-                </p>
-                <Button
-                  {...restoreFocusTarget}
-                  appearance="primary"
-                  onClick={() => open({ kind: "createCluster" })}
-                >
-                  Create cluster
-                </Button>{" "}
-                <a href="#/volumes">Manage storage</a>
-              </section>
-              <section className="panel">
-                <Title2>Your clusters</Title2>
-                {clusters.length === 0 ? (
-                  <Empty />
-                ) : (
-                  <ul className="resource-list">
-                    {clusters.map((c) => (
-                      <li key={c.name}>
-                        <a href={`#/clusters/${c.name}`}>{c.name}</a>
-                        <Status value={c.status} />
-                        <span>{c.machineType}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            </>
+            <OverviewSection
+              clusters={clusters}
+              machines={machines}
+              storage={storageData.data}
+              open={open}
+            />
           )}
           {section === "clusters" && !route.includes("/") && (
-            <>
-              <div className="toolbar">
-                <Button
-                  {...restoreFocusTarget}
-                  appearance="primary"
-                  onClick={() => open({ kind: "createCluster" })}
-                >
-                  Create cluster
-                </Button>
-                <span>{clusters.length} resources</span>
-              </div>
-              <section className="panel">
-                {clusters.length === 0 ? (
-                  <Empty />
-                ) : (
-                  <Table
-                    columns={[
-                      "Name",
-                      "Status",
-                      "Machine type",
-                      "Node range",
-                      "Actions",
-                    ]}
-                  >
-                    {clusters.map((c) => (
-                      <tr key={c.name}>
-                        <td>
-                          <a href={`#/clusters/${c.name}`}>{c.name}</a>
-                        </td>
-                        <td>
-                          <Status value={c.status} />
-                        </td>
-                        <td>{c.machineType}</td>
-                        <td>
-                          {c.minMachines}–{c.maxMachines}
-                        </td>
-                        <td>
-                          <Button
-                            {...restoreFocusTarget}
-                            onClick={() =>
-                              open({ kind: "deleteCluster", target: c.name })
-                            }
-                          >
-                            Delete
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </Table>
-                )}
-              </section>
-            </>
+            <ClusterList clusters={clusters} open={open} />
           )}
           {section === "clusters" &&
             route.includes("/") &&
@@ -546,177 +399,13 @@ function CloudApp() {
               </p>
             ))}
           {section === "machines" && (
-            <>
-              <section className="panel">
-                <Title2>Machine catalog</Title2>
-                <Table columns={["Type", "CPUs", "Memory"]}>
-                  {types.map((v) => (
-                    <tr key={v.name}>
-                      <td>{v.name}</td>
-                      <td>{v.cpus}</td>
-                      <td>{v.memoryMiB} MiB</td>
-                    </tr>
-                  ))}
-                </Table>
-              </section>
-              <section className="panel">
-                <Title2>Allocated machines</Title2>
-                {machines.length === 0 ? (
-                  <Empty />
-                ) : (
-                  <Table
-                    columns={[
-                      "Name",
-                      "Cluster",
-                      "Role",
-                      "Status",
-                      "Created by",
-                    ]}
-                  >
-                    {machines.map((m) => (
-                      <tr key={m.name}>
-                        <td>{m.name}</td>
-                        <td>{m.cluster}</td>
-                        <td>{m.controlPlane ? "Control plane" : "Worker"}</td>
-                        <td>
-                          <Status value={m.status} />
-                        </td>
-                        <td>{m.createdBy}</td>
-                      </tr>
-                    ))}
-                  </Table>
-                )}
-              </section>
-            </>
+            <MachinesSection types={types} machines={machines} />
           )}
           {section === "volumes" && (
-            <>
-              <div className="toolbar">
-                <Button
-                  {...restoreFocusTarget}
-                  appearance="primary"
-                  onClick={() => open({ kind: "createVolume" })}
-                >
-                  Create volume
-                </Button>
-              </div>
-              <section className="panel">
-                <Title2>Cloud storage budget</Title2>
-                {storageData.data ? (
-                  <dl className="details">
-                    <div>
-                      <dt>Total</dt>
-                      <dd>{storageData.data.total}</dd>
-                    </div>
-                    <div>
-                      <dt>Allocated capacity</dt>
-                      <dd>{storageData.data.allocated}</dd>
-                    </div>
-                    <div>
-                      <dt>Available</dt>
-                      <dd>{storageData.data.available}</dd>
-                    </div>
-                  </dl>
-                ) : (
-                  <p>{storageData.error || "Loading storage budget…"}</p>
-                )}
-                <p className="muted">
-                  Allocated capacity is reserved storage, not bytes currently
-                  written.
-                </p>
-              </section>
-              <section className="panel">
-                {volumes.length === 0 ? (
-                  <Empty />
-                ) : (
-                  <Table
-                    columns={[
-                      "Volume",
-                      "Capacity",
-                      "Status",
-                      "Cluster / claim",
-                      "Actions",
-                    ]}
-                  >
-                    {volumes.map((v) => (
-                      <tr key={v.id}>
-                        <td>
-                          {v.id}
-                          <small className="block">
-                            {v.policy} ·{" "}
-                            {v.enforced ? "Enforced capacity" : "No physical write quota"}
-                          </small>
-                        </td>
-                        <td>{v.capacity}</td>
-                        <td>
-                          <Status value={v.status} />
-                        </td>
-                        <td>
-                          {v.cluster || "—"}
-                          {v.claim && (
-                            <small className="block">{v.claim}</small>
-                          )}
-                        </td>
-                        <td>
-                          <div className="row-actions">
-                            {!v.cluster ? (
-                              <Button
-                                {...restoreFocusTarget}
-                                onClick={() =>
-                                  open({ kind: "publish", target: v.id })
-                                }
-                              >
-                                Publish
-                              </Button>
-                            ) : (
-                              <Button
-                                {...restoreFocusTarget}
-                                onClick={() =>
-                                  open({ kind: "unpublish", target: v.id })
-                                }
-                              >
-                                Unpublish
-                              </Button>
-                            )}
-                            <Button
-                              {...restoreFocusTarget}
-                              onClick={() =>
-                                open({ kind: "deleteVolume", target: v.id })
-                              }
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </Table>
-                )}
-              </section>
-            </>
+            <VolumesSection volumes={volumes} storage={storageData} open={open} />
           )}
           {section === "operations" && (
-            <section className="panel">
-              {operations.length === 0 ? (
-                <Empty />
-              ) : (
-                <Table
-                  columns={["Operation", "Type", "Target", "Status", "Details"]}
-                >
-                  {operations.map((op) => (
-                    <tr key={op.id}>
-                      <td>{op.id}</td>
-                      <td>{op.type}</td>
-                      <td>{op.target}</td>
-                      <td>
-                        <Status value={op.status} />
-                      </td>
-                      <td>{op.error || "—"}</td>
-                    </tr>
-                  ))}
-                </Table>
-              )}
-            </section>
+            <OperationsSection operations={operations} />
           )}
           {!clusterData.data && !error && (
             <Spinner size="small" label="Loading cloud resources…" />
@@ -765,7 +454,7 @@ function CloudApp() {
                           aria-label="Minimum nodes"
                           type="number"
                           min={1}
-                          max={2147483647}
+                          max={32}
                           required
                           value={form.minNodes}
                           onChange={(_, v) => field("minNodes", v.value)}
@@ -776,7 +465,7 @@ function CloudApp() {
                           aria-label="Maximum nodes"
                           type="number"
                           min={Number(form.minNodes) || 1}
-                          max={2147483647}
+                          max={32}
                           required
                           value={form.maxNodes}
                           onChange={(_, v) => field("maxNodes", v.value)}

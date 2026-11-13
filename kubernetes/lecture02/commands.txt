@@ -208,9 +208,18 @@ kubectl get pods -l app=node-agent -o wide
 SLIDE 44: Exercise 12: drain and reactivate a worker
 WORKER=$(kubectl get nodes -l lecture02-role=frontend \
   -o jsonpath='{.items[0].metadata.name}')
-kubectl drain "$WORKER" --ignore-daemonsets \
-  --pod-selector='course-lab=lecture02' --timeout=3m
-kubectl get pods -o wide
+kubectl get pods -A --field-selector="spec.nodeName=$WORKER" -o wide
+Confirm the worker hosts Deployment Pods before draining it.
+In a second terminal, observe replacement Pods and their nodes:
+kubectl get pods -A -o wide --watch
+Back in the first terminal:
+kubectl drain "$WORKER" --ignore-daemonsets --timeout=3m
+kubectl rollout status deployment/nginx -n default --timeout=3m
+kubectl rollout status deployment/rollout -n default --timeout=3m
+kubectl rollout status deployment/web -n default --timeout=3m
+kubectl get pods -A -o wide
+DaemonSet Pods remain on the drained node. Deployment Pods are replaced on other nodes.
+Only uncordon after the replacements are available; investigate any drain or rollout failure first.
 kubectl uncordon "$WORKER"
 kubectl delete -f 05-rollout.yaml -f daemonset.yaml
 kubectl delete -f 02-web.yaml

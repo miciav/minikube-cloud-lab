@@ -235,6 +235,8 @@ func TestStorageWorkerReconcilesRunningClusterThroughInternalKubeconfig(t *testi
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/apis/storage.k8s.io/v1/storageclasses":
+			_, _ = io.WriteString(w, `{"apiVersion":"storage.k8s.io/v1","kind":"StorageClassList","items":[]}`)
 		case r.Method == http.MethodPost && r.URL.Path == "/apis/storage.k8s.io/v1/storageclasses":
 			w.WriteHeader(http.StatusCreated)
 			_, _ = io.WriteString(w, `{"apiVersion":"storage.k8s.io/v1","kind":"StorageClass","metadata":{"name":"cloud"}}`)
@@ -572,5 +574,28 @@ func TestDirectoryStorageReconfigurationPreservesReservations(t *testing.T) {
 	status, err := s.StorageCapacity()
 	if err != nil || status.Total != "32Mi" || status.Allocated != "32Mi" || status.Available != "0" {
 		t.Fatalf("reservation changed after reconfiguration: %+v %v", status, err)
+	}
+}
+
+func TestSteadyStateStorageReconcileOnlyLists(t *testing.T) {
+	s, _, _ := newService(t)
+	name := "cloud-standard"
+	claim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "data", Namespace: "default", UID: types.UID("22222222-aaaa-bbbb-cccc-123456789abc")}, Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &name, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}}}}
+	client := kfake.NewSimpleClientset(claim)
+	ctx := context.Background()
+	if err := s.ReconcileStorage(ctx, client, "demo", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	client.ClearActions()
+	if err := s.ReconcileStorage(ctx, client, "demo", "172.30.0.253"); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range client.Actions() {
+		if a.GetVerb() != "list" {
+			t.Errorf("steady state issued %s %s", a.GetVerb(), a.GetResource().Resource)
+		}
+	}
+	if n := len(client.Actions()); n > 3 {
+		t.Errorf("steady state issued %d requests, want one list per resource", n)
 	}
 }

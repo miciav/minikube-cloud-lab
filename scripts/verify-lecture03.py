@@ -185,7 +185,7 @@ class Lecture03(base.Verification):
                   self.obj('deployment', 'php-apache', '-n', 'default').get('status', {}).get('availableReplicas', 0) > 1)
         self.snapshot('hpa-loaded', 'hpa', 'php-apache', '-n', 'default')
         self.delete_extra('pod/load-generator')
-        self.wait('HPA back to one replica (300s stabilization)', lambda: self.replicas('php-apache', 1))
+        self.wait('HPA back to one replica (60s stabilization)', lambda: self.replicas('php-apache', 1))
         self.snapshot('hpa-after', 'hpa', 'php-apache', '-n', 'default')
 
     def vpa(self):

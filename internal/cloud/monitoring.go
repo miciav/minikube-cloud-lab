@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	podresource "k8s.io/component-helpers/resource"
 	metricsv1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	metrics "k8s.io/metrics/pkg/client/clientset/versioned"
@@ -59,37 +60,23 @@ type MonitoringSnapshot struct {
 
 // Monitoring reads cluster data without acquiring the infrastructure operation lock.
 func (s *Service) Monitoring(ctx context.Context, cluster string) (MonitoringSnapshot, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	before, err := s.monitoringCluster(cluster)
+	var snap MonitoringSnapshot
+	c, err := s.observeCluster(ctx, cluster, func(ctx context.Context, cfg *rest.Config) error {
+		kube, err := kubernetes.NewForConfig(cfg)
+		if err != nil {
+			return ErrUnavailable
+		}
+		m, err := metrics.NewForConfig(cfg)
+		if err != nil {
+			return ErrUnavailable
+		}
+		snap, err = collectMonitoring(ctx, kube, m, time.Now().UTC())
+		return err
+	})
 	if err != nil {
 		return MonitoringSnapshot{}, err
 	}
-	cfg, err := s.clusterRESTConfig(cluster)
-	if err != nil {
-		return MonitoringSnapshot{}, ErrUnavailable
-	}
-	cfg.Timeout = 5 * time.Second
-	kube, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		return MonitoringSnapshot{}, ErrUnavailable
-	}
-	m, err := metrics.NewForConfig(cfg)
-	if err != nil {
-		return MonitoringSnapshot{}, ErrUnavailable
-	}
-	snap, err := collectMonitoring(ctx, kube, m, time.Now().UTC())
-	if err != nil {
-		return MonitoringSnapshot{}, err
-	}
-	after, err := s.monitoringCluster(cluster)
-	if err != nil {
-		return MonitoringSnapshot{}, err
-	}
-	if !before.CreatedAt.Equal(after.CreatedAt) {
-		return MonitoringSnapshot{}, ErrConflict
-	}
-	snap.ClusterState = after.Status
+	snap.ClusterState = c.Status
 	return snap, nil
 }
 

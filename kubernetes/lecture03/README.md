@@ -119,9 +119,9 @@ il limite di 500m non è il denominatore. Le repliche consentite vanno da
 1 a 10. I valori iniziali `<unknown>` possono precedere la prima raccolta
 delle metriche. Attendere `ScalingActive=True` prima di avviare il carico.
 
-Lo scale-down non è necessariamente immediato: la finestra predefinita di
-stabilizzazione è di 300 secondi. Attendere il ritorno a una replica senza
-modificare manualmente il Deployment o accorciare la finestra.
+Lo scale-down non è necessariamente immediato: il manifest imposta una finestra
+di stabilizzazione di 60 secondi. Attendere il ritorno a una replica senza
+modificare manualmente il Deployment; il tempo effettivo dipende anche dalle metriche.
 Vedere il [funzionamento HPA](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/).
 
 ### CRD
@@ -208,7 +208,7 @@ preesistenti per preparare il test.
 La sequenza segue il deck:
 
 1. **HPA**, due lab-medium: da una a più repliche disponibili e ritorno a una,
-   attendendo la stabilizzazione standard dopo la rimozione del generatore.
+   attendendo la stabilizzazione configurata a 60 secondi dopo la rimozione del generatore.
 2. **VPA**, stessi due lab-medium: raccomandazione Off senza modifiche, poi
    Recreate con due nuovi UID e request CPU maggiori; memoria e limiti invariati.
 3. **Cluster Autoscaler**, lab-small min 1 / max 3: apply dei file locali,

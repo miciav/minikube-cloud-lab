@@ -80,6 +80,7 @@ case ${1:?phase required} in
       if cloud volumes list | grep -F "$volume" | grep -q Available; then break; fi
       sleep 2
     done
+    cloud volumes list | grep -F "$volume" | grep -q Available || { echo "Timeout: retained volume $volume never became Available" >&2; exit 1; }
     kubectl delete pv "$volume" --ignore-not-found
     cloud volumes delete "$volume"
     cloud clusters delete storage-recovery
