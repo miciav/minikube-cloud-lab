@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -300,18 +301,7 @@ func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, err
 	}
 	cc := p.Config
 	index := 2
-	for {
-		candidate := fmt.Sprintf("m%02d", index)
-		found := false
-		for _, existing := range cc.Nodes {
-			if existing.Name == candidate {
-				found = true
-				break
-			}
-		}
-		if !found {
-			break
-		}
+	for slices.ContainsFunc(cc.Nodes, func(x config.Node) bool { return x.Name == fmt.Sprintf("m%02d", index) }) {
 		index++
 	}
 	n := config.Node{Name: fmt.Sprintf("m%02d", index), KubernetesVersion: cc.KubernetesConfig.KubernetesVersion, ContainerRuntime: cc.KubernetesConfig.ContainerRuntime, Worker: true}
@@ -321,7 +311,7 @@ func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, err
 	}
 	partial := infra.Machine{Name: config.MachineName(*cc, n)}
 	if err != nil {
-		return partial, err
+		return partial, errors.Join(err, forgetUnprovisioned(m, name, n.Name, partial.Name))
 	}
 	if runtime.GOOS == "linux" {
 		if err := setMachineResources(ctx, partial.Name, infra.MachineShape{CPUs: cc.CPUs, MemoryMiB: cc.Memory}); err != nil {
@@ -332,7 +322,31 @@ func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, err
 		return partial, err
 	}
 
-	return infra.Machine{Name: config.MachineName(*cc, n), Running: true}, nil
+	return infra.Machine{Name: partial.Name, Running: true}, nil
+}
+
+// forgetUnprovisioned drops a worker saved before its container existed, so later
+// additions reuse its name instead of accumulating profile entries.
+func forgetUnprovisioned(api libmachine.API, cluster, node, machineName string) error {
+	exists, err := oci.ContainerExists("docker", machineName)
+	if err != nil || exists {
+		return err
+	}
+	if api != nil {
+		if known, err := api.Exists(machineName); err != nil {
+			return err
+		} else if known {
+			if err := api.Remove(machineName); err != nil {
+				return err
+			}
+		}
+	}
+	p, err := config.LoadProfile(cluster)
+	if err != nil {
+		return err
+	}
+	p.Config.Nodes = slices.DeleteFunc(p.Config.Nodes, func(x config.Node) bool { return x.Name == node })
+	return config.SaveProfile(cluster, p.Config)
 }
 
 // DeleteMachine drains and removes a worker.
