@@ -251,28 +251,28 @@ func (s *Service) finishUnpublish(v Volume) error {
 	return s.replaceVolume(v, next)
 }
 
-func (s *Service) reconcileStatic(ctx context.Context, client kubernetes.Interface, cluster string, claims []corev1.PersistentVolumeClaim) error {
+func (s *Service) reconcileStatic(ctx context.Context, client kubernetes.Interface, cluster string, claims []corev1.PersistentVolumeClaim, pvs map[string]*corev1.PersistentVolume) error {
 	var result error
 	for _, v := range s.Volumes() {
 		if v.Static && v.Cluster == cluster {
-			result = errors.Join(result, s.reconcileStaticVolume(ctx, client, v, claims))
+			result = errors.Join(result, s.reconcileStaticVolume(ctx, client, v, claims, pvs[v.ID]))
 		}
 	}
 	return result
 }
 
-func (s *Service) reconcileStaticVolume(ctx context.Context, client kubernetes.Interface, v Volume, claims []corev1.PersistentVolumeClaim) error {
+// pv is the listed PV for v, or nil when this pass did not observe one.
+func (s *Service) reconcileStaticVolume(ctx context.Context, client kubernetes.Interface, v Volume, claims []corev1.PersistentVolumeClaim, pv *corev1.PersistentVolume) error {
 	if v.Status == "Publishing" {
 		return s.syncPublication(ctx, client, v.ID)
 	}
 	if v.Status == "Unpublishing" {
 		return s.unpublishVolume(ctx, client, v.ID)
 	}
-	pv, err := client.CoreV1().PersistentVolumes().Get(ctx, v.ID, metav1.GetOptions{})
-	if err != nil {
-		return err
+	if pv == nil {
+		return fmt.Errorf("%w: static persistent volume %s not observed; unpublish it to return it to the pool", ErrFailedPrecondition, v.ID)
 	}
-	if err = s.checkStaticPV(v, pv); err != nil {
+	if err := s.checkStaticPV(v, pv); err != nil {
 		return err
 	}
 	next := v

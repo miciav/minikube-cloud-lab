@@ -32,58 +32,65 @@ func (s *Service) ReconcileStorage(ctx context.Context, client kubernetes.Interf
 	if err != nil {
 		return err
 	}
-	provisionErr := s.provisionClaims(ctx, client, cluster, server, claims.Items)
-	return errors.Join(provisionErr, s.releaseClaims(ctx, client, cluster, server, claims.Items), s.reconcileStatic(ctx, client, cluster, claims.Items))
+	list, err := client.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	pvs := make(map[string]*corev1.PersistentVolume, len(list.Items))
+	for i := range list.Items {
+		pvs[list.Items[i].Name] = &list.Items[i]
+	}
+	provisionErr := s.provisionClaims(ctx, client, cluster, server, claims.Items, pvs)
+	return errors.Join(provisionErr, s.releaseClaims(ctx, client, cluster, server, claims.Items), s.reconcileStatic(ctx, client, cluster, claims.Items, pvs))
 }
+
+const (
+	nfsProvisioner    = "cloud.minikube.local/nfs"
+	staticProvisioner = "kubernetes.io/no-provisioner"
+)
 
 func ensureStorageClasses(ctx context.Context, client kubernetes.Interface) error {
-	for _, item := range []struct {
-		name   string
-		policy corev1.PersistentVolumeReclaimPolicy
-	}{{"cloud-standard", corev1.PersistentVolumeReclaimDelete}, {"cloud-retain", corev1.PersistentVolumeReclaimRetain}} {
-		annotations := map[string]string{}
-		if item.name == "cloud-standard" {
-			annotations["storageclass.kubernetes.io/is-default-class"] = "true"
-		}
-		sc := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: item.name, Annotations: annotations}, Provisioner: "cloud.minikube.local/nfs", ReclaimPolicy: &item.policy}
-		_, err := client.StorageV1().StorageClasses().Create(ctx, sc, metav1.CreateOptions{})
-		if err != nil {
-			if !apierrors.IsAlreadyExists(err) {
+	list, err := client.StorageV1().StorageClasses().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	existing := map[string]storagev1.StorageClass{}
+	for _, sc := range list.Items {
+		existing[sc.Name] = sc
+	}
+	for _, want := range []struct {
+		name, provisioner string
+		policy            corev1.PersistentVolumeReclaimPolicy
+	}{{"cloud-standard", nfsProvisioner, corev1.PersistentVolumeReclaimDelete}, {"cloud-retain", nfsProvisioner, corev1.PersistentVolumeReclaimRetain}, {"cloud-static", staticProvisioner, corev1.PersistentVolumeReclaimRetain}} {
+		current, ok := existing[want.name]
+		if !ok {
+			sc := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: want.name}, Provisioner: want.provisioner, ReclaimPolicy: &want.policy}
+			if want.name == "cloud-standard" {
+				sc.Annotations = map[string]string{"storageclass.kubernetes.io/is-default-class": "true"}
+			}
+			// A concurrent creation is verified on the next pass.
+			if _, err := client.StorageV1().StorageClasses().Create(ctx, sc, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
 				return err
 			}
-			current, err := client.StorageV1().StorageClasses().Get(ctx, item.name, metav1.GetOptions{})
-			if err != nil {
-				return err
-			}
-			if current.Provisioner != sc.Provisioner || current.ReclaimPolicy == nil || *current.ReclaimPolicy != item.policy {
-				return fmt.Errorf("%w: storage class %s is not owned by cloud", ErrConflict, item.name)
-			}
+			continue
+		}
+		policyDiffers := current.ReclaimPolicy == nil || *current.ReclaimPolicy != want.policy
+		if current.Provisioner != want.provisioner || want.provisioner == nfsProvisioner && policyDiffers {
+			return fmt.Errorf("%w: storage class %s is not owned by cloud", ErrConflict, want.name)
 		}
 	}
-	policy := corev1.PersistentVolumeReclaimRetain
-	_, err := client.StorageV1().StorageClasses().Create(ctx, &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: "cloud-static"}, Provisioner: "kubernetes.io/no-provisioner", ReclaimPolicy: &policy}, metav1.CreateOptions{})
-	if apierrors.IsAlreadyExists(err) {
-		sc, e := client.StorageV1().StorageClasses().Get(ctx, "cloud-static", metav1.GetOptions{})
-		if e != nil {
-			return e
-		}
-		if sc.Provisioner != "kubernetes.io/no-provisioner" {
-			return ErrConflict
-		}
-		return nil
-	}
-	return err
+	return nil
 }
 
-func (s *Service) provisionClaims(ctx context.Context, client kubernetes.Interface, cluster, server string, claims []corev1.PersistentVolumeClaim) error {
+func (s *Service) provisionClaims(ctx context.Context, client kubernetes.Interface, cluster, server string, claims []corev1.PersistentVolumeClaim, pvs map[string]*corev1.PersistentVolume) error {
 	var result error
 	for i := range claims {
-		result = errors.Join(result, s.provisionClaim(ctx, client, cluster, server, &claims[i]))
+		result = errors.Join(result, s.provisionClaim(ctx, client, cluster, server, &claims[i], pvs))
 	}
 	return result
 }
 
-func (s *Service) provisionClaim(ctx context.Context, client kubernetes.Interface, cluster, server string, claim *corev1.PersistentVolumeClaim) error {
+func (s *Service) provisionClaim(ctx context.Context, client kubernetes.Interface, cluster, server string, claim *corev1.PersistentVolumeClaim, pvs map[string]*corev1.PersistentVolume) error {
 	if claim.Spec.StorageClassName == nil || claim.DeletionTimestamp != nil {
 		return nil
 	}
@@ -129,9 +136,11 @@ func (s *Service) provisionClaim(ctx context.Context, client kubernetes.Interfac
 		if err := s.AttachVolume(volume.ID, cluster, claim.Namespace+"/"+claim.Name, string(claim.UID)); err != nil {
 			return err
 		}
-		size = capacity
 	}
-	size = resource.MustParse(volume.Capacity)
+	size, err := resource.ParseQuantity(volume.Capacity)
+	if err != nil {
+		return fmt.Errorf("%w: invalid stored volume capacity", ErrFailedPrecondition)
+	}
 	reclaim := corev1.PersistentVolumeReclaimPolicy(volume.Policy)
 	pv := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: volume.ID}, Spec: corev1.PersistentVolumeSpec{
 		Capacity: corev1.ResourceList{corev1.ResourceStorage: size}, AccessModes: claim.Spec.AccessModes, PersistentVolumeReclaimPolicy: reclaim,
@@ -140,24 +149,29 @@ func (s *Service) provisionClaim(ctx context.Context, client kubernetes.Interfac
 		MountOptions:           []string{nfsMountVersion},
 	}}
 	setDirectoryPV(pv, volume)
-	return ensurePersistentVolume(ctx, client, pv)
+	if volume.Status == "Available" {
+		// removeReleasedPV deleted the listed PV; it must not be mistaken for the new binding.
+		delete(pvs, volume.ID)
+	}
+	return ensurePersistentVolume(ctx, client, pv, pvs[pv.Name])
 }
 
-func ensurePersistentVolume(ctx context.Context, client kubernetes.Interface, pv *corev1.PersistentVolume) error {
-	if _, err := client.CoreV1().PersistentVolumes().Create(ctx, pv, metav1.CreateOptions{}); err != nil {
+// existing is the PV observed in this pass, or nil when the list did not contain it.
+func ensurePersistentVolume(ctx context.Context, client kubernetes.Interface, pv, existing *corev1.PersistentVolume) error {
+	if existing == nil {
+		_, err := client.CoreV1().PersistentVolumes().Create(ctx, pv, metav1.CreateOptions{})
 		if !apierrors.IsAlreadyExists(err) {
 			return err
 		}
-		existing, err := client.CoreV1().PersistentVolumes().Get(ctx, pv.Name, metav1.GetOptions{})
-		if err != nil {
+		if existing, err = client.CoreV1().PersistentVolumes().Get(ctx, pv.Name, metav1.GetOptions{}); err != nil {
 			return err
 		}
-		if !reflect.DeepEqual(existing.Spec.PersistentVolumeSource, pv.Spec.PersistentVolumeSource) || existing.Spec.ClaimRef == nil {
-			return fmt.Errorf("%w: persistent volume %s is not owned by cloud", ErrConflict, pv.Name)
-		}
-		if existing.Spec.ClaimRef.UID != pv.Spec.ClaimRef.UID {
-			return fmt.Errorf("%w: volume is still bound", ErrConflict)
-		}
+	}
+	if !reflect.DeepEqual(existing.Spec.PersistentVolumeSource, pv.Spec.PersistentVolumeSource) || existing.Spec.ClaimRef == nil {
+		return fmt.Errorf("%w: persistent volume %s is not owned by cloud", ErrConflict, pv.Name)
+	}
+	if existing.Spec.ClaimRef.UID != pv.Spec.ClaimRef.UID {
+		return fmt.Errorf("%w: volume is still bound", ErrConflict)
 	}
 	return nil
 }
