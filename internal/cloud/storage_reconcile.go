@@ -111,29 +111,9 @@ func (s *Service) provisionClaim(ctx context.Context, client kubernetes.Interfac
 			return err
 		}
 	} else {
-		for _, candidate := range s.Volumes() {
-			if candidate.ID == claim.Spec.VolumeName {
-				volume = candidate
-				break
-			}
-		}
-		if volume.ID == "" {
-			return nil
-		}
-		capacity, err := resource.ParseQuantity(volume.Capacity)
-		if err != nil || capacity.Cmp(size) < 0 || volume.Policy != policy {
-			return fmt.Errorf("%w: incompatible retained volume", ErrInvalid)
-		}
-		if volume.Status == "Available" {
-			pending, err := removeReleasedPV(ctx, client, server, volume)
-			if err != nil {
-				return err
-			}
-			if pending {
-				return nil
-			}
-		}
-		if err := s.AttachVolume(volume.ID, cluster, claim.Namespace+"/"+claim.Name, string(claim.UID)); err != nil {
+		var ready bool
+		var err error
+		if volume, ready, err = s.attachRetainedVolume(ctx, client, cluster, server, claim, size, policy); err != nil || !ready {
 			return err
 		}
 	}
@@ -154,6 +134,32 @@ func (s *Service) provisionClaim(ctx context.Context, client kubernetes.Interfac
 		delete(pvs, volume.ID)
 	}
 	return ensurePersistentVolume(ctx, client, pv, pvs[pv.Name])
+}
+
+// attachRetainedVolume binds a claim that names an existing cloud volume; ready is
+// false when there is nothing to bind yet.
+func (s *Service) attachRetainedVolume(ctx context.Context, client kubernetes.Interface, cluster, server string, claim *corev1.PersistentVolumeClaim, size resource.Quantity, policy string) (Volume, bool, error) {
+	var volume Volume
+	for _, candidate := range s.Volumes() {
+		if candidate.ID == claim.Spec.VolumeName {
+			volume = candidate
+			break
+		}
+	}
+	if volume.ID == "" {
+		return volume, false, nil
+	}
+	capacity, err := resource.ParseQuantity(volume.Capacity)
+	if err != nil || capacity.Cmp(size) < 0 || volume.Policy != policy {
+		return volume, false, fmt.Errorf("%w: incompatible retained volume", ErrInvalid)
+	}
+	if volume.Status == "Available" {
+		pending, err := removeReleasedPV(ctx, client, server, volume)
+		if err != nil || pending {
+			return volume, false, err
+		}
+	}
+	return volume, true, s.AttachVolume(volume.ID, cluster, claim.Namespace+"/"+claim.Name, string(claim.UID))
 }
 
 // existing is the PV observed in this pass, or nil when the list did not contain it.
