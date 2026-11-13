@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
 
 	"github.com/docker/docker/api/types/container"
@@ -76,11 +77,17 @@ func (m *Manager) Ensure(ctx context.Context, cluster string, svc *corev1.Servic
 	}
 	payload, _ := json.Marshal(forwards)
 	digest := forwardHash(svc.Spec.Type, forwards)
-	existing, err := m.owned(ctx, cluster, svc.UID)
+	relays, err := m.relays(ctx)
 	if err != nil {
 		return Status{}, err
 	}
-	for _, c := range existing {
+	// Stopped relays leave the network view but keep their static address.
+	reserved := map[string]bool{}
+	for _, c := range relays {
+		if c.Labels[clusterLabel] != cluster || c.Labels[uidLabel] != string(svc.UID) {
+			reserved[c.Labels[ipLabel]] = true
+			continue
+		}
 		if c.Labels[hashLabel] == digest {
 			return m.observe(ctx, c.ID, svc)
 		}
@@ -89,7 +96,7 @@ func (m *Manager) Ensure(ctx context.Context, cluster string, svc *corev1.Servic
 		}
 		delete(n.Containers, c.ID)
 	}
-	ip, err := freeRelayIP(n, prefix)
+	ip, err := freeRelayIP(n, prefix, reserved)
 	if err != nil {
 		return Status{}, err
 	}
@@ -165,8 +172,13 @@ func relayPrefix(n network.Inspect, target string) (netip.Prefix, error) {
 	return netip.PrefixFrom(netip.AddrFrom4(base), 24), nil
 }
 
-func freeRelayIP(n network.Inspect, p netip.Prefix) (netip.Addr, error) {
+func freeRelayIP(n network.Inspect, p netip.Prefix, reserved map[string]bool) (netip.Addr, error) {
 	used := map[netip.Addr]bool{}
+	for ip := range reserved {
+		if addr, err := netip.ParseAddr(ip); err == nil {
+			used[addr] = true
+		}
+	}
 	for _, endpoint := range n.Containers {
 		if endpoint.IPv4Address == "" {
 			continue
@@ -235,25 +247,26 @@ func (m *Manager) observe(ctx context.Context, id string, svc *corev1.Service) (
 	return status, nil
 }
 
+// relays lists every relay on the managed network, including stopped ones.
+func (m *Manager) relays(ctx context.Context) ([]container.Summary, error) {
+	if m.network == "" {
+		return nil, fmt.Errorf("network ownership is required")
+	}
+	args := filters.NewArgs(filters.Arg("label", networkLabel+"="+m.network), filters.Arg("label", ownerLabel+"=true"))
+	return m.client.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
+}
+
 func (m *Manager) owned(ctx context.Context, cluster string, uid types.UID) ([]container.Summary, error) {
-	if cluster == "" || m.network == "" {
-		return nil, fmt.Errorf("cluster and network ownership are required")
+	if cluster == "" {
+		return nil, fmt.Errorf("cluster ownership is required")
 	}
-	args := filters.NewArgs(filters.Arg("label", networkLabel+"="+m.network), filters.Arg("label", ownerLabel+"=true"), filters.Arg("label", clusterLabel+"="+cluster))
-	if uid != "" {
-		args.Add("label", uidLabel+"="+string(uid))
-	}
-	rows, err := m.client.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
+	rows, err := m.relays(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]container.Summary, 0, len(rows))
-	for _, c := range rows {
-		if c.Labels[networkLabel] == m.network && c.Labels[ownerLabel] == "true" && c.Labels[clusterLabel] == cluster && (uid == "" || c.Labels[uidLabel] == string(uid)) {
-			result = append(result, c)
-		}
-	}
-	return result, nil
+	return slices.DeleteFunc(rows, func(c container.Summary) bool {
+		return c.Labels[clusterLabel] != cluster || uid != "" && c.Labels[uidLabel] != string(uid)
+	}), nil
 }
 
 func (m *Manager) remove(ctx context.Context, id string) error {
@@ -282,6 +295,10 @@ func (m *Manager) Prune(ctx context.Context, cluster string, keep []types.UID) e
 	if err != nil {
 		return err
 	}
+	return m.prune(ctx, rows, keep)
+}
+
+func (m *Manager) prune(ctx context.Context, rows []container.Summary, keep []types.UID) error {
 	retained := make(map[string]bool, len(keep))
 	for _, uid := range keep {
 		retained[string(uid)] = true

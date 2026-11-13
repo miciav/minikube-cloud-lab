@@ -70,8 +70,9 @@ func (f *dockerFixture) serve(w http.ResponseWriter, r *http.Request) {
 		for id, v := range f.network.Containers {
 			n.Containers[id] = v
 		}
+		// Docker reports only connected endpoints; a stopped relay keeps its static IP only in labels.
 		for id, v := range f.objects {
-			if v.ip != "" {
+			if v.ip != "" && v.running {
 				n.Containers[id] = network.EndpointResource{IPv4Address: v.ip + "/23"}
 			}
 		}
