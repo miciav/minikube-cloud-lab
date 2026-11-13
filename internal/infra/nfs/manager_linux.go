@@ -93,7 +93,7 @@ func (m *manager) Ensure(ctx context.Context, id string, size int64) error {
 		return err
 	}
 	if !volumeID.MatchString(id) || size < 16<<20 || size > 1<<40 || size%(1<<20) != 0 {
-		return fmt.Errorf("invalid volume identifier or capacity")
+		return fmt.Errorf("%w: identifier or capacity", errInvalid)
 	}
 	if m.legacy {
 		return fmt.Errorf("legacy storage requires an explicit offline migration before new allocations")
@@ -200,7 +200,7 @@ func (m *manager) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if !volumeID.MatchString(id) {
-		return fmt.Errorf("invalid volume identifier")
+		return fmt.Errorf("%w: identifier", errInvalid)
 	}
 	v := m.volumes[id]
 	if v == nil {
@@ -431,14 +431,14 @@ func Run(ctx context.Context, root string) error {
 			return
 		}
 		if err := m.Ensure(r.Context(), r.PathValue("id"), req.Bytes); err != nil {
-			http.Error(w, err.Error(), http.StatusConflict)
+			http.Error(w, err.Error(), statusFor(err))
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("DELETE /volumes/{id}", func(w http.ResponseWriter, r *http.Request) {
 		if err := m.Delete(r.Context(), r.PathValue("id")); err != nil {
-			http.Error(w, err.Error(), http.StatusConflict)
+			http.Error(w, err.Error(), statusFor(err))
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

@@ -1,11 +1,23 @@
 package nfs
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"sort"
 	"strings"
 )
+
+// errInvalid marks requests a retry cannot fix; other failures may be transient.
+var errInvalid = errors.New("invalid volume request")
+
+func statusFor(err error) int {
+	if errors.Is(err, errInvalid) {
+		return http.StatusBadRequest
+	}
+	return http.StatusConflict
+}
 
 var volumeID = regexp.MustCompile(`^pvc-[a-z0-9]([a-z0-9-]{0,57}[a-z0-9])?$`)
 
