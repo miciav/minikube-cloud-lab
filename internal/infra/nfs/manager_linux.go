@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/miciav/minikube-cloud-lab/internal/atomicfile"
 )
 
 type image struct {
@@ -181,16 +183,16 @@ func (m *manager) createImage(id string, size int64, n int) error {
 		return err
 	}
 	m.volumes[id] = &image{name: name, export: n, size: size}
-	d, err = m.root.Open(".")
+	return m.syncImages()
+}
+
+// syncImages makes image creation, renaming and removal durable.
+func (m *manager) syncImages() error {
+	d, err := m.root.Open(".")
 	if err != nil {
 		return err
 	}
-	err = d.Sync()
-	_ = d.Close()
-	if err != nil {
-		return err
-	}
-	return nil
+	return errors.Join(d.Sync(), d.Close())
 }
 
 func (m *manager) Delete(ctx context.Context, id string) error {
@@ -218,12 +220,7 @@ func (m *manager) Delete(ctx context.Context, id string) error {
 		if err := m.root.Remove(temp); err != nil {
 			return err
 		}
-		d, err := m.root.Open(".")
-		if err != nil {
-			return err
-		}
-		defer func() { _ = d.Close() }()
-		return d.Sync()
+		return m.syncImages()
 	}
 
 	v.deleting = true
@@ -241,13 +238,7 @@ func (m *manager) Delete(ctx context.Context, id string) error {
 	if err := os.Remove(filepath.Join(m.mounts, id)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	d, err := m.root.Open(".")
-	if err != nil {
-		return err
-	}
-	err = d.Sync()
-	_ = d.Close()
-	if err != nil {
+	if err := m.syncImages(); err != nil {
 		return err
 	}
 	delete(m.volumes, id)
@@ -332,23 +323,7 @@ func (m *manager) reload() error {
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(m.config), ".exports-")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(f.Name()) }()
-	_, err = f.WriteString(config)
-	if err == nil {
-		err = f.Sync()
-	}
-	ce := f.Close()
-	if err != nil {
-		return err
-	}
-	if ce != nil {
-		return ce
-	}
-	if err = os.Rename(f.Name(), m.config); err != nil {
+	if err = atomicfile.Write(m.config, []byte(config)); err != nil {
 		return err
 	}
 	pid, err := os.ReadFile("/run/ganesha/ganesha.pid")

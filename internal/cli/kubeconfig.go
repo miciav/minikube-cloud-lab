@@ -7,6 +7,8 @@ import (
 
 	"k8s.io/client-go/tools/clientcmd"
 	clientapi "k8s.io/client-go/tools/clientcmd/api"
+
+	"github.com/miciav/minikube-cloud-lab/internal/atomicfile"
 )
 
 func mergeCredentials(path, name string, data []byte) error {
@@ -36,21 +38,5 @@ func mergeCredentials(path, name string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(target), ".kubeconfig-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(f.Name()) }()
-	if _, err := f.Write(merged); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), target)
+	return atomicfile.Write(target, merged)
 }

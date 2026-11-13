@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"time"
+
+	"github.com/miciav/minikube-cloud-lab/internal/atomicfile"
 )
 
 // ClusterStatus describes the cluster lifecycle.
@@ -123,30 +124,5 @@ func save(dir string, st snapshot) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(dir, ".state-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(f.Name()) }()
-	if _, err = f.Write(data); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(f.Name(), filepath.Join(dir, "state.json")); err != nil {
-		return err
-	}
-	// #nosec G304 -- dir is the operator-selected cloud state directory.
-	directory, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	syncErr := directory.Sync()
-	return errors.Join(syncErr, directory.Close())
+	return atomicfile.Write(filepath.Join(dir, "state.json"), data)
 }

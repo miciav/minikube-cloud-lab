@@ -28,6 +28,7 @@ non richiedere host networking o binari cloud/lab nativi agli studenti.
 | `internal/infra/minikube` | Libreria minikube, home isolata, quote Docker Linux |
 | `internal/infra/fake` | Backend per test del servizio |
 | `internal/labcmd` | Applicazione manifest via API Kubernetes |
+| `internal/atomicfile` | Sostituzione durevole di file (stato, kubeconfig, export NFS) |
 | `lab/manifests` | YAML visibili, incorporati nel binario lab |
 | `proto` | Protocollo externalgrpc e bindings generati |
 | `tools/vulncheck` | Gate JSON govulncheck con triage ID/modulo/versione |
