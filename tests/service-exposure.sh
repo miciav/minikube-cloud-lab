@@ -13,6 +13,20 @@ relay_ids() {
         --filter "label=minikube-cloud-lab.cluster=$TEST_CLUSTER" \
         --filter "label=minikube-cloud-lab.network=$TEST_NETWORK"
 }
+# wait_for DESCRIPTION PREDICATE: retry for two minutes, then fail naming what never happened.
+wait_for() {
+    local what=$1 predicate=$2
+    for _ in {1..60}; do
+        if "$predicate"; then return 0; fi
+        sleep 2
+    done
+    echo "Timeout: $what" >&2
+    return 1
+}
+old_relay_gone() { [[ -z $(docker ps -aq --filter "label=minikube-cloud-lab.service-uid=$old_uid" --filter "label=minikube-cloud-lab.network=$TEST_NETWORK") ]]; }
+lb_two_rebound() { kubectl -n yakd-dashboard get service mcl-test-lb-two -o json | jq -e '.metadata.annotations["minikube-cloud-lab.io/host-endpoints"] | fromjson | .[0].hostPort == 30081' > /dev/null; }
+conflict_reported() { kubectl -n yakd-dashboard get service mcl-test-conflict -o json | jq -e '.metadata.annotations | .["minikube-cloud-lab.io/exposure-error"] != null and .["minikube-cloud-lab.io/host-endpoints"] == null' > /dev/null; }
+one_relay_left() { [[ $(relay_ids | wc -l | tr -d ' ') == 1 ]]; }
 wait_endpoint() {
     local name=$1
     for _ in {1..90}; do
@@ -81,36 +95,26 @@ PY
     mutate-cleanup)
         old_uid=$(kubectl -n yakd-dashboard get service mcl-test-node -o jsonpath='{.metadata.uid}')
         kubectl -n yakd-dashboard delete service mcl-test-node
-        for _ in {1..60}; do
-            if [[ -z $(docker ps -aq --filter "label=minikube-cloud-lab.service-uid=$old_uid" --filter "label=minikube-cloud-lab.network=$TEST_NETWORK") ]]; then break; fi
-            sleep 2
-        done
+        wait_for "relay of deleted NodePort Service removed" old_relay_gone
         kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=mcl-test-node --type=NodePort --port=80 --target-port=8080
         kubectl -n yakd-dashboard patch service mcl-test-node --type=json -p='[{"op":"replace","path":"/spec/ports/0/nodePort","value":30080}]'
         check_http mcl-test-node
         test "$(kubectl -n yakd-dashboard get service mcl-test-node -o jsonpath='{.metadata.uid}')" != "$old_uid"
         kubectl -n yakd-dashboard patch service mcl-test-lb-two --type=merge -p='{"spec":{"type":"NodePort","ports":[{"name":"http","port":8081,"targetPort":8080,"nodePort":30081,"protocol":"TCP"}]}}'
-        for _ in {1..60}; do
-            if kubectl -n yakd-dashboard get service mcl-test-lb-two -o json | jq -e '.metadata.annotations["minikube-cloud-lab.io/host-endpoints"] | fromjson | .[0].hostPort == 30081' > /dev/null; then break; fi
-            sleep 2
-        done
+        wait_for "LoadBalancer converted to NodePort 30081" lb_two_rebound
         curl --retry 10 --retry-connrefused --max-time 15 -fsS http://127.0.0.1:30081 | grep -i '<html' > /dev/null
         image=$(docker inspect "$TEST_CLOUD_CONTAINER" --format '{{.Image}}')
         blocker=$(docker run -d --entrypoint cloud -p 127.0.0.1:30090:30090 "$image" service-proxy --config-json '[{"listenPort":30090,"target":"127.0.0.1:1"}]')
         trap 'docker rm -f "$blocker" > /dev/null' EXIT
         kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=mcl-test-conflict --type=NodePort --port=80 --target-port=8080
         kubectl -n yakd-dashboard patch service mcl-test-conflict --type=json -p='[{"op":"replace","path":"/spec/ports/0/nodePort","value":30090}]'
-        for _ in {1..60}; do
-            if kubectl -n yakd-dashboard get service mcl-test-conflict -o json | jq -e '.metadata.annotations | .["minikube-cloud-lab.io/exposure-error"] != null and .["minikube-cloud-lab.io/host-endpoints"] == null' > /dev/null; then break; fi
-            sleep 2
-        done
+        wait_for "occupied NodePort reported as exposure error" conflict_reported
         kubectl -n yakd-dashboard get service mcl-test-conflict -o json | jq -e '.metadata.annotations["minikube-cloud-lab.io/exposure-error"] | test("port|bind";"i")'
         docker rm -f "$blocker" > /dev/null
         trap - EXIT
         check_http mcl-test-conflict
         kubectl -n yakd-dashboard delete service "${services[@]}" mcl-test-conflict
-        for _ in {1..60}; do if [[ $(relay_ids | wc -l | tr -d ' ') == 1 ]]; then break; fi; sleep 2; done
-        test "$(relay_ids | wc -l | tr -d ' ')" = 1
+        wait_for "only the YAKD relay left" one_relay_left
         echo 'UID replacement, port/type changes, occupied NodePort recovery and Service cleanup PASS'
         ;;
     deleted)
