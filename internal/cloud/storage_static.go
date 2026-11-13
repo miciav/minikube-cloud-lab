@@ -193,7 +193,8 @@ func (s *Service) unpublishVolume(ctx context.Context, client kubernetes.Interfa
 	}
 	pv, err := client.CoreV1().PersistentVolumes().Get(ctx, id, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		if v.Status != "Unpublishing" {
+		// pv-protection keeps a PV while a claim is bound, so only a Bound record is unsafe.
+		if v.Status == "Bound" {
 			return fmt.Errorf("%w: missing PV does not prove safe detachment", ErrFailedPrecondition)
 		}
 		return s.finishUnpublish(v)

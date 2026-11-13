@@ -113,3 +113,32 @@ func TestPublicationFailsFastWhileInfrastructureIsBusy(t *testing.T) {
 		t.Fatalf("busy publish changed state: %+v", got)
 	}
 }
+
+func TestUnpublishRecoversManuallyDeletedUnboundPV(t *testing.T) {
+	s, v := staticService(t)
+	client := staticClient()
+	ctx := context.Background()
+	if err := s.reservePublication(v.ID, "demo", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.syncPublication(ctx, client, v.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.CoreV1().PersistentVolumes().Delete(ctx, v.ID, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	bound, _ := s.volume(v.ID)
+	bound.Status = "Bound"
+	s.state.Volumes[0] = bound
+	if err := s.unpublishVolume(ctx, client, v.ID); !errors.Is(err, ErrFailedPrecondition) {
+		t.Fatalf("missing PV of a bound claim accepted: %v", err)
+	}
+	bound.Status = "Published"
+	s.state.Volumes[0] = bound
+	if err := s.unpublishVolume(ctx, client, v.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.volume(v.ID); got.Status != "Available" || got.Static {
+		t.Fatalf("volume not returned to the pool: %+v", got)
+	}
+}
