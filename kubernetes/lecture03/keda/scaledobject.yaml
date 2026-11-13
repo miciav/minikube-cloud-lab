@@ -17,6 +17,6 @@ spec:
     - type: cron
       metadata:
         timezone: Etc/UTC
-        start: "29 12 * * *"
-        end: "31 12 * * *"
+        start: "28 11 * * *"
+        end: "30 11 * * *"
         desiredReplicas: "2"

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -93,5 +94,22 @@ func TestStartupDefersBackendDeletionsUntilStorageIsConfigured(t *testing.T) {
 	}
 	if logs.Len() != 0 {
 		t.Fatalf("spurious startup error: %s", logs.String())
+	}
+}
+
+func TestPublicationFailsFastWhileInfrastructureIsBusy(t *testing.T) {
+	s, v := staticService(t)
+	s.workMu.Lock()
+	defer s.workMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := s.PublishVolume(ctx, v.ID, "demo"); !errors.Is(err, ErrFailedPrecondition) {
+		t.Fatalf("publish waited for infrastructure work: %v", err)
+	}
+	if err := s.UnpublishVolume(ctx, v.ID); !errors.Is(err, ErrFailedPrecondition) {
+		t.Fatalf("unpublish waited for infrastructure work: %v", err)
+	}
+	if got, _ := s.volume(v.ID); got.Status != "Available" {
+		t.Fatalf("busy publish changed state: %+v", got)
 	}
 }

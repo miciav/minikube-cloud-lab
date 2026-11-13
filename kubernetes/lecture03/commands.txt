@@ -52,7 +52,7 @@ kubectl -n default describe hpa php-apache
 kubectl -n default get pods
 kubectl -n default get hpa php-apache --watch
 # Checkpoint: repliche tornate a 1. Registrare il tempo effettivo, poi Ctrl+C.
-# Attendere diversi minuti: la stabilizzazione predefinita è di 300 secondi.
+# La finestra di stabilizzazione è di 60 secondi; il tempo effettivo dipende anche dalle metriche.
 kubectl -n default delete -f hpa.yml -f php-apache.yml
 kubectl -n default wait --for=delete pod -l run=php-apache --timeout=120s
 kubectl -n default get pods,deployments,services,hpa

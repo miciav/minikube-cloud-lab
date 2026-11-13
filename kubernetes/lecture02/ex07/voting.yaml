@@ -184,7 +184,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: voting
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: vote
   ports:
@@ -238,7 +238,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: voting
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: result
   ports:

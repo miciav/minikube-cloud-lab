@@ -48,7 +48,9 @@ func (s *Service) PublishVolume(ctx context.Context, id, cluster string) error {
 
 // PublishVolumeIfUnchanged checks the selected cluster generation before reserving the volume.
 func (s *Service) PublishVolumeIfUnchanged(ctx context.Context, id, cluster string, expected *time.Time) error {
-	s.workMu.Lock()
+	if err := s.lockWork(ctx); err != nil {
+		return err
+	}
 	defer s.workMu.Unlock()
 	if err := s.reservePublication(id, cluster, expected); err != nil {
 		return err
@@ -58,6 +60,22 @@ func (s *Service) PublishVolumeIfUnchanged(ctx context.Context, id, cluster stri
 		return err
 	}
 	return s.syncPublication(ctx, client, id)
+}
+
+// lockWork waits briefly for a storage tick, but not for a long cluster or machine operation.
+func (s *Service) lockWork(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for !s.workMu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: an infrastructure operation is running; retry later", ErrFailedPrecondition)
+		case <-ticker.C:
+		}
+	}
+	return nil
 }
 
 func (s *Service) reservePublication(id, cluster string, expected *time.Time) error {
@@ -141,7 +159,9 @@ func (s *Service) checkStaticPV(v Volume, pv *corev1.PersistentVolume) error {
 
 // UnpublishVolume removes only an unused owned PV and preserves the cloud data.
 func (s *Service) UnpublishVolume(ctx context.Context, id string) error {
-	s.workMu.Lock()
+	if err := s.lockWork(ctx); err != nil {
+		return err
+	}
 	defer s.workMu.Unlock()
 	v, err := s.volume(id)
 	if err != nil {

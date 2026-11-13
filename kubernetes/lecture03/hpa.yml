@@ -4,6 +4,9 @@ metadata:
   name: php-apache
   namespace: default
 spec:
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 60
   maxReplicas: 10
   metrics:
   - resource:
