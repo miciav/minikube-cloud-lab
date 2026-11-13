@@ -14,8 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/minikube/pkg/drivers/kic"
 	"k8s.io/minikube/pkg/kapi"
 	"k8s.io/minikube/pkg/libmachine"
@@ -306,11 +304,7 @@ func clusterSettings(cc *config.ClusterConfig, n *config.Node, h *host.Host, int
 }
 
 func configureClusterDNS(ctx context.Context, name, ip string) error {
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfig.PathFromEnv()}, &clientcmd.ConfigOverrides{CurrentContext: name}).ClientConfig()
-	if err != nil {
-		return err
-	}
-	c, err := kubernetes.NewForConfig(cfg)
+	c, err := managedClient(name)
 	if err != nil {
 		return err
 	}

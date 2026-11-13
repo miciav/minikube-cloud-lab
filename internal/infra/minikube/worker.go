@@ -5,13 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/drain"
 	"k8s.io/minikube/pkg/drivers/kic/oci"
 	"k8s.io/minikube/pkg/minikube/config"
@@ -31,11 +28,7 @@ func (i *Infra) removeWorker(ctx context.Context, cc *config.ClusterConfig, name
 	if cc.Nodes[index].ControlPlane {
 		return fmt.Errorf("cannot remove control plane")
 	}
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: filepath.Join(i.home, "kubeconfig")}, &clientcmd.ConfigOverrides{CurrentContext: cc.Name}).ClientConfig()
-	if err != nil {
-		return err
-	}
-	c, err := kubernetes.NewForConfig(cfg)
+	c, err := managedClient(cc.Name)
 	if err != nil {
 		return err
 	}

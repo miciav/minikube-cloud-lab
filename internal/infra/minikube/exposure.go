@@ -5,19 +5,17 @@ import (
 	"errors"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
 
 	dockerclient "github.com/docker/docker/client"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/minikube/pkg/minikube/config"
 
 	"github.com/miciav/minikube-cloud-lab/internal/serviceexposure"
 )
 
 func (i *Infra) exposureClient(name string) (kubernetes.Interface, error) {
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: filepath.Join(i.home, "kubeconfig")}, &clientcmd.ConfigOverrides{CurrentContext: name}).ClientConfig()
+	cfg, err := managedConfig(name)
 	if err != nil {
 		return nil, err
 	}
