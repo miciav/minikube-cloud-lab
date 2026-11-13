@@ -278,6 +278,17 @@ func (s *Service) Machines(name string) ([]Machine, error) {
 	return result, nil
 }
 
+// TargetSize counts machines that exist or are being created, as Cluster Autoscaler expects.
+func TargetSize(machines []Machine) int {
+	n := 0
+	for _, m := range machines {
+		if m.Status != "DELETING" {
+			n++
+		}
+	}
+	return n
+}
+
 // AddMachines reserves capacity before queuing asynchronous worker creation.
 func (s *Service) AddMachines(name string, n int, requester string) ([]Operation, error) {
 	s.mu.Lock()
@@ -286,12 +297,7 @@ func (s *Service) AddMachines(name string, n int, requester string) ([]Operation
 	if err != nil {
 		return nil, err
 	}
-	target := 0
-	for _, m := range s.state.Machines {
-		if m.Status != "DELETING" {
-			target++
-		}
-	}
+	target := TargetSize(s.state.Machines)
 	if n <= 0 {
 		return nil, fmt.Errorf("%w: increase must be positive", ErrInvalid)
 	}
