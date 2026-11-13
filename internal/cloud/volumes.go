@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -196,7 +197,7 @@ func (s *Service) deleteVolume(i int) error {
 			return err
 		}
 		next := s.state.clone()
-		next.Volumes = append(next.Volumes[:i], next.Volumes[i+1:]...)
+		next.Volumes = slices.DeleteFunc(next.Volumes, func(x Volume) bool { return x.ID == v.ID })
 		return s.store(next)
 	}
 	root, err := s.volumeRoot()
@@ -208,7 +209,7 @@ func (s *Service) deleteVolume(i int) error {
 		return err
 	}
 	next := s.state.clone()
-	next.Volumes = append(next.Volumes[:i], next.Volumes[i+1:]...)
+	next.Volumes = slices.DeleteFunc(next.Volumes, func(x Volume) bool { return x.ID == v.ID })
 	return s.store(next)
 }
 
