@@ -118,8 +118,12 @@ func (s *Service) syncPublication(ctx context.Context, client kubernetes.Interfa
 	if !v.Static || v.Status == "Unpublishing" {
 		return ErrFailedPrecondition
 	}
+	capacity, err := resource.ParseQuantity(v.Capacity)
+	if err != nil {
+		return fmt.Errorf("%w: invalid stored volume capacity", ErrFailedPrecondition)
+	}
 	pv := &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: v.ID, Labels: map[string]string{"cloud.minikube.local/volume": v.ID}}, Spec: corev1.PersistentVolumeSpec{
-		Capacity: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(v.Capacity)}, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain, StorageClassName: "cloud-static", MountOptions: []string{nfsMountVersion}, PersistentVolumeSource: corev1.PersistentVolumeSource{NFS: &corev1.NFSVolumeSource{Server: s.storageServer, Path: "/data/volumes/" + v.ID}},
+		Capacity: corev1.ResourceList{corev1.ResourceStorage: capacity}, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain, StorageClassName: "cloud-static", MountOptions: []string{nfsMountVersion}, PersistentVolumeSource: corev1.PersistentVolumeSource{NFS: &corev1.NFSVolumeSource{Server: s.storageServer, Path: "/data/volumes/" + v.ID}},
 	}}
 	setDirectoryPV(pv, v)
 	var current *corev1.PersistentVolume
@@ -147,8 +151,13 @@ func (s *Service) syncPublication(ctx context.Context, client kubernetes.Interfa
 	return s.replaceVolume(v, next)
 }
 
+func capacityEquals(pv *corev1.PersistentVolume, v Volume) bool {
+	want, err := resource.ParseQuantity(v.Capacity)
+	return err == nil && pv.Spec.Capacity.Storage().Cmp(want) == 0
+}
+
 func (s *Service) checkStaticPV(v Volume, pv *corev1.PersistentVolume) error {
-	if pv.Labels["cloud.minikube.local/volume"] != v.ID || !volumeSourceMatches(pv, s.storageServer, v) || pv.Spec.StorageClassName != "cloud-static" || pv.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimRetain || pv.Spec.Capacity.Storage().Cmp(resource.MustParse(v.Capacity)) != 0 || len(pv.Spec.AccessModes) != 1 || pv.Spec.AccessModes[0] != corev1.ReadWriteOnce {
+	if pv.Labels["cloud.minikube.local/volume"] != v.ID || !volumeSourceMatches(pv, s.storageServer, v) || pv.Spec.StorageClassName != "cloud-static" || pv.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimRetain || !capacityEquals(pv, v) || len(pv.Spec.AccessModes) != 1 || pv.Spec.AccessModes[0] != corev1.ReadWriteOnce {
 		return fmt.Errorf("%w: static persistent volume identity differs", ErrConflict)
 	}
 	if v.PVUID != "" && string(pv.UID) != v.PVUID {
@@ -219,8 +228,7 @@ func (s *Service) unpublishVolume(ctx context.Context, client kubernetes.Interfa
 		}
 		v = next
 	}
-	options := metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &pv.UID, ResourceVersion: &pv.ResourceVersion}}
-	if err = client.CoreV1().PersistentVolumes().Delete(ctx, id, options); err != nil && !apierrors.IsNotFound(err) {
+	if err = deleteObservedPV(ctx, client, pv); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	err = wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 5*time.Second, true, func(ctx context.Context) (bool, error) {
@@ -311,7 +319,6 @@ func (s *Service) clusterStorageClient(cluster string) (kubernetes.Interface, er
 	if err != nil {
 		return nil, err
 	}
-	cfg.Timeout = 5 * time.Second
 	return kubernetes.NewForConfig(cfg)
 }
 

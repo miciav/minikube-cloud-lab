@@ -184,17 +184,13 @@ func removeReleasedPV(ctx context.Context, client kubernetes.Interface, server s
 	if err != nil {
 		return false, err
 	}
-	if !volumeSourceMatches(pv, server, volume) || pv.Spec.ClaimRef == nil || string(pv.Spec.ClaimRef.UID) != volume.ClaimUID {
+	if !ownsClaimedPV(pv, server, volume) {
 		return false, fmt.Errorf("%w: persistent volume is not owned by cloud", ErrConflict)
 	}
 	if (pv.Status.Phase != corev1.VolumeReleased && pv.Status.Phase != corev1.VolumeFailed) || pv.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimRetain {
 		return false, ErrFailedPrecondition
 	}
-	options := metav1.DeleteOptions{}
-	if pv.UID != "" && pv.ResourceVersion != "" {
-		options.Preconditions = &metav1.Preconditions{UID: &pv.UID, ResourceVersion: &pv.ResourceVersion}
-	}
-	if err := client.CoreV1().PersistentVolumes().Delete(ctx, volume.ID, options); err != nil && !apierrors.IsNotFound(err) {
+	if err := deleteObservedPV(ctx, client, pv); err != nil && !apierrors.IsNotFound(err) {
 		return false, err
 	}
 	return true, nil
@@ -253,17 +249,13 @@ func releasedVolumePolicy(ctx context.Context, client kubernetes.Interface, serv
 		if pv.Status.Phase != corev1.VolumeReleased && pv.Status.Phase != corev1.VolumeFailed {
 			return "", false, nil
 		}
-		if !volumeSourceMatches(pv, server, volume) || pv.Spec.ClaimRef == nil || string(pv.Spec.ClaimRef.UID) != volume.ClaimUID {
+		if !ownsClaimedPV(pv, server, volume) {
 			return "", false, fmt.Errorf("%w: persistent volume %s is not owned by cloud", ErrConflict, volume.ID)
 		}
 		if policy == "Retain" {
 			return policy, true, nil
 		}
-		options := metav1.DeleteOptions{}
-		if pv.UID != "" && pv.ResourceVersion != "" {
-			options.Preconditions = &metav1.Preconditions{UID: &pv.UID, ResourceVersion: &pv.ResourceVersion}
-		}
-		if err := client.CoreV1().PersistentVolumes().Delete(ctx, volume.ID, options); err != nil {
+		if err := deleteObservedPV(ctx, client, pv); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return "", false, err
 			}
@@ -333,6 +325,20 @@ func setDirectoryPV(pv *corev1.PersistentVolume, v Volume) {
 	kind := corev1.HostPathDirectory
 	pv.Spec.PersistentVolumeSource = corev1.PersistentVolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/cloud-volumes/volumes/" + v.ID, Type: &kind}}
 	pv.Spec.MountOptions = nil
+}
+
+// ownsClaimedPV reports whether pv is this volume's cloud PV for its recorded claim.
+func ownsClaimedPV(pv *corev1.PersistentVolume, server string, v Volume) bool {
+	return volumeSourceMatches(pv, server, v) && pv.Spec.ClaimRef != nil && string(pv.Spec.ClaimRef.UID) == v.ClaimUID
+}
+
+// deleteObservedPV deletes pv only if it is still the exact object that was checked.
+func deleteObservedPV(ctx context.Context, client kubernetes.Interface, pv *corev1.PersistentVolume) error {
+	options := metav1.DeleteOptions{}
+	if pv.UID != "" && pv.ResourceVersion != "" {
+		options.Preconditions = &metav1.Preconditions{UID: &pv.UID, ResourceVersion: &pv.ResourceVersion}
+	}
+	return client.CoreV1().PersistentVolumes().Delete(ctx, pv.Name, options)
 }
 
 func volumeSourceMatches(pv *corev1.PersistentVolume, server string, v Volume) bool {
