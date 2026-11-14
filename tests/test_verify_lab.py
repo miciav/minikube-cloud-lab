@@ -301,6 +301,27 @@ class VerificationTest(unittest.TestCase):
             self.suite.cleanup()
         self.assertEqual(self.suite.volumes, set())
 
+    def test_no_pull_uses_local_images_but_still_starts_services(self):
+        self.suite.args.no_pull = True
+        self.suite.run = Mock(return_value="")
+        self.suite.wait = Mock()
+        self.suite.api = Mock(return_value=[{"name": "existing"}])
+        with patch.object(verify.shutil, "which", return_value="podman"), self.assertRaises(RuntimeError):
+            self.suite.start_platform()
+        commands = [c.args[0] for c in self.suite.run.call_args_list]
+        self.assertFalse(any("pull" in command for command in commands))
+        self.assertTrue(any(command[-3:] == ["up", "-d", "cloud"] for command in commands))
+
+    def test_cli_accepts_no_pull(self):
+        with (
+            patch.object(verify.sys, "argv", ["verify-lab.py", "--runtime", "docker", "--no-pull"]),
+            patch.object(verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "docker\n", "")),
+            patch.object(verify, "Verification") as suite,
+        ):
+            suite.return_value.execute.return_value = 0
+            self.assertEqual(verify.main(), 0)
+            self.assertTrue(suite.call_args.args[0].no_pull)
+
     def test_start_records_actual_compose_owner_for_shutdown(self):
         self.suite.wait = Mock()
         self.suite.api = Mock(return_value=[])

@@ -84,7 +84,8 @@ reported rootless mode and rejects unsupported Podman rootful or Docker rootless
 configurations before changing state.
 
 No cluster needs to be created manually. The script starts the user Podman
-socket, runs the configuration preflight, pulls the published images, starts
+socket, runs the configuration preflight, pulls the published images (`--no-pull`
+keeps locally built images set in `.env`), starts
 Compose and checks service/API readiness. It creates a temporary lab-small
 cluster (min 1, max 2), installs the autoscaler, runs all checks, deletes the
 cluster and its nodes/relays, then runs Compose down and verifies that no

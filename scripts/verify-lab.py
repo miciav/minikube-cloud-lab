@@ -178,7 +178,8 @@ class Verification:
         # Configuration may have just installed the standalone provider.
         if self.args.runtime == "podman" and shutil.which("podman-compose"):
             self.compose = ["podman-compose", "-f", str(ROOT / "compose.rootless.yaml")]
-        self.run(self.compose + ["--profile", "tools", "pull"], timeout=1800)
+        if not getattr(self.args, "no_pull", False):
+            self.run(self.compose + ["--profile", "tools", "pull"], timeout=1800)
         services = ["cloud"] if self.args.runtime == "podman" else ["cloud", "portal"]
         self.run(self.compose + ["up", "-d", *services], timeout=300)
         self.wait("cloud management API ready", lambda: bool(self.api("machine-types")), timeout=180)
@@ -778,6 +779,11 @@ def main():
         help="Optional: test an existing running cluster without starting/stopping the platform. Default: full lifecycle with a temporary cluster",
     )
     parser.add_argument("--timeout", type=int, default=600, help="Polling timeout per check in seconds (default: 600)")
+    parser.add_argument(
+        "--no-pull",
+        action="store_true",
+        help="Skip pulling images, to verify locally built images set in .env; missing images are still pulled on start",
+    )
     args = parser.parse_args()
     if args.timeout < 1:
         parser.error("--timeout must be positive")
