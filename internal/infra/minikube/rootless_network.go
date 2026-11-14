@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	dockerclient "github.com/docker/docker/client"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -37,7 +38,15 @@ func restoreRootlessMAC(ctx context.Context, name, network string) error {
 	if err != nil {
 		return err
 	}
-	task, err := client.ContainerExecCreate(ctx, name, container.ExecOptions{User: "0", Cmd: []string{"sh", "-c", script}})
+	if err := execRoot(ctx, client, name, nil, script); err != nil {
+		return fmt.Errorf("preserve rootless MAC: %w", err)
+	}
+	return nil
+}
+
+// execRoot runs script as root inside a container through the API and waits for success.
+func execRoot(ctx context.Context, client *dockerclient.Client, name string, env []string, script string) error {
+	task, err := client.ContainerExecCreate(ctx, name, container.ExecOptions{User: "0", Env: env, Cmd: []string{"sh", "-c", script}})
 	if err != nil {
 		return err
 	}
@@ -53,7 +62,7 @@ func restoreRootlessMAC(ctx context.Context, name, network string) error {
 			return false, nil
 		}
 		if status.ExitCode != 0 {
-			return false, fmt.Errorf("preserve rootless MAC: command exited %d", status.ExitCode)
+			return false, fmt.Errorf("command exited %d", status.ExitCode)
 		}
 		return true, nil
 	})

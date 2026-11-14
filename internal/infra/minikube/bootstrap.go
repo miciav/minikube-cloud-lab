@@ -111,14 +111,23 @@ func provisionNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node
 }
 
 func prepareBaseImage(ctx context.Context, cc *config.ClusterConfig) error {
+	img, err := resolveBaseImage(ctx, cc.KicBaseImage)
+	if err != nil {
+		return err
+	}
+	cc.KicBaseImage = img
+	return nil
+}
+
+// resolveBaseImage returns preferred, or a fallback kicbase, present in the daemon. Hold libraryMu.
+func resolveBaseImage(ctx context.Context, preferred string) (string, error) {
 	var failures []error
-	for _, img := range append([]string{cc.KicBaseImage}, kic.FallbackImages...) {
+	for _, img := range append([]string{preferred}, kic.FallbackImages...) {
 		if err := ctx.Err(); err != nil {
-			return err
+			return "", err
 		}
 		if download.ImageExistsInDaemon(img) {
-			cc.KicBaseImage = img
-			return nil
+			return img, nil
 		}
 		if err := download.ImageToCache(img); err != nil {
 			failures = append(failures, err)
@@ -126,12 +135,11 @@ func prepareBaseImage(ctx context.Context, cc *config.ClusterConfig) error {
 		}
 		loaded, err := download.CacheToDaemon(img)
 		if err == nil {
-			cc.KicBaseImage = loaded
-			return nil
+			return loaded, nil
 		}
 		failures = append(failures, err)
 	}
-	return fmt.Errorf("prepare node image: %w", errors.Join(failures...))
+	return "", fmt.Errorf("prepare node image: %w", errors.Join(failures...))
 }
 
 func configureRuntime(ctx context.Context, cc config.ClusterConfig, r cruntime.CommandRunner) (cruntime.Manager, error) {
