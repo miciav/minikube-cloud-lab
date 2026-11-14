@@ -154,13 +154,22 @@ func serviceForwards(svc *corev1.Service, target string) ([]Forward, error) {
 	return forwards, nil
 }
 
-func relayPrefix(n network.Inspect, target string) (netip.Prefix, error) {
+// ManagedSubnet validates the lab bridge: one aligned private IPv4 /23 whose gateway is its first host.
+func ManagedSubnet(n network.Inspect) (netip.Prefix, error) {
 	if n.Driver != "bridge" || len(n.IPAM.Config) != 1 {
-		return netip.Prefix{}, fmt.Errorf("service exposure requires one IPv4 /23 bridge subnet")
+		return netip.Prefix{}, fmt.Errorf("the lab network must be one IPv4 /23 bridge subnet")
 	}
 	p, err := netip.ParsePrefix(n.IPAM.Config[0].Subnet)
 	if err != nil || !p.Addr().Is4() || !p.Addr().IsPrivate() || p.Bits() != 23 || p != p.Masked() || n.IPAM.Config[0].Gateway != p.Addr().Next().String() {
-		return netip.Prefix{}, fmt.Errorf("service exposure requires an aligned private /23 and explicit first-host gateway; recreate the lab network")
+		return netip.Prefix{}, fmt.Errorf("the lab network must be an aligned private /23 with an explicit first-host gateway; recreate the lab network")
+	}
+	return p, nil
+}
+
+func relayPrefix(n network.Inspect, target string) (netip.Prefix, error) {
+	p, err := ManagedSubnet(n)
+	if err != nil {
+		return netip.Prefix{}, err
 	}
 	node, err := netip.ParseAddr(target)
 	firstHalf := netip.PrefixFrom(p.Addr(), 24)
