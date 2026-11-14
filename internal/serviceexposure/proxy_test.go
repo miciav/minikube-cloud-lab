@@ -13,6 +13,23 @@ import (
 	"time"
 )
 
+// relisten binds an address freed earlier; another socket may hold it briefly in the meantime,
+// for example as the ephemeral source port of a parallel test's connection.
+func relisten(t *testing.T, address string) net.Listener {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		l, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", address)
+		if err == nil {
+			return l
+		}
+		if time.Now().After(deadline) {
+			t.Fatal(err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 func availablePort(t *testing.T) int32 {
 	t.Helper()
 	l, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
@@ -217,10 +234,7 @@ func TestProxyTargetFailureDoesNotStopListener(t *testing.T) {
 	_ = c.Close()
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "recovered") }))
 	_ = server.Listener.Close()
-	server.Listener, err = (&net.ListenConfig{}).Listen(t.Context(), "tcp", target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	server.Listener = relisten(t, target)
 	server.Start()
 	defer server.Close()
 	client := &http.Client{Timeout: time.Second}
