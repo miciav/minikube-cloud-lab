@@ -52,6 +52,8 @@ Standalone instances work in rootless Podman. Verified on Fedora CoreOS 44 ARM64
 - distinct machine-ids and the journal;
 - persistence across stop/start, CPU/RAM/PID limits, cloud restart reconciliation, and deletion without leftovers.
 
+Ubuntu 26.04 instances (`ubuntu-26.04`, the default) were verified the same way. Following Docker's Ubuntu guide inside an instance installs a Docker Engine that runs `hello-world` and serves a published container. `apt install nginx` starts its service, and each Ubuntu instance has its own SSH host keys.
+
 `systemctl is-system-running` reports `degraded` inside rootless instances: the kernel debug, tracing and configuration mounts and the binfmt automount cannot be mounted in a user namespace. Packages, services and Docker are unaffected. For a few seconds after a start, `systemctl` reports "Failed to connect to bus" while systemd and D-Bus come up. Run `RUNTIME=podman bash tests/instance-feasibility.sh` to check a new VM image before distributing it.
 
 ## Existing VM without administrator privileges

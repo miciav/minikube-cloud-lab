@@ -289,7 +289,7 @@ You can also apply those files directly with
 | `cloud machines list` | Optional `--cluster NAME` filter |
 | `cloud volumes list` / `cloud volumes delete ID` | List volumes or delete an available volume |
 | `cloud images list` | Displays the standalone instance images |
-| `cloud instances create NAME` | `--image debian-12`, `--machine-type lab-small`, `--async` |
+| `cloud instances create NAME` | `--image ubuntu-26.04` (or `debian-12`), `--machine-type lab-small`, `--async` |
 | `cloud instances list` / `describe NAME` | Lists instances or displays one, with status and IP |
 | `cloud instances stop NAME` / `start NAME` / `delete NAME` | Lifecycle requests; `--async` |
 | `cloud instances ssh NAME [-- COMMAND...]` | Opens a shell, or runs a command and returns its exit status |
@@ -420,23 +420,29 @@ restart NFS afterward with `docker compose restart nfs`. Keep backups; do not us
 ## Standalone instances
 
 Besides the cluster, the cloud runs standalone Linux instances: system containers
-with systemd, SSH, `sudo`, `apt` and their own Docker Engine. They use the same
-machine types and asynchronous operations as cluster machines.
+with systemd, SSH, `sudo` and `apt`, on which students can install packages and
+run services, including their own Docker Engine. They use the same machine types
+and asynchronous operations as cluster machines.
 
 ```sh
 cloud images list
 cloud instances create vm1 --machine-type lab-small
 cloud instances ssh vm1
-cloud instances ssh vm1 -- sudo docker run --rm hello-world
 cloud instances list
 cloud instances stop vm1
 cloud instances start vm1
 cloud instances delete vm1
 ```
 
-The only image, `debian-12`, is the minikube node image (kicbase) without
-Kubernetes: Debian 12 with Docker Engine preinstalled and the user `docker` with
-passwordless `sudo`. Each instance gets its own SSH key, stored in the cloud data
+| Image | System | SSH user | Docker |
+| --- | --- | --- | --- |
+| `ubuntu-26.04` (default) | Ubuntu 26.04 LTS with the tools tutorials expect (curl, wget, nano, git, ping, ip) | `ubuntu` | Not installed: follow [Docker's Ubuntu guide](https://docs.docker.com/engine/install/ubuntu/) |
+| `debian-12` | Debian 12, the minikube node image (kicbase) without Kubernetes | `docker` | Preinstalled: `sudo docker run --rm hello-world` |
+
+Both users have passwordless `sudo`, and services installed with `apt` start as on
+a regular machine. Choose an image with `--image debian-12`; the Ubuntu image is
+published with the cloud images and downloaded on first use (`UBUNTU_IMAGE` in
+`.env` selects another build). Each instance gets its own SSH key, stored in the cloud data
 directory and never shown in `cloud instances describe`; `cloud instances ssh`
 connects from the cloud container and verifies the instance host key. Use
 `--` before a remote command; its exit status becomes the command's exit status.
@@ -452,9 +458,10 @@ as with clusters: they stay attached to the lab network.
 Instances are privileged containers, like the cluster nodes: on rootful Docker,
 root inside an instance is root on the Docker host; on Podman rootless it is the
 student's own user. The SSH private key is served by the management API, which has
-no authentication and listens only on localhost, like cluster kubeconfigs. All
-instances share the host keys baked into the image; each connection is still checked
-against the key recorded for that instance. Use them only on a trusted lab host.
+no authentication and listens only on localhost, like cluster kubeconfigs. Ubuntu
+instances generate their own SSH host keys at first boot; `debian-12` instances share
+the host keys baked into kicbase. Each connection is checked against the key recorded
+for that instance. Use instances only on a trusted lab host.
 
 ## Development
 
@@ -498,6 +505,7 @@ CLOUD_IMAGE=minikube-cloud-lab/cloud:dev
 LAB_IMAGE=minikube-cloud-lab/lab:dev
 NFS_IMAGE=minikube-cloud-lab/nfs:dev
 PORTAL_IMAGE=minikube-cloud-lab/portal:dev
+UBUNTU_IMAGE=minikube-cloud-lab/instance-ubuntu:dev
 ```
 
 CI checks Go, TypeScript, UI/browser tests, manifests, a live portal-to-cloud image

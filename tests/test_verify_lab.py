@@ -18,6 +18,16 @@ verify = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verify)
 
 
+def instance_outputs(*args, **_):
+    """Plausible outputs of the cloud commands used by the instances check."""
+    command = " ".join(args)
+    if "hello-world" in command:
+        return "Hello from Docker!"
+    if "VERSION_ID" in command:
+        return "26.04"
+    return "persisted"
+
+
 class RuntimeDetectionTest(unittest.TestCase):
     def test_runtime_detection(self):
         cases = [
@@ -275,8 +285,26 @@ class VerificationTest(unittest.TestCase):
             self.suite.start_platform()
         self.assertFalse(self.suite.stop_platform)
 
+    def test_instances_check_covers_debian_and_ubuntu(self):
+        calls = []
+
+        def cloud(*args, **_):
+            calls.append(args)
+            return instance_outputs(*args)
+
+        self.suite.cloud = cloud
+        self.suite.api = Mock(return_value={"ip": "172.30.0.201"})
+        self.suite.run = Mock(return_value="")
+        self.suite.instances()
+        debian, ubuntu = self.suite.name + "-a", self.suite.name + "-b"
+        self.assertIn(("instances", "create", debian, "--image", "debian-12"), calls)
+        self.assertIn(("instances", "create", ubuntu, "--image", "ubuntu-26.04"), calls)
+        ubuntu_commands = [" ".join(c[4:]) for c in calls if c[:3] == ("instances", "ssh", ubuntu)]
+        self.assertTrue(any("apt-get install" in c and "nginx" in c for c in ubuntu_commands), ubuntu_commands)
+        self.assertTrue(any("http://localhost" in c for c in ubuntu_commands), ubuntu_commands)
+
     def test_instances_check_requires_no_leftover_volumes(self):
-        self.suite.cloud = Mock(side_effect=lambda *args, **_: "Hello from Docker!" if "hello-world" in args else "persisted")
+        self.suite.cloud = Mock(side_effect=instance_outputs)
         self.suite.api = Mock(return_value={"ip": "172.30.0.201"})
         self.suite.run = Mock(side_effect=lambda argv, **_: "vol" if argv[1] == "volume" else "")
         with self.assertRaisesRegex(RuntimeError, "volume"):

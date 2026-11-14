@@ -632,14 +632,23 @@ class Verification:
     def instances(self):
         names = [f"{self.name}-a", f"{self.name}-b"]
         require(all(len(name) <= 63 for name in names), "Instance names exceed 63 characters")
-        for name in names:
+        # Debian (kicbase) ships Docker; Ubuntu is the clean default students build on.
+        for name, image in zip(names, ("debian-12", "ubuntu-26.04")):
             self.created_instances.append(name)
-            self.cloud("instances", "create", name, timeout=600)
+            self.cloud("instances", "create", name, "--image", image, timeout=600)
         first, second = names
 
-        def ssh(*command, timeout=300):
-            return self.cloud("instances", "ssh", first, "--", *command, timeout=timeout)
+        def ssh_on(name, *command, timeout=300):
+            return self.cloud("instances", "ssh", name, "--", *command, timeout=timeout)
 
+        def ssh(*command, timeout=300):
+            return ssh_on(first, *command, timeout=timeout)
+
+        require(ssh_on(second, "sh", "-c", "'. /etc/os-release; echo $VERSION_ID'") == "26.04", "Ubuntu instance is not 26.04")
+        # A package's service must start after apt installs it, as on a real Ubuntu machine.
+        ssh_on(second, "sudo", "apt-get", "update", "-qq", timeout=600)
+        ssh_on(second, "sudo", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "-qq", "nginx", timeout=600)
+        ssh_on(second, "curl", "-fsS", "-o", "/dev/null", "http://localhost")
         peer = self.api("instances/" + second)["ip"]
         require("Hello from Docker!" in ssh("sudo", "docker", "run", "--rm", "hello-world", timeout=600), "Nested Docker did not run hello-world")
         ssh("bash", "-c", f"'</dev/tcp/{peer}/22'")
