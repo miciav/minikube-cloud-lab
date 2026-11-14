@@ -46,7 +46,13 @@ type Instance struct {
 // ponytail: fixed lab ceiling; raise it (and the .200–.252 range) if hosts outgrow it.
 const MaxInstances = 8
 
-var errNoInstances = fmt.Errorf("%w: standalone instances are not supported by this backend", ErrUnavailable)
+// unavailable maps to ErrUnavailable (HTTP 503) without its cluster-specific text.
+type unavailable string
+
+func (e unavailable) Error() string        { return string(e) }
+func (e unavailable) Is(target error) bool { return target == ErrUnavailable }
+
+const errNoInstances = unavailable("standalone instances are not supported by this backend")
 
 // Images returns the fixed instance image catalog.
 func Images() []Image {

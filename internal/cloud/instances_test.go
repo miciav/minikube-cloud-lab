@@ -140,7 +140,8 @@ func TestInstancesUnavailableWithoutBackend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateInstance("vm1", "debian-12", "lab-small", "student"); !errors.Is(err, cloud.ErrUnavailable) {
+	_, err = s.CreateInstance("vm1", "debian-12", "lab-small", "student")
+	if !errors.Is(err, cloud.ErrUnavailable) || err.Error() != "standalone instances are not supported by this backend" {
 		t.Fatalf("no backend: %v", err)
 	}
 }
