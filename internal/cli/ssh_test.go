@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -200,5 +201,37 @@ func TestRunSSHRejectsBadCredentials(t *testing.T) {
 		if err := runSSH(context.Background(), bad, []string{"true"}, nil, io.Discard, io.Discard); err == nil || (name != "connect" && !strings.Contains(err.Error(), name)) {
 			t.Fatalf("%s: %v", name, err)
 		}
+	}
+}
+
+func TestRunSSHHandshakeHonorsCancel(t *testing.T) {
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	go func() { // Accept and stay silent, like a frozen sshd.
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { _ = conn.Close() })
+		}
+	}()
+	access, _ := startSSHServer(t)
+	_, port, _ := net.SplitHostPort(listener.Addr().String())
+	access.Port, _ = strconv.Atoi(port)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- runSSH(ctx, access, []string{"true"}, nil, io.Discard, io.Discard) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("handshake with a silent server succeeded")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("handshake ignored the canceled context")
 	}
 }

@@ -67,15 +67,18 @@ func runSSH(ctx context.Context, access cloud.SSHAccess, command []string, stdin
 	}
 	// Ask for the recorded key's type; sshd also offers others that would fail the fixed check.
 	config := &ssh.ClientConfig{User: access.User, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyCallback: ssh.FixedHostKey(hostKey), HostKeyAlgorithms: []string{hostKey.Type()}, Timeout: 10 * time.Second}
+	// Closing the connection ends a stuck handshake or session when the user presses Ctrl-C.
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second)) // ClientConfig.Timeout covers only ssh.Dial.
 	c, channels, requests, err := ssh.NewClientConn(conn, address, config)
 	if err != nil {
 		_ = conn.Close()
 		return fmt.Errorf("connect to %s: %w", address, err)
 	}
+	_ = conn.SetDeadline(time.Time{})
 	client := ssh.NewClient(c, channels, requests)
 	defer func() { _ = client.Close() }()
-	stop := context.AfterFunc(ctx, func() { _ = client.Close() })
-	defer stop()
 	session, err := client.NewSession()
 	if err != nil {
 		return err
