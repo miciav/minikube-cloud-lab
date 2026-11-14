@@ -288,6 +288,11 @@ You can also apply those files directly with
 | `cloud clusters get-credentials NAME` | Updates `$KUBECONFIG` or `~/.kube/config` |
 | `cloud machines list` | Optional `--cluster NAME` filter |
 | `cloud volumes list` / `cloud volumes delete ID` | List volumes or delete an available volume |
+| `cloud images list` | Displays the standalone instance images |
+| `cloud instances create NAME` | `--image debian-12`, `--machine-type lab-small`, `--async` |
+| `cloud instances list` / `describe NAME` | Lists instances or displays one, with status and IP |
+| `cloud instances stop NAME` / `start NAME` / `delete NAME` | Lifecycle requests; `--async` |
+| `cloud instances ssh NAME [-- COMMAND...]` | Opens a shell, or runs a command and returns its exit status |
 | `cloud operations list` | Displays the request history, newest first |
 | `cloud operations describe ID` | Displays one operation |
 | `lab install autoscaler` / `lab uninstall autoscaler` | Installs / removes Autoscaler |
@@ -411,6 +416,41 @@ available, but new allocations are blocked until an explicit offline migration
 or removal of the old volumes. If you choose to delete all legacy volumes,
 restart NFS afterward with `docker compose restart nfs`. Keep backups; do not use
 `down -v` as a migration tool.
+
+## Standalone instances
+
+Besides the cluster, the cloud runs standalone Linux instances: system containers
+with systemd, SSH, `sudo`, `apt` and their own Docker Engine. They use the same
+machine types and asynchronous operations as cluster machines.
+
+```sh
+cloud images list
+cloud instances create vm1 --machine-type lab-small
+cloud instances ssh vm1
+cloud instances ssh vm1 -- sudo docker run --rm hello-world
+cloud instances list
+cloud instances stop vm1
+cloud instances start vm1
+cloud instances delete vm1
+```
+
+The only image, `debian-12`, is the minikube node image (kicbase) without
+Kubernetes: Debian 12 with Docker Engine preinstalled and the user `docker` with
+passwordless `sudo`. Each instance gets its own SSH key, stored in the cloud data
+directory and never shown in `cloud instances describe`; `cloud instances ssh`
+connects from the cloud container and verifies the instance host key. Use
+`--` before a remote command; its exit status becomes the command's exit status.
+
+At most 8 instances run at a time, on addresses .200–.252 of the lab network.
+Instances reach each other, the cluster nodes and the Internet. `/var` (including
+Docker images and containers) lives in a dedicated volume and the rest of the
+filesystem in the container: both survive stop/start and cloud restarts and are
+removed by `cloud instances delete`. Delete instances before `docker compose down`,
+as with clusters: they stay attached to the lab network.
+
+Instances are privileged containers, like the cluster nodes: on rootful Docker,
+root inside an instance is root on the Docker host; on Podman rootless it is the
+student's own user. Use them only on a trusted lab host.
 
 ## Development
 

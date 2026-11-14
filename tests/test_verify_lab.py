@@ -113,6 +113,19 @@ class VerificationTest(unittest.TestCase):
             [("volumes", "unpublish", "pvc-owned"), ("volumes", "delete", "pvc-owned")],
         )
 
+    def test_instance_cleanup_deletes_only_created_instances(self):
+        self.suite.created_instances = ["x-a"]
+        self.suite.cloud = Mock()
+        self.suite.cleanup()
+        self.assertEqual([c.args for c in self.suite.cloud.call_args_list], [("instances", "delete", "x-a")])
+        self.assertEqual(self.suite.created_instances, [])
+
+    def test_instance_cleanup_tolerates_already_deleted_instances(self):
+        self.suite.created_instances = ["x-a"]
+        self.suite.cloud = Mock(side_effect=RuntimeError("Command failed (1): not found: instance x-a"))
+        self.suite.cleanup()
+        self.assertEqual(self.suite.created_instances, [])
+
     def test_empty_mode_refuses_existing_platform_without_mutation(self):
         self.suite.args.cluster = None
         self.suite.run = Mock(return_value="true")
@@ -187,6 +200,7 @@ class VerificationTest(unittest.TestCase):
             "services",
             "port_forward",
             "monitoring",
+            "instances",
             "cleanup",
             "delete_cluster",
             "shutdown_platform",

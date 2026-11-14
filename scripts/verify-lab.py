@@ -53,6 +53,7 @@ class Verification:
         self.namespace_created = False
         self.scale_started = False
         self.volumes = set()
+        self.created_instances = []
         self.results = []
         self.forward = None
         self.directory = Path(tempfile.mkdtemp(prefix="cloud-lab-verification-"))
@@ -618,6 +619,31 @@ class Verification:
         )
         self.api("clusters/" + self.cluster + "/dashboard")
 
+    def instances(self):
+        names = [f"{self.name}-a", f"{self.name}-b"]
+        require(all(len(name) <= 63 for name in names), "Instance names exceed 63 characters")
+        for name in names:
+            self.created_instances.append(name)
+            self.cloud("instances", "create", name, timeout=600)
+        first, second = names
+
+        def ssh(*command, timeout=300):
+            return self.cloud("instances", "ssh", first, "--", *command, timeout=timeout)
+
+        peer = self.api("instances/" + second)["ip"]
+        require("Hello from Docker!" in ssh("sudo", "docker", "run", "--rm", "hello-world", timeout=600), "Nested Docker did not run hello-world")
+        ssh("bash", "-c", f"'</dev/tcp/{peer}/22'")
+        ssh("curl", "-fsS", "-o", "/dev/null", "https://deb.debian.org")
+        ssh("sh", "-c", "'echo persisted > ~/mcl-verify'")
+        self.cloud("instances", "stop", first, timeout=300)
+        self.cloud("instances", "start", first, timeout=300)
+        require(ssh("cat", "~/mcl-verify") == "persisted", "File in /home lost across stop/start")
+        for name in names:
+            self.cloud("instances", "delete", name, timeout=300)
+            self.created_instances.remove(name)
+            left = self.run([self.args.runtime, "ps", "-aq", "--filter", "label=minikube-cloud-lab.instance=" + name])
+            require(not left, f"Instance container {name} left behind")
+
     def diagnostics(self):
         try:
             (self.directory / "cloud.log").write_text(self.run(self.compose + ["logs", "--tail=150", "cloud"]))
@@ -654,6 +680,13 @@ class Verification:
     def cleanup(self):
         if self.forward:
             stop_process(self.forward)
+        for name in list(self.created_instances):
+            try:
+                self.cloud("instances", "delete", name, timeout=300)
+            except RuntimeError as exc:
+                if "not found" not in str(exc):
+                    raise
+            self.created_instances.remove(name)
         if self.namespace_created:
             raw = self.k("get", "namespace", self.name, "--ignore-not-found", "-o", "json")
             namespace = json.loads(raw or "{}")
@@ -700,6 +733,7 @@ class Verification:
                     ("NodePort / LoadBalancer HTTP", self.services),
                     ("port-forward and shutdown", self.port_forward),
                     ("monitoring and dashboard API", self.monitoring),
+                    ("standalone instances: SSH, Docker, network, persistence", self.instances),
                 ]:
                     self.check(name, action)
         except KeyboardInterrupt:
