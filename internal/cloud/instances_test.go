@@ -60,7 +60,7 @@ func TestCreateInstanceRecordsOperationAndKey(t *testing.T) {
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("key file: %v %v", info, err)
 	}
-	data, _ := os.ReadFile(key)
+	data, _ := os.ReadFile(key) // #nosec G304 -- the test reads its own temporary directory.
 	signer, err := ssh.ParsePrivateKey(data)
 	if err != nil {
 		t.Fatalf("parse key: %v", err)
@@ -75,7 +75,7 @@ func TestCreateInstanceRecordsOperationAndKey(t *testing.T) {
 	if spec.AuthorizedKey != authorized || spec.Shape != (infra.MachineShape{CPUs: 2, MemoryMiB: 2048}) || spec.SSHUser != "docker" || spec.Image != "debian-12" {
 		t.Fatalf("backend spec: %+v", spec)
 	}
-	state, _ := os.ReadFile(filepath.Join(dir, "state.json"))
+	state, _ := os.ReadFile(filepath.Join(dir, "state.json")) // #nosec G304 -- the test reads its own temporary directory.
 	if strings.Contains(string(state), "PRIVATE KEY") {
 		t.Fatal("state.json holds the private key")
 	}
@@ -272,7 +272,7 @@ func reload(t *testing.T, f *fake.Infra, dir string) *cloud.Service {
 func editInstance(t *testing.T, dir, name string, edit func(map[string]any)) {
 	t.Helper()
 	path := filepath.Join(dir, "state.json")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- the test reads its own temporary directory.
 	if err != nil {
 		t.Fatal(err)
 	}

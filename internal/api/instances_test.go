@@ -39,41 +39,41 @@ func operation(t *testing.T, s *cloud.Service, data []byte) {
 
 func TestInstanceRoutes(t *testing.T) {
 	_, s, _, url := setup(t)
-	if resp, data := call(t, "GET", url+"/v1/images", ""); resp.StatusCode != 200 || !strings.Contains(string(data), "debian-12") {
+	if resp, data := call(t, "GET", url+"/v1/images", ""); resp.StatusCode != http.StatusOK || !strings.Contains(string(data), "debian-12") {
 		t.Fatalf("images: %d %s", resp.StatusCode, data)
 	}
 	resp, data := call(t, "POST", url+"/v1/instances", `{"name":"vm1","image":"debian-12","machineType":"lab-small"}`)
-	if resp.StatusCode != 202 || !strings.Contains(string(data), `"CREATE_INSTANCE"`) {
+	if resp.StatusCode != http.StatusAccepted || !strings.Contains(string(data), `"CREATE_INSTANCE"`) {
 		t.Fatalf("create: %d %s", resp.StatusCode, data)
 	}
 	operation(t, s, data)
-	if resp, _ := call(t, "POST", url+"/v1/instances", `{"name":"vm2","extra":1}`); resp.StatusCode != 400 {
+	if resp, _ := call(t, "POST", url+"/v1/instances", `{"name":"vm2","extra":1}`); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("unknown field: %d", resp.StatusCode)
 	}
-	if resp, data := call(t, "GET", url+"/v1/instances", ""); resp.StatusCode != 200 || strings.Count(string(data), `"name"`) != 1 {
+	if resp, data := call(t, "GET", url+"/v1/instances", ""); resp.StatusCode != http.StatusOK || strings.Count(string(data), `"name"`) != 1 {
 		t.Fatalf("list: %d %s", resp.StatusCode, data)
 	}
-	if resp, _ := call(t, "GET", url+"/v1/instances/missing", ""); resp.StatusCode != 404 {
+	if resp, _ := call(t, "GET", url+"/v1/instances/missing", ""); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("missing: %d", resp.StatusCode)
 	}
-	if resp, _ := call(t, "GET", url+"/v1/instances/vm1/ssh", ""); resp.StatusCode != 200 || resp.Header.Get("Cache-Control") != "no-store" {
+	if resp, _ := call(t, "GET", url+"/v1/instances/vm1/ssh", ""); resp.StatusCode != http.StatusOK || resp.Header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("ssh: %d %q", resp.StatusCode, resp.Header.Get("Cache-Control"))
 	}
 	resp, data = call(t, "POST", url+"/v1/instances/vm1/stop", "")
-	if resp.StatusCode != 202 {
+	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("stop: %d %s", resp.StatusCode, data)
 	}
 	operation(t, s, data)
-	if resp, _ := call(t, "GET", url+"/v1/instances/vm1/ssh", ""); resp.StatusCode != 412 {
+	if resp, _ := call(t, "GET", url+"/v1/instances/vm1/ssh", ""); resp.StatusCode != http.StatusPreconditionFailed {
 		t.Fatalf("ssh while stopped: %d", resp.StatusCode)
 	}
 	resp, data = call(t, "POST", url+"/v1/instances/vm1/start", "")
-	if resp.StatusCode != 202 {
+	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("start: %d %s", resp.StatusCode, data)
 	}
 	operation(t, s, data)
 	resp, data = call(t, "DELETE", url+"/v1/instances/vm1", "")
-	if resp.StatusCode != 202 {
+	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("delete: %d %s", resp.StatusCode, data)
 	}
 	operation(t, s, data)
