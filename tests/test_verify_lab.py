@@ -302,6 +302,10 @@ class VerificationTest(unittest.TestCase):
         ubuntu_commands = [" ".join(c[4:]) for c in calls if c[:3] == ("instances", "ssh", ubuntu)]
         self.assertTrue(any("apt-get install" in c and "nginx" in c for c in ubuntu_commands), ubuntu_commands)
         self.assertTrue(any("http://localhost" in c for c in ubuntu_commands), ubuntu_commands)
+        restart = calls.index(("instances", "start", ubuntu))
+        self.assertLess(calls.index(("instances", "stop", ubuntu)), restart)
+        after = [" ".join(c[4:]) for c in calls[restart:] if c[:3] == ("instances", "ssh", ubuntu)]
+        self.assertTrue(any("http://localhost" in c for c in after), "nginx not checked after the restart")
 
     def test_instances_check_requires_no_leftover_volumes(self):
         self.suite.cloud = Mock(side_effect=instance_outputs)

@@ -654,9 +654,12 @@ class Verification:
         ssh("bash", "-c", f"'</dev/tcp/{peer}/22'")
         ssh("curl", "-fsS", "-o", "/dev/null", "https://deb.debian.org")
         ssh("sh", "-c", "'echo persisted > ~/mcl-verify'")
-        self.cloud("instances", "stop", first, timeout=300)
-        self.cloud("instances", "start", first, timeout=300)
+        for name in names:
+            self.cloud("instances", "stop", name, timeout=300)
+            self.cloud("instances", "start", name, timeout=300)
         require(ssh("cat", "~/mcl-verify") == "persisted", "File in /home lost across stop/start")
+        # The default image must come back with SSH and its enabled services.
+        ssh_on(second, "curl", "-fsS", "-o", "/dev/null", "http://localhost")
         for name in names:
             self.cloud("instances", "delete", name, timeout=300)
             self.created_instances.remove(name)
