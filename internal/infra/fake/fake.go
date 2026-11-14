@@ -4,6 +4,8 @@ package fake
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,21 +16,24 @@ import (
 type Call struct {
 	Method, Cluster, Machine string
 	Spec                     infra.ClusterSpec
+	Instance                 infra.InstanceSpec
 }
 
 // Infra records requests and supports errors and delays configured before use.
 type Infra struct {
-	mu       sync.Mutex
-	machines map[string][]infra.Machine
-	calls    []Call
-	next     int
-	Errors   map[string]error
-	Delay    time.Duration
+	mu        sync.Mutex
+	machines  map[string][]infra.Machine
+	instances map[string]infra.Instance
+	calls     []Call
+	next      int
+	created   int
+	Errors    map[string]error
+	Delay     time.Duration
 }
 
 // New returns an empty fake backend.
 func New() *Infra {
-	return &Infra{machines: make(map[string][]infra.Machine), Errors: make(map[string]error)}
+	return &Infra{machines: make(map[string][]infra.Machine), instances: make(map[string]infra.Instance), Errors: make(map[string]error)}
 }
 
 func (f *Infra) record(ctx context.Context, c Call) error {
@@ -148,3 +153,74 @@ users:
 
 // RunServiceExposure waits for daemon shutdown without background work.
 func (f *Infra) RunServiceExposure(ctx context.Context) error { <-ctx.Done(); return nil }
+
+// CreateInstance starts an instance at the next fake address.
+func (f *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (infra.Instance, error) {
+	if err := f.record(ctx, Call{Method: "CreateInstance", Instance: spec}); err != nil {
+		return infra.Instance{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	i := infra.Instance{Name: spec.Name, IP: fmt.Sprintf("172.30.0.%d", 200+f.created), HostKey: "ssh-ed25519 FAKE-" + spec.Name, Running: true}
+	f.created++
+	f.instances[spec.Name] = i
+	return i, nil
+}
+
+// StartInstance runs an existing instance.
+func (f *Infra) StartInstance(ctx context.Context, name string) (infra.Instance, error) {
+	if err := f.record(ctx, Call{Method: "StartInstance", Instance: infra.InstanceSpec{Name: name}}); err != nil {
+		return infra.Instance{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	i, ok := f.instances[name]
+	if !ok {
+		return infra.Instance{}, fmt.Errorf("instance %s not found", name)
+	}
+	i.Running = true
+	f.instances[name] = i
+	return i, nil
+}
+
+// StopInstance stops an existing instance.
+func (f *Infra) StopInstance(ctx context.Context, name string) error {
+	if err := f.record(ctx, Call{Method: "StopInstance", Instance: infra.InstanceSpec{Name: name}}); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	i, ok := f.instances[name]
+	if !ok {
+		return fmt.Errorf("instance %s not found", name)
+	}
+	i.Running = false
+	f.instances[name] = i
+	return nil
+}
+
+// DeleteInstance removes an instance; an absent one is already deleted.
+func (f *Infra) DeleteInstance(ctx context.Context, name string) error {
+	if err := f.record(ctx, Call{Method: "DeleteInstance", Instance: infra.InstanceSpec{Name: name}}); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.instances, name)
+	return nil
+}
+
+// Instances returns the observed instances sorted by name.
+func (f *Infra) Instances(ctx context.Context) ([]infra.Instance, error) {
+	if err := f.record(ctx, Call{Method: "Instances"}); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]infra.Instance, 0, len(f.instances))
+	for _, i := range f.instances {
+		out = append(out, i)
+	}
+	slices.SortFunc(out, func(a, b infra.Instance) int { return strings.Compare(a.Name, b.Name) })
+	return out, nil
+}

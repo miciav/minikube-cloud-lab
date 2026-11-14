@@ -20,6 +20,29 @@ type Machine struct {
 	ControlPlane, Running bool
 }
 
+// InstanceSpec describes a standalone instance requested from the backend.
+type InstanceSpec struct {
+	Name, Image   string // Image is a catalog name such as "debian-12".
+	Shape         MachineShape
+	SSHUser       string
+	AuthorizedKey string // One authorized_keys line.
+}
+
+// Instance is the observed state of a standalone instance.
+type Instance struct {
+	Name, IP, HostKey string
+	Running           bool
+}
+
+// Instances manages standalone instances, separately from clusters.
+type Instances interface {
+	CreateInstance(context.Context, InstanceSpec) (Instance, error)
+	StartInstance(context.Context, string) (Instance, error)
+	StopInstance(context.Context, string) error
+	DeleteInstance(context.Context, string) error // An absent instance is success.
+	Instances(context.Context) ([]Instance, error)
+}
+
 // Infra manages cluster and machine lifecycles.
 type Infra interface {
 	RunServiceExposure(context.Context) error

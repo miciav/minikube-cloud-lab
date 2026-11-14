@@ -77,3 +77,42 @@ func TestFailuresAndCancellation(t *testing.T) {
 		t.Fatalf("failed create changed state: %v %v", machines, err)
 	}
 }
+
+func TestFakeInstanceLifecycle(t *testing.T) {
+	f := fake.New()
+	ctx := context.Background()
+	spec := infra.InstanceSpec{Name: "vm1", Image: "debian-12", SSHUser: "docker", AuthorizedKey: "ssh-ed25519 AAA"}
+	got, err := f.CreateInstance(ctx, spec)
+	if err != nil || got != (infra.Instance{Name: "vm1", IP: "172.30.0.200", HostKey: "ssh-ed25519 FAKE-vm1", Running: true}) {
+		t.Fatalf("create: %+v %v", got, err)
+	}
+	if second, err := f.CreateInstance(ctx, infra.InstanceSpec{Name: "vm2"}); err != nil || second.IP != "172.30.0.201" {
+		t.Fatalf("second: %+v %v", second, err)
+	}
+	if err := f.StopInstance(ctx, "vm1"); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := f.Instances(ctx)
+	if err != nil || len(listed) != 2 || listed[0].Name != "vm1" || listed[0].Running || listed[1].Name != "vm2" || !listed[1].Running {
+		t.Fatalf("list: %+v %v", listed, err)
+	}
+	if started, err := f.StartInstance(ctx, "vm1"); err != nil || !started.Running || started.IP != "172.30.0.200" {
+		t.Fatalf("start: %+v %v", started, err)
+	}
+	for range 2 {
+		if err := f.DeleteInstance(ctx, "vm1"); err != nil {
+			t.Fatalf("delete: %v", err)
+		}
+	}
+	if _, err := f.StartInstance(ctx, "vm1"); err == nil {
+		t.Fatal("started a deleted instance")
+	}
+	if calls := f.Calls(); calls[0].Method != "CreateInstance" || calls[0].Instance != spec {
+		t.Fatalf("calls: %+v", calls[0])
+	}
+	boom := errors.New("boom")
+	f.Errors["CreateInstance"] = boom
+	if _, err := f.CreateInstance(ctx, infra.InstanceSpec{Name: "vm3"}); !errors.Is(err, boom) {
+		t.Fatalf("configured error: %v", err)
+	}
+}
