@@ -30,6 +30,8 @@ func newRoot(factory func(string) (infra.Infra, error)) *cobra.Command {
 	addVolumeCommands(root)
 	addStorageCommands(root)
 	addOperationCommands(root)
+	addImageCommands(root)
+	addInstanceCommands(root)
 	return root
 }
 
