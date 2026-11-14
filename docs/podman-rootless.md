@@ -42,6 +42,18 @@ After `lab load start`, wait for all four replicas and observe a second Ready no
 
 Rootless nodes retain the distinct MAC addresses assigned by the engine. This avoids duplicate persistent addresses derived by systemd from the base image's identical machine ID. No manual per-node networking changes are required.
 
+## Standalone instances
+
+Standalone instances work in rootless Podman. Verified on Fedora CoreOS 44 ARM64 with Podman 6.2.0 rootless in a VM with 4 CPUs and 6 GiB RAM, cgroups v2 with the cpu, io, memory and pids controllers delegated. The cloud was built from source and ran with the rootless socket. Checks:
+
+- two instances with systemd, SSH and passwordless `sudo`;
+- an independent Docker Engine inside an instance, including a long-lived published container;
+- instance-to-instance traffic, DNS and Internet;
+- distinct machine-ids and the journal;
+- persistence across stop/start, CPU/RAM/PID limits, cloud restart reconciliation, and deletion without leftovers.
+
+`systemctl is-system-running` reports `degraded` inside rootless instances: the kernel debug, tracing and configuration mounts and the binfmt automount cannot be mounted in a user namespace. Packages, services and Docker are unaffected. For a few seconds after a start, `systemctl` reports "Failed to connect to bus" while systemd and D-Bus come up. Run `RUNTIME=podman bash tests/instance-feasibility.sh` to check a new VM image before distributing it.
+
 ## Existing VM without administrator privileges
 
 Upgrading the operating system is not required just to install Compose. The configuration script installs `podman-compose` in your account automatically when no Compose provider is available. Python 3, pip and access to PyPI are required; no sudo is used:
