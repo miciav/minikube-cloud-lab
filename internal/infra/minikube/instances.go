@@ -61,6 +61,19 @@ func instanceAddress(n network.Inspect, reserved map[string]bool) (netip.Addr, e
 	return netip.Addr{}, fmt.Errorf("no free instance address in .200-.252 of the lab network")
 }
 
+// reservedAddresses keeps every instance's IP, including stopped ones that left the
+// network view but take their address back on start.
+func reservedAddresses(rows []container.Summary, name string) (map[string]bool, error) {
+	reserved := map[string]bool{}
+	for _, c := range rows {
+		if c.Labels[instanceLabel] == name {
+			return nil, fmt.Errorf("container %s already exists", instancePrefix+name)
+		}
+		reserved[c.Labels[instanceIPLabel]] = true
+	}
+	return reserved, nil
+}
+
 // instanceContainer mirrors the settings minikube uses for its node containers.
 func instanceContainer(spec infra.InstanceSpec, image, networkName string, ip netip.Addr, podman bool) (*container.Config, *container.HostConfig, *network.NetworkingConfig) {
 	runtime, security, volume := "docker", []string{"seccomp=unconfined", "apparmor=unconfined"}, instancePrefix+spec.Name+":/var"
@@ -86,8 +99,10 @@ func instanceContainer(spec infra.InstanceSpec, image, networkName string, ip ne
 
 var _ infra.Instances = (*Infra)(nil)
 
-// prepareInstance gives each instance its own machine-id (kicbase ships one) and installs the student key.
+// prepareInstance gives each instance its own machine-id (kicbase ships one), restarts journald so
+// logs follow the new ID, and installs the student key.
 const prepareInstance = `rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup >/dev/null &&
+systemctl restart systemd-journald &&
 install -d -m 700 -o "$SSH_USER" -g "$(id -gn "$SSH_USER")" "/home/$SSH_USER/.ssh" &&
 printf '%s\n' "$AUTHORIZED_KEY" > "/home/$SSH_USER/.ssh/authorized_keys" &&
 chown "$SSH_USER:" "/home/$SSH_USER/.ssh/authorized_keys" && chmod 600 "/home/$SSH_USER/.ssh/authorized_keys"`
@@ -134,13 +149,9 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 	if err != nil {
 		return infra.Instance{}, err
 	}
-	// Stopped instances leave the network view but take their address back on start.
-	reserved := map[string]bool{}
-	for _, c := range existing {
-		if c.Labels[instanceLabel] == spec.Name {
-			return infra.Instance{}, fmt.Errorf("container %s already exists", name)
-		}
-		reserved[c.Labels[instanceIPLabel]] = true
+	reserved, err := reservedAddresses(existing, spec.Name)
+	if err != nil {
+		return infra.Instance{}, err
 	}
 	n, err := client.NetworkInspect(ctx, i.network, network.InspectOptions{})
 	if err != nil {

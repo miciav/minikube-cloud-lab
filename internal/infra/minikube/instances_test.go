@@ -65,3 +65,22 @@ func TestInstanceContainerPodman(t *testing.T) {
 		t.Fatalf("podman: %+v %+v", cfg.Env, host)
 	}
 }
+
+func TestReservedAddressesKeepStoppedInstanceIPs(t *testing.T) {
+	rows := []container.Summary{
+		{State: "exited", Labels: map[string]string{instanceLabel: "old", instanceIPLabel: "172.30.0.200"}},
+		{State: "running", Labels: map[string]string{instanceLabel: "web", instanceIPLabel: "172.30.0.201"}},
+	}
+	reserved, err := reservedAddresses(rows, "new")
+	if err != nil || !reserved["172.30.0.200"] || !reserved["172.30.0.201"] {
+		t.Fatalf("reserved: %v %v", reserved, err)
+	}
+	// The stopped instance is absent from the network view, so only the reservation protects its IP.
+	got, err := instanceAddress(labNetwork("172.30.0.0/23", "172.30.0.201"), reserved)
+	if err != nil || got != netip.MustParseAddr("172.30.0.202") {
+		t.Fatalf("address: %v %v", got, err)
+	}
+	if _, err := reservedAddresses(rows, "old"); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("existing name: %v", err)
+	}
+}
