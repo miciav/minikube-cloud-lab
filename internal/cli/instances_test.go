@@ -44,10 +44,19 @@ func TestInstanceCommands(t *testing.T) {
 			}
 		}
 	}
+	out, err := execute(t, url, "instances", "stop", "vm1", "--async")
+	if err != nil || !strings.HasPrefix(out, "op-") {
+		t.Fatalf("async stop: %q %v", out, err)
+	}
+	if op, err := s.Operation(strings.TrimSpace(out)); err != nil {
+		t.Fatalf("async stop operation: %v", err)
+	} else {
+		wait(t, s, op)
+	}
 	if out, err := execute(t, url, "instances", "delete", "vm1"); err != nil || out != "Deleted instance vm1\n" {
 		t.Fatalf("delete: %q %v", out, err)
 	}
-	out, err := execute(t, url, "instances", "create", "vm2", "--async")
+	out, err = execute(t, url, "instances", "create", "vm2", "--async")
 	if err != nil || !strings.HasPrefix(out, "op-") {
 		t.Fatalf("async: %q %v", out, err)
 	}
