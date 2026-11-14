@@ -3,6 +3,8 @@ package cli
 import (
 	"strings"
 	"testing"
+
+	"github.com/miciav/minikube-cloud-lab/internal/infra/fake"
 )
 
 func TestImagesList(t *testing.T) {
@@ -11,7 +13,7 @@ func TestImagesList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"NAME", "SSH_USER", "debian-12", "docker"} {
+	for _, want := range []string{"NAME", "SSH_USER", "ubuntu-26.04", "ubuntu", "debian-12", "docker"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
@@ -38,7 +40,7 @@ func TestInstanceCommands(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{"NAME", "IP", "vm1", "RUNNING", "debian-12", "lab-small", "172.30.0.200"} {
+		for _, want := range []string{"NAME", "IP", "vm1", "RUNNING", "ubuntu-26.04", "lab-small", "172.30.0.200"} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("%v: missing %q in:\n%s", args, want, out)
 			}
@@ -67,5 +69,18 @@ func TestInstanceCommands(t *testing.T) {
 	}
 	if _, err := execute(t, url, "instances", "create", "Bad_Name"); err == nil || !strings.Contains(err.Error(), "invalid request") {
 		t.Fatalf("invalid name: %v", err)
+	}
+}
+
+func TestCreateInstanceDefaultsToUbuntu(t *testing.T) {
+	f := fake.New()
+	_, url := setup(t, f)
+	if _, err := execute(t, url, "instances", "create", "vm1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range f.Calls() {
+		if c.Method == "CreateInstance" && (c.Instance.Image != "ubuntu-26.04" || c.Instance.SSHUser != "ubuntu") {
+			t.Fatalf("default image: %+v", c.Instance)
+		}
 	}
 }

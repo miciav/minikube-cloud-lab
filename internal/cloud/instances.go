@@ -56,7 +56,10 @@ const errNoInstances = unavailable("standalone instances are not supported by th
 
 // Images returns the fixed instance image catalog.
 func Images() []Image {
-	return []Image{{Name: "debian-12", Description: "Debian 12 (minikube kicbase) with Docker Engine", SSHUser: "docker"}}
+	return []Image{
+		{Name: "ubuntu-26.04", Description: "Ubuntu 26.04 LTS; install Docker yourself", SSHUser: "ubuntu"},
+		{Name: "debian-12", Description: "Debian 12 (minikube kicbase) with Docker Engine", SSHUser: "docker"},
+	}
 }
 
 // LookupImage returns a catalog entry by name.

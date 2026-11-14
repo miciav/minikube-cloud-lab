@@ -85,7 +85,7 @@ func addInstanceCommands(root *cobra.Command) *cobra.Command {
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Created instance %s at %s\n", created.Name, created.IP)
 		return err
 	}}
-	create.Flags().StringVar(&image, "image", "debian-12", "Image from cloud images list")
+	create.Flags().StringVar(&image, "image", "ubuntu-26.04", "Image from cloud images list")
 	create.Flags().StringVar(&kind, "machine-type", "lab-small", "Machine type")
 	create.Flags().BoolVar(&async, "async", false, "Return the operation ID immediately")
 	list := &cobra.Command{Use: "list", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {

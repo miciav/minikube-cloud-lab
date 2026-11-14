@@ -33,7 +33,10 @@ func createInstance(t *testing.T, s *cloud.Service, name string) {
 }
 
 func TestImagesCatalog(t *testing.T) {
-	want := []cloud.Image{{Name: "debian-12", Description: "Debian 12 (minikube kicbase) with Docker Engine", SSHUser: "docker"}}
+	want := []cloud.Image{
+		{Name: "ubuntu-26.04", Description: "Ubuntu 26.04 LTS; install Docker yourself", SSHUser: "ubuntu"},
+		{Name: "debian-12", Description: "Debian 12 (minikube kicbase) with Docker Engine", SSHUser: "docker"},
+	}
 	if got := cloud.Images(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("catalog: %+v", got)
 	}

@@ -82,7 +82,7 @@ func TestInstanceRoutes(t *testing.T) {
 func TestInstanceClient(t *testing.T) {
 	c, s, _, _ := setup(t)
 	ctx := context.Background()
-	if images, err := c.Images(ctx); err != nil || len(images) != 1 || images[0].Name != "debian-12" {
+	if images, err := c.Images(ctx); err != nil || len(images) != 2 || images[0].Name != "ubuntu-26.04" {
 		t.Fatalf("images: %+v %v", images, err)
 	}
 	op, err := c.CreateInstance(ctx, "vm1", "debian-12", "lab-small")
