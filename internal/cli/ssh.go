@@ -65,7 +65,8 @@ func runSSH(ctx context.Context, access cloud.SSHAccess, command []string, stdin
 	if err != nil {
 		return err
 	}
-	config := &ssh.ClientConfig{User: access.User, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyCallback: ssh.FixedHostKey(hostKey), Timeout: 10 * time.Second}
+	// Ask for the recorded key's type; sshd also offers others that would fail the fixed check.
+	config := &ssh.ClientConfig{User: access.User, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyCallback: ssh.FixedHostKey(hostKey), HostKeyAlgorithms: []string{hostKey.Type()}, Timeout: 10 * time.Second}
 	c, channels, requests, err := ssh.NewClientConn(conn, address, config)
 	if err != nil {
 		_ = conn.Close()

@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
 	"encoding/pem"
@@ -43,6 +45,10 @@ func startSSHServer(t *testing.T) (cloud.SSHAccess, *atomic.Int32) {
 		}
 		return nil, errors.New("denied")
 	}}
+	// Like sshd, also offer an ECDSA host key, which Go clients prefer by default.
+	ecdsaSecret, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	ecdsaSigner, _ := ssh.NewSignerFromKey(ecdsaSecret)
+	config.AddHostKey(ecdsaSigner)
 	config.AddHostKey(hostSigner)
 	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
