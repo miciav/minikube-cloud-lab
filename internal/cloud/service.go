@@ -28,6 +28,7 @@ type Service struct {
 	workMu        sync.Mutex
 	state         snapshot
 	inf           infra.Infra
+	instances     infra.Instances
 	dir           string
 	logger        *slog.Logger
 	changed       chan struct{}
@@ -42,6 +43,7 @@ func NewService(inf infra.Infra, dataDir string, logger *slog.Logger) (*Service,
 		logger = slog.Default()
 	}
 	s := &Service{inf: inf, dir: dataDir, logger: logger, changed: make(chan struct{}), state: snapshot{Clusters: []Cluster{}, Machines: []Machine{}, Operations: []Operation{}}}
+	s.instances, _ = inf.(infra.Instances)
 	data, err := os.ReadFile(filepath.Join(dataDir, "state.json")) // #nosec G304 -- state lives in the operator-selected data directory.
 	if os.IsNotExist(err) {
 		return s, nil
