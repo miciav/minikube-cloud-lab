@@ -63,6 +63,15 @@ done
 
 booted a
 booted b
+# Mirror the cloud's preparation: kicbase ships one machine-id, which on rootless Podman
+# also yields duplicate systemd-derived MAC addresses.
+for n in a b; do
+    ex "$n" sh -c 'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup >/dev/null && systemctl restart systemd-journald'
+    if [ "$RUNTIME" = podman ]; then
+        mac=$($RUNTIME inspect -f "{{(index .NetworkSettings.Networks \"$net\").MacAddress}}" "mcl-vm-$n")
+        ex "$n" sh -c "mkdir -p /etc/systemd/network && printf '[Match]\nOriginalName=eth0\n[Link]\nMACAddressPolicy=none\nMACAddress=%s\n' '$mac' > /etc/systemd/network/10-cloud-lab.link && ip link set dev eth0 address '$mac'"
+    fi
+done
 pass "systemd running"
 
 ex b bash -c "</dev/tcp/$ip_a/22" || fail "ssh port" "b cannot reach $ip_a:22"
@@ -95,5 +104,6 @@ pass "clean stop in ${elapsed}s and persistence across stop/start"
 [ "$(ex a cat /sys/fs/cgroup/pids.max)" = 4096 ] || fail "pids limit" "pids.max=$(ex a cat /sys/fs/cgroup/pids.max)"
 pass "cgroup CPU, memory and PID limits"
 
-echo "MACHINE-ID a=$(ex a cat /etc/machine-id) b=$(ex b cat /etc/machine-id)"
+[ "$(ex a cat /etc/machine-id)" != "$(ex b cat /etc/machine-id)" ] || fail "machine-id" "a and b share one machine-id"
+pass "distinct machine-ids"
 echo "ALL CHECKS PASSED"
