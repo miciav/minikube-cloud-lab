@@ -267,3 +267,48 @@ func (s *Service) DeleteInstance(name, requester string) (Operation, error) {
 		}
 	})
 }
+
+// reconcileInstances aligns recorded instances with the containers that survived a restart.
+func (s *Service) reconcileInstances(now time.Time) {
+	if s.instances == nil || len(s.state.Instances) == 0 {
+		return
+	}
+	observed, err := s.instances.Instances(context.Background())
+	if err != nil {
+		s.logger.Error("cannot reconcile instances; records preserved for cleanup", "error", err)
+		for i := range s.state.Instances {
+			s.state.Instances[i].Status = "ERROR"
+		}
+		return
+	}
+	byName := make(map[string]infra.Instance, len(observed))
+	for _, o := range observed {
+		byName[o.Name] = o
+	}
+	kept := s.state.Instances[:0]
+	for _, i := range s.state.Instances {
+		actual, found := byName[i.Name]
+		delete(byName, i.Name)
+		switch {
+		case !found && i.Status == "DELETING":
+			_ = os.RemoveAll(s.instanceDir(i.Name))
+			continue
+		case !found:
+			i.Status = "ERROR"
+			op := s.state.newOperation("DELETE_INSTANCE", i.Name, "cloud")
+			entry := s.state.operation(op.ID)
+			entry.Status, entry.Error, entry.EndedAt = "ERROR", "instance missing during reconciliation: "+i.Name, &now
+		case i.Status == "DELETING" || i.HostKey == "":
+			i.Status = "ERROR"
+		case actual.Running:
+			i.Status = "RUNNING"
+		default:
+			i.Status = "STOPPED"
+		}
+		kept = append(kept, i)
+	}
+	s.state.Instances = kept
+	for name := range byName {
+		s.logger.Warn("ignoring unregistered instance container", "instance", name)
+	}
+}

@@ -108,6 +108,7 @@ func (s *Service) reconcile() error {
 			c.Status = "ERROR"
 		}
 	}
+	s.reconcileInstances(now)
 	return save(s.dir, s.state)
 }
 
