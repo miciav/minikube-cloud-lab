@@ -264,6 +264,43 @@ class VerificationTest(unittest.TestCase):
         self.assertTrue(any(command[-3:] == ["up", "-d", "cloud"] for command in commands))
         self.assertFalse(any("down" in command for command in commands))
 
+    def test_start_refuses_existing_instances_before_arming_teardown(self):
+        self.suite.run = Mock(return_value="")
+        self.suite.wait = Mock()
+        self.suite.api = Mock(side_effect=lambda path: [] if path == "clusters" else [{"name": "student-vm"}])
+        with (
+            patch.object(verify.shutil, "which", return_value="podman"),
+            self.assertRaisesRegex(RuntimeError, "Instances already exist"),
+        ):
+            self.suite.start_platform()
+        self.assertFalse(self.suite.stop_platform)
+
+    def test_instances_check_requires_no_leftover_volumes(self):
+        self.suite.cloud = Mock(side_effect=lambda *args, **_: "Hello from Docker!" if "hello-world" in args else "persisted")
+        self.suite.api = Mock(return_value={"ip": "172.30.0.201"})
+        self.suite.run = Mock(side_effect=lambda argv, **_: "vol" if argv[1] == "volume" else "")
+        with self.assertRaisesRegex(RuntimeError, "volume"):
+            self.suite.instances()
+        volume_checks = [c.args[0] for c in self.suite.run.call_args_list if c.args[0][1] == "volume"]
+        self.assertTrue(volume_checks and "label=minikube-cloud-lab.instance=" + self.suite.name + "-a" in volume_checks[0])
+
+    def test_instance_cleanup_failure_still_cleans_volumes(self):
+        self.suite.created_instances = ["x-a"]
+        self.suite.volumes.add("pvc-owned")
+        self.suite.api = Mock(return_value=[])
+        calls = []
+
+        def cloud(*args, **_):
+            calls.append(args)
+            if args[:2] == ("instances", "delete"):
+                raise RuntimeError("Command failed (1): an operation is running on instance x-a")
+            return ""
+
+        self.suite.cloud = cloud
+        with self.assertRaisesRegex(RuntimeError, "operation is running"):
+            self.suite.cleanup()
+        self.assertEqual(self.suite.volumes, set())
+
     def test_start_records_actual_compose_owner_for_shutdown(self):
         self.suite.wait = Mock()
         self.suite.api = Mock(return_value=[])

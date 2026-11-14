@@ -441,7 +441,8 @@ directory and never shown in `cloud instances describe`; `cloud instances ssh`
 connects from the cloud container and verifies the instance host key. Use
 `--` before a remote command; its exit status becomes the command's exit status.
 
-At most 8 instances run at a time, on addresses .200–.252 of the lab network.
+At most 8 instances exist at a time, counting stopped and failed ones until they are
+deleted; they use addresses .200–.252 of the lab network.
 Instances reach each other, the cluster nodes and the Internet. `/var` (including
 Docker images and containers) lives in a dedicated volume and the rest of the
 filesystem in the container: both survive stop/start and cloud restarts and are
@@ -450,7 +451,10 @@ as with clusters: they stay attached to the lab network.
 
 Instances are privileged containers, like the cluster nodes: on rootful Docker,
 root inside an instance is root on the Docker host; on Podman rootless it is the
-student's own user. Use them only on a trusted lab host.
+student's own user. The SSH private key is served by the management API, which has
+no authentication and listens only on localhost, like cluster kubeconfigs. All
+instances share the host keys baked into the image; each connection is still checked
+against the key recorded for that instance. Use them only on a trusted lab host.
 
 ## Development
 

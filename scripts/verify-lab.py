@@ -186,7 +186,11 @@ class Verification:
             not self.api("clusters"),
             "A cluster already exists. Full lifecycle requires an empty platform; use --cluster NAME to test it without shutting it down.",
         )
-        # Teardown is authorized only after checking the platform has no existing cluster.
+        require(
+            not self.api("instances"),
+            "Instances already exist. Full lifecycle requires an empty platform; delete them or use --cluster NAME.",
+        )
+        # Teardown is authorized only after checking the platform has no existing cluster or instance.
         self.stop_platform = True
         required = ["cloud"] if self.args.runtime == "podman" else ["cloud", "nfs", "portal"]
         # podman-compose ps accepts no service selector; inspect the project's IDs.
@@ -643,6 +647,8 @@ class Verification:
             self.created_instances.remove(name)
             left = self.run([self.args.runtime, "ps", "-aq", "--filter", "label=minikube-cloud-lab.instance=" + name])
             require(not left, f"Instance container {name} left behind")
+            volumes = self.run([self.args.runtime, "volume", "ls", "-q", "--filter", "label=minikube-cloud-lab.instance=" + name])
+            require(not volumes, f"Instance volume {name} left behind")
 
     def diagnostics(self):
         try:
@@ -680,12 +686,15 @@ class Verification:
     def cleanup(self):
         if self.forward:
             stop_process(self.forward)
+        # Keep cleaning the namespace and volumes even if an instance cannot be deleted yet.
+        instance_failures = []
         for name in list(self.created_instances):
             try:
                 self.cloud("instances", "delete", name, timeout=300)
             except RuntimeError as exc:
                 if "not found" not in str(exc):
-                    raise
+                    instance_failures.append(str(exc))
+                    continue
             self.created_instances.remove(name)
         if self.namespace_created:
             raw = self.k("get", "namespace", self.name, "--ignore-not-found", "-o", "json")
@@ -718,6 +727,7 @@ class Verification:
             self.wait(
                 "restore initial node count after test load removal", lambda: len(self.obj("nodes")["items"]) == 1
             )
+        require(not instance_failures, "Instance cleanup failed: " + "; ".join(instance_failures))
 
     def execute(self):
         print(f"Cluster: {self.cluster}; namespace: {self.name}; logs: {self.directory}", flush=True)
