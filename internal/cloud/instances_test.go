@@ -1,6 +1,7 @@
 package cloud_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -138,5 +139,121 @@ func TestInstancesUnavailableWithoutBackend(t *testing.T) {
 	}
 	if _, err := s.CreateInstance("vm1", "debian-12", "lab-small", "student"); !errors.Is(err, cloud.ErrUnavailable) {
 		t.Fatalf("no backend: %v", err)
+	}
+}
+
+func finish(t *testing.T, s *cloud.Service, op cloud.Operation, err error, status cloud.OpStatus) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := wait(t, s, op); done.Status != status {
+		t.Fatalf("operation: %+v", done)
+	}
+}
+
+func TestStopStartInstance(t *testing.T) {
+	s, _, _ := newService(t)
+	createInstance(t, s, "vm1")
+	op, err := s.StopInstance("vm1", "student")
+	if op.Type != "STOP_INSTANCE" {
+		t.Fatalf("stop type: %+v", op)
+	}
+	finish(t, s, op, err, "DONE")
+	if got, _ := s.Instance("vm1"); got.Status != "STOPPED" {
+		t.Fatalf("stopped: %+v", got)
+	}
+	if _, err := s.StopInstance("vm1", "student"); !errors.Is(err, cloud.ErrFailedPrecondition) {
+		t.Fatalf("stop twice: %v", err)
+	}
+	op, err = s.StartInstance("vm1", "student")
+	if op.Type != "START_INSTANCE" {
+		t.Fatalf("start type: %+v", op)
+	}
+	finish(t, s, op, err, "DONE")
+	if got, _ := s.Instance("vm1"); got.Status != "RUNNING" || got.IP != "172.30.0.200" {
+		t.Fatalf("started: %+v", got)
+	}
+	if _, err := s.StartInstance("vm1", "student"); !errors.Is(err, cloud.ErrFailedPrecondition) {
+		t.Fatalf("start twice: %v", err)
+	}
+	for _, call := range []func(string, string) (cloud.Operation, error){s.StartInstance, s.StopInstance, s.DeleteInstance} {
+		if _, err := call("missing", "student"); !errors.Is(err, cloud.ErrNotFound) {
+			t.Fatalf("missing: %v", err)
+		}
+	}
+}
+
+func TestInstanceBusyRejected(t *testing.T) {
+	s, f, _ := newService(t)
+	f.Delay = 200 * time.Millisecond
+	if _, err := s.CreateInstance("vm1", "debian-12", "lab-small", "student"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StopInstance("vm1", "student"); !errors.Is(err, cloud.ErrFailedPrecondition) {
+		t.Fatalf("stop while creating: %v", err)
+	}
+	if _, err := s.DeleteInstance("vm1", "student"); !errors.Is(err, cloud.ErrFailedPrecondition) {
+		t.Fatalf("delete while creating: %v", err)
+	}
+}
+
+func TestDeleteInstanceRemovesRecordAndKey(t *testing.T) {
+	s, f, dir := newService(t)
+	createInstance(t, s, "vm1")
+	op, err := s.DeleteInstance("vm1", "student")
+	if got, _ := s.Instance("vm1"); got.Status != "DELETING" || op.Type != "DELETE_INSTANCE" {
+		t.Fatalf("accepted: %+v %+v", got, op)
+	}
+	finish(t, s, op, err, "DONE")
+	if _, err := s.Instance("vm1"); !errors.Is(err, cloud.ErrNotFound) {
+		t.Fatalf("record kept: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "instances", "vm1")); !os.IsNotExist(err) {
+		t.Fatalf("key directory kept: %v", err)
+	}
+	if left, _ := f.Instances(context.Background()); len(left) != 0 {
+		t.Fatalf("backend kept: %+v", left)
+	}
+}
+
+func TestDeleteInstanceAfterManualRemoval(t *testing.T) {
+	s, f, _ := newService(t)
+	createInstance(t, s, "vm1")
+	if err := f.DeleteInstance(context.Background(), "vm1"); err != nil {
+		t.Fatal(err)
+	}
+	op, err := s.DeleteInstance("vm1", "student")
+	finish(t, s, op, err, "DONE")
+}
+
+func TestDeleteFailureMarksError(t *testing.T) {
+	s, f, dir := newService(t)
+	createInstance(t, s, "vm1")
+	f.Errors["DeleteInstance"] = errors.New("boom")
+	op, err := s.DeleteInstance("vm1", "student")
+	finish(t, s, op, err, "ERROR")
+	if got, _ := s.Instance("vm1"); got.Status != "ERROR" {
+		t.Fatalf("instance: %+v", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "instances", "vm1", "id_ed25519")); err != nil {
+		t.Fatalf("key removed: %v", err)
+	}
+	delete(f.Errors, "DeleteInstance")
+	op, err = s.DeleteInstance("vm1", "student")
+	finish(t, s, op, err, "DONE")
+}
+
+func TestStartFromErrorAfterFailedStop(t *testing.T) {
+	s, f, _ := newService(t)
+	createInstance(t, s, "vm1")
+	f.Errors["StopInstance"] = errors.New("boom")
+	op, err := s.StopInstance("vm1", "student")
+	finish(t, s, op, err, "ERROR")
+	delete(f.Errors, "StopInstance")
+	op, err = s.StartInstance("vm1", "student")
+	finish(t, s, op, err, "DONE")
+	if got, _ := s.Instance("vm1"); got.Status != "RUNNING" {
+		t.Fatalf("instance: %+v", got)
 	}
 }

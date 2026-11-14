@@ -182,3 +182,88 @@ func (s *Service) Instance(name string) (Instance, error) {
 	}
 	return *i, nil
 }
+
+// instanceOperation validates a lifecycle request and records it before its work starts.
+func (s *Service) instanceOperation(name, kind, requester string, check func(Instance) error, during InstanceStatus, work func() error, finish func(*snapshot, error)) (Operation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.instances == nil {
+		return Operation{}, errNoInstances
+	}
+	current, err := s.state.instance(name)
+	if err != nil {
+		return Operation{}, err
+	}
+	if s.state.instanceBusy(name) {
+		return Operation{}, fmt.Errorf("%w: an operation is running on instance %s", ErrFailedPrecondition, name)
+	}
+	if err := check(*current); err != nil {
+		return Operation{}, err
+	}
+	next := s.state.clone()
+	if during != "" {
+		i, _ := next.instance(name)
+		i.Status = during
+	}
+	op := next.newOperation(kind, name, requester)
+	if err := s.store(next); err != nil {
+		return Operation{}, err
+	}
+	s.launch(op.ID, work, finish)
+	return op, nil
+}
+
+func requireStatus(allowed ...InstanceStatus) func(Instance) error {
+	return func(i Instance) error {
+		if !slices.Contains(allowed, i.Status) {
+			return fmt.Errorf("%w: instance %s is %s", ErrFailedPrecondition, i.Name, i.Status)
+		}
+		return nil
+	}
+}
+
+// StartInstance boots a stopped instance, or one whose last operation failed.
+func (s *Service) StartInstance(name, requester string) (Operation, error) {
+	var observed infra.Instance
+	check := func(i Instance) error {
+		if i.Status == "ERROR" && i.HostKey == "" {
+			return fmt.Errorf("%w: instance %s never finished creating; delete and recreate it", ErrFailedPrecondition, name)
+		}
+		return requireStatus("STOPPED", "ERROR")(i)
+	}
+	return s.instanceOperation(name, "START_INSTANCE", requester, check, "", func() error {
+		var err error
+		observed, err = s.instances.StartInstance(context.Background(), name)
+		return err
+	}, func(st *snapshot, err error) { s.finishInstance(st, name, observed, err) })
+}
+
+// StopInstance halts a running instance and keeps its disk.
+func (s *Service) StopInstance(name, requester string) (Operation, error) {
+	return s.instanceOperation(name, "STOP_INSTANCE", requester, requireStatus("RUNNING"), "", func() error {
+		return s.instances.StopInstance(context.Background(), name)
+	}, func(st *snapshot, err error) {
+		if i, lookup := st.instance(name); lookup == nil {
+			i.Status = "ERROR"
+			if err == nil {
+				i.Status = "STOPPED"
+			}
+		}
+	})
+}
+
+// DeleteInstance removes an instance, its disk and its SSH key.
+func (s *Service) DeleteInstance(name, requester string) (Operation, error) {
+	return s.instanceOperation(name, "DELETE_INSTANCE", requester, requireStatus("RUNNING", "STOPPED", "ERROR"), "DELETING", func() error {
+		if err := s.instances.DeleteInstance(context.Background(), name); err != nil {
+			return err
+		}
+		return os.RemoveAll(s.instanceDir(name))
+	}, func(st *snapshot, err error) {
+		if err == nil {
+			st.Instances = slices.DeleteFunc(st.Instances, func(i Instance) bool { return i.Name == name })
+		} else if i, lookup := st.instance(name); lookup == nil {
+			i.Status = "ERROR"
+		}
+	})
+}
