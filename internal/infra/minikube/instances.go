@@ -16,9 +16,11 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	imagetypes "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	dockerclient "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/jsonmessage"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/minikube/pkg/drivers/kic"
 
@@ -110,13 +112,52 @@ chown "$SSH_USER:" "/home/$SSH_USER/.ssh/authorized_keys" && chmod 600 "/home/$S
 
 func instanceRootless() bool { return os.Getenv("CLOUD_ROOTLESS") == "true" }
 
-func instanceImage(ctx context.Context, name string) (string, error) {
-	if name != "debian-12" {
-		return "", fmt.Errorf("unknown instance image %s", name)
+// defaultUbuntuImage is published by CI next to the cloud images.
+const defaultUbuntuImage = "ghcr.io/miciav/minikube-cloud-lab/instance-ubuntu:26.04"
+
+// instanceImageRef maps a catalog name to an image; kicbase images come through minikube's cache.
+func instanceImageRef(name string) (ref string, kicbase bool, err error) {
+	switch name {
+	case "debian-12":
+		return kic.BaseImage, true, nil
+	case "ubuntu-26.04":
+		if ref := os.Getenv("CLOUD_UBUNTU_IMAGE"); ref != "" {
+			return ref, false, nil
+		}
+		return defaultUbuntuImage, false, nil
 	}
-	libraryMu.Lock()
-	defer libraryMu.Unlock()
-	return resolveBaseImage(ctx, kic.BaseImage)
+	return "", false, fmt.Errorf("unknown instance image %s", name)
+}
+
+// ensureImage pulls ref unless the daemon already has it, reporting registry errors.
+func ensureImage(ctx context.Context, client *dockerclient.Client, ref string) error {
+	if _, err := client.ImageInspect(ctx, ref); err == nil {
+		return nil
+	} else if !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("inspect image %s: %w", ref, err)
+	}
+	stream, err := client.ImagePull(ctx, ref, imagetypes.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("pull %s: %w", ref, err)
+	}
+	defer func() { _ = stream.Close() }()
+	if err := jsonmessage.DisplayJSONMessagesStream(stream, io.Discard, 0, false, nil); err != nil {
+		return fmt.Errorf("pull %s: %w", ref, err)
+	}
+	return nil
+}
+
+func instanceImage(ctx context.Context, client *dockerclient.Client, name string) (string, error) {
+	ref, kicbase, err := instanceImageRef(name)
+	if err != nil {
+		return "", err
+	}
+	if kicbase {
+		libraryMu.Lock()
+		defer libraryMu.Unlock()
+		return resolveBaseImage(ctx, ref)
+	}
+	return ref, ensureImage(ctx, client, ref)
 }
 
 func (i *Infra) instanceContainers(ctx context.Context, client *dockerclient.Client) ([]container.Summary, error) {
@@ -138,7 +179,7 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 	if err != nil {
 		return infra.Instance{}, err
 	}
-	image, err := instanceImage(ctx, spec.Image)
+	image, err := instanceImage(ctx, client, spec.Image)
 	if err != nil {
 		return infra.Instance{}, fmt.Errorf("prepare image: %w", err)
 	}

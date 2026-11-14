@@ -108,8 +108,8 @@ func TestWaitSSHStopsWhenContainerExits(t *testing.T) {
 	}
 }
 
-// fakeDocker serves the Docker API paths in routes (matched by suffix) and points the SDK at it.
-func fakeDocker(t *testing.T, routes map[string]string) {
+// fakeDockerAPI points the SDK at handler, answering version negotiation itself.
+func fakeDockerAPI(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Api-Version", "1.47")
@@ -117,6 +117,16 @@ func fakeDocker(t *testing.T, routes map[string]string) {
 		if strings.HasSuffix(r.URL.Path, "/_ping") {
 			return
 		}
+		handler(w, r)
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("DOCKER_HOST", "tcp://"+server.Listener.Addr().String())
+}
+
+// fakeDocker serves the Docker API paths in routes (matched by suffix); others fail with 500.
+func fakeDocker(t *testing.T, routes map[string]string) {
+	t.Helper()
+	fakeDockerAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		for suffix, body := range routes {
 			if strings.HasSuffix(r.URL.Path, suffix) {
 				_, _ = io.WriteString(w, body)
@@ -125,9 +135,7 @@ func fakeDocker(t *testing.T, routes map[string]string) {
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = io.WriteString(w, `{"message":"boom"}`)
-	}))
-	t.Cleanup(server.Close)
-	t.Setenv("DOCKER_HOST", "tcp://"+server.Listener.Addr().String())
+	})
 }
 
 var instanceSpec = infra.InstanceSpec{Name: "vm1", Image: "debian-12", Shape: infra.MachineShape{CPUs: 2, MemoryMiB: 2048}}
@@ -147,5 +155,67 @@ func TestCreateInstanceRefusesStaleVolume(t *testing.T) {
 	})
 	if _, err := (&Infra{network: "lab"}).CreateInstance(context.Background(), instanceSpec); err == nil || !strings.Contains(err.Error(), "volume mcl-vm-vm1 already exists") {
 		t.Fatalf("stale volume: %v", err)
+	}
+}
+
+func TestInstanceImageRef(t *testing.T) {
+	if ref, kicbase, err := instanceImageRef("ubuntu-26.04"); err != nil || kicbase || ref != "ghcr.io/miciav/minikube-cloud-lab/instance-ubuntu:26.04" {
+		t.Fatalf("default: %q %v %v", ref, kicbase, err)
+	}
+	t.Setenv("CLOUD_UBUNTU_IMAGE", "example/ubuntu:test")
+	if ref, _, err := instanceImageRef("ubuntu-26.04"); err != nil || ref != "example/ubuntu:test" {
+		t.Fatalf("override: %q %v", ref, err)
+	}
+	if _, kicbase, err := instanceImageRef("debian-12"); err != nil || !kicbase {
+		t.Fatalf("kicbase: %v %v", kicbase, err)
+	}
+	if _, _, err := instanceImageRef("fedora"); err == nil {
+		t.Fatal("accepted an unknown image")
+	}
+}
+
+// pullingDocker reports ref missing until a pull answers with stream.
+func pullingDocker(t *testing.T, stream string) *int {
+	t.Helper()
+	pulls := new(int)
+	fakeDockerAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/images/create"):
+			*pulls++
+			_, _ = io.WriteString(w, stream)
+		case strings.HasSuffix(r.URL.Path, "/images/example/ubuntu:test/json") && *pulls > 0:
+			_, _ = io.WriteString(w, `{"Id": "sha256:abc"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"message":"No such image"}`)
+		}
+	})
+	return pulls
+}
+
+func TestEnsureImagePullsMissingImage(t *testing.T) {
+	pulls := pullingDocker(t, `{"status":"Pulling from example/ubuntu"}`+"\n"+`{"status":"Downloaded newer image"}`+"\n")
+	client, err := dockerClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	if err := ensureImage(context.Background(), client, "example/ubuntu:test"); err != nil || *pulls != 1 {
+		t.Fatalf("pull: %v after %d pulls", err, *pulls)
+	}
+	if err := ensureImage(context.Background(), client, "example/ubuntu:test"); err != nil || *pulls != 1 {
+		t.Fatalf("present image pulled again: %v after %d pulls", err, *pulls)
+	}
+}
+
+func TestEnsureImageReportsPullErrors(t *testing.T) {
+	pullingDocker(t, `{"error":"denied: requested access to the resource is denied","errorDetail":{"message":"denied: requested access to the resource is denied"}}`+"\n")
+	client, err := dockerClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	if err := ensureImage(context.Background(), client, "example/ubuntu:test"); err == nil || !strings.Contains(err.Error(), "denied") {
+		t.Fatalf("pull error: %v", err)
 	}
 }
