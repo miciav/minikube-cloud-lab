@@ -76,3 +76,25 @@ COPY --from=build /out/portal /usr/local/bin/portal
 COPY --from=web-build /src/web/dist /app/web
 USER 65532:65532
 ENTRYPOINT ["portal"]
+
+# A clean Ubuntu LTS for standalone instances: students install Docker themselves.
+FROM ubuntu:26.04 AS instance-ubuntu
+ENV DEBIAN_FRONTEND=noninteractive
+# Take the release's current security fixes rather than freezing apt package versions.
+# policy-rc.d keeps apt from starting installed services, which a student machine must do.
+# Host keys are removed in the installing layer, so no image layer carries them; each
+# instance generates its own at boot (Ubuntu only does it on a first boot, which never
+# happens in a container), and sshd starts at boot instead of on first connection.
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends systemd systemd-sysv dbus openssh-server sudo ca-certificates \
+        curl wget nano vim-tiny less iputils-ping iproute2 git gnupg lsb-release && \
+    rm -rf /var/lib/apt/lists/* /usr/sbin/policy-rc.d /etc/ssh/ssh_host_* && \
+    echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-ubuntu && chmod 0440 /etc/sudoers.d/90-ubuntu && \
+    : > /etc/machine-id && \
+    systemctl mask systemd-binfmt.service && systemctl disable ssh.socket && systemctl enable ssh.service && \
+    mkdir -p /etc/systemd/system/ssh.service.d && \
+    printf '[Service]\nExecStartPre=\nExecStartPre=/usr/bin/ssh-keygen -A\nExecStartPre=/usr/sbin/sshd -t\n' > /etc/systemd/system/ssh.service.d/10-host-keys.conf
+LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-lab"
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]
