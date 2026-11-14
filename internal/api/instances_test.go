@@ -111,3 +111,10 @@ func TestInstanceClient(t *testing.T) {
 		t.Fatalf("missing: %v", err)
 	}
 }
+
+func TestEmptyInstanceListIsArray(t *testing.T) {
+	_, _, _, url := setup(t)
+	if resp, data := call(t, "GET", url+"/v1/instances", ""); resp.StatusCode != http.StatusOK || string(data) != "[]" {
+		t.Fatalf("empty list: %d %s", resp.StatusCode, data)
+	}
+}

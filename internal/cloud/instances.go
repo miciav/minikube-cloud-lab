@@ -167,7 +167,7 @@ func (s *Service) finishInstance(st *snapshot, name string, observed infra.Insta
 func (s *Service) Instances() []Instance {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := slices.Clone(s.state.Instances)
+	out := append([]Instance{}, s.state.Instances...) // never nil: the API returns [] like other lists
 	slices.SortFunc(out, func(a, b Instance) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }

@@ -124,12 +124,14 @@ func TestCreateInstanceFailureKeepsRecord(t *testing.T) {
 
 func TestInstanceNameMayMatchCluster(t *testing.T) {
 	s, f, _ := newService(t)
+	createInstance(t, s, "demo")
 	f.Delay = 100 * time.Millisecond
 	if _, err := s.CreateCluster("demo", "lab-small", 1, 3, "student"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateInstance("demo", "debian-12", "lab-small", "student"); err != nil {
-		t.Fatalf("instance named like the cluster: %v", err)
+	// A running cluster operation targeting "demo" must not make the instance busy.
+	if _, err := s.StopInstance("demo", "student"); err != nil {
+		t.Fatalf("stop while the cluster demo is creating: %v", err)
 	}
 }
 
