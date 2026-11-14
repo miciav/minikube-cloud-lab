@@ -3,6 +3,7 @@ package minikube
 import (
 	"archive/tar"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +21,6 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	dockerclient "github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/jsonmessage"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/minikube/pkg/drivers/kic"
 
@@ -141,8 +141,29 @@ func ensureImage(ctx context.Context, client *dockerclient.Client, ref string) e
 		return fmt.Errorf("pull %s: %w", ref, err)
 	}
 	defer func() { _ = stream.Close() }()
-	if err := jsonmessage.DisplayJSONMessagesStream(stream, io.Discard, 0, false, nil); err != nil {
-		return fmt.Errorf("pull %s: %w", ref, err)
+	// Registries report failures inside the stream, in errorDetail and/or the older error field.
+	decoder := json.NewDecoder(stream)
+	for {
+		var message struct {
+			Error       string `json:"error"`
+			ErrorDetail *struct {
+				Message string `json:"message"`
+			} `json:"errorDetail"`
+		}
+		if err := decoder.Decode(&message); errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			return fmt.Errorf("pull %s: %w", ref, err)
+		}
+		if message.ErrorDetail != nil && message.ErrorDetail.Message != "" {
+			return fmt.Errorf("pull %s: %s", ref, message.ErrorDetail.Message)
+		}
+		if message.Error != "" {
+			return fmt.Errorf("pull %s: %s", ref, message.Error)
+		}
+	}
+	if _, err := client.ImageInspect(ctx, ref); err != nil {
+		return fmt.Errorf("pull %s: image missing after pull: %w", ref, err)
 	}
 	return nil
 }

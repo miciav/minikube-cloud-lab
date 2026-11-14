@@ -177,13 +177,19 @@ func TestInstanceImageRef(t *testing.T) {
 // pullingDocker reports ref missing until a pull answers with stream.
 func pullingDocker(t *testing.T, stream string) *int {
 	t.Helper()
+	return pullingDockerThat(t, stream, true)
+}
+
+// pullingDockerThat lets a test keep the image missing even after a pull.
+func pullingDockerThat(t *testing.T, stream string, appears bool) *int {
+	t.Helper()
 	pulls := new(int)
 	fakeDockerAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/images/create"):
 			*pulls++
 			_, _ = io.WriteString(w, stream)
-		case strings.HasSuffix(r.URL.Path, "/images/example/ubuntu:test/json") && *pulls > 0:
+		case strings.HasSuffix(r.URL.Path, "/images/example/ubuntu:test/json") && *pulls > 0 && appears:
 			_, _ = io.WriteString(w, `{"Id": "sha256:abc"}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -217,5 +223,29 @@ func TestEnsureImageReportsPullErrors(t *testing.T) {
 	defer func() { _ = client.Close() }()
 	if err := ensureImage(context.Background(), client, "example/ubuntu:test"); err == nil || !strings.Contains(err.Error(), "denied") {
 		t.Fatalf("pull error: %v", err)
+	}
+}
+
+func TestEnsureImageReportsTheLegacyErrorField(t *testing.T) {
+	pullingDockerThat(t, `{"error":"denied: requested access to the resource is denied"}`+"\n", false)
+	client, err := dockerClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	if err := ensureImage(context.Background(), client, "example/ubuntu:test"); err == nil || !strings.Contains(err.Error(), "denied") {
+		t.Fatalf("legacy error field: %v", err)
+	}
+}
+
+func TestEnsureImageFailsWhenPullLeavesNoImage(t *testing.T) {
+	pullingDockerThat(t, `{"status":"Pulling from example/ubuntu"}`+"\n", false)
+	client, err := dockerClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	if err := ensureImage(context.Background(), client, "example/ubuntu:test"); err == nil || !strings.Contains(err.Error(), "missing after pull") {
+		t.Fatalf("truncated pull: %v", err)
 	}
 }
