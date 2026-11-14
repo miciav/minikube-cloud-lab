@@ -111,6 +111,6 @@ func addInstanceCommands(root *cobra.Command) *cobra.Command {
 	remove := instanceAction("delete", "Deleted", func(c *api.Client, cmd *cobra.Command, name string) (cloud.Operation, error) {
 		return c.DeleteInstance(cmd.Context(), name)
 	})
-	parent.AddCommand(create, list, describe, start, stop, remove)
+	parent.AddCommand(create, list, describe, start, stop, remove, sshCommand())
 	return parent
 }

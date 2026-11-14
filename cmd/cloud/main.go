@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -15,6 +16,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := cli.NewRoot().ExecuteContext(ctx)
 	stop()
+	var exit *cli.ExitError
+	if errors.As(err, &exit) {
+		os.Exit(exit.Code) // The remote command already reported its failure.
+	}
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
