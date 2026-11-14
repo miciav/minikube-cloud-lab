@@ -276,7 +276,7 @@ func (s *Service) DeleteInstance(name, requester string) (Operation, error) {
 
 // reconcileInstances aligns recorded instances with the containers that survived a restart.
 func (s *Service) reconcileInstances(now time.Time) {
-	if s.instances == nil || len(s.state.Instances) == 0 {
+	if s.instances == nil {
 		return
 	}
 	observed, err := s.instances.Instances(context.Background())

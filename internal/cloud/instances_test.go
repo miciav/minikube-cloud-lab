@@ -409,3 +409,20 @@ func TestInstanceSSH(t *testing.T) {
 		t.Fatalf("missing: %v", err)
 	}
 }
+
+func TestReconcileLogsStrayInstancesWhenNoneRecorded(t *testing.T) {
+	s, f, dir := newService(t)
+	createInstance(t, s, "vm1")
+	op, err := s.DeleteInstance("vm1", "student")
+	finish(t, s, op, err, "DONE")
+	if _, err := f.CreateInstance(context.Background(), infra.InstanceSpec{Name: "stray"}); err != nil {
+		t.Fatal(err)
+	}
+	var logs strings.Builder
+	if _, err := cloud.NewService(f, dir, slog.New(slog.NewTextHandler(&logs, nil))); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), "ignoring unregistered instance container") || !strings.Contains(logs.String(), "instance=stray") {
+		t.Fatalf("logs: %s", logs.String())
+	}
+}
