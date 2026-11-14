@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/netip"
 	"os"
@@ -128,51 +129,67 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 	if i.network == "" {
 		return infra.Instance{}, errors.New("standalone instances require CLOUD_DOCKER_NETWORK")
 	}
-	image, err := instanceImage(ctx, spec.Image)
-	if err != nil {
-		return infra.Instance{}, fmt.Errorf("prepare image: %w", err)
-	}
 	client, err := dockerClient()
 	if err != nil {
 		return infra.Instance{}, err
 	}
 	defer func() { _ = client.Close() }()
-	info, err := client.Info(ctx)
+	ip, err := i.instanceSlot(ctx, client, spec)
 	if err != nil {
 		return infra.Instance{}, err
 	}
-	if spec.Shape.CPUs > info.NCPU || int64(spec.Shape.MemoryMiB)*1024*1024 > info.MemTotal {
-		return infra.Instance{}, errors.New("machine shape exceeds Docker host resources")
+	image, err := instanceImage(ctx, spec.Image)
+	if err != nil {
+		return infra.Instance{}, fmt.Errorf("prepare image: %w", err)
 	}
 	name := instancePrefix + spec.Name
-	existing, err := i.instanceContainers(ctx, client)
-	if err != nil {
-		return infra.Instance{}, err
-	}
-	reserved, err := reservedAddresses(existing, spec.Name)
-	if err != nil {
-		return infra.Instance{}, err
-	}
-	n, err := client.NetworkInspect(ctx, i.network, network.InspectOptions{})
-	if err != nil {
-		return infra.Instance{}, err
-	}
-	ip, err := instanceAddress(n, reserved)
-	if err != nil {
-		return infra.Instance{}, err
-	}
 	if _, err := client.VolumeCreate(ctx, volume.CreateOptions{Name: name, Labels: map[string]string{instanceLabel: spec.Name, instanceNetLabel: i.network}}); err != nil {
 		return infra.Instance{}, fmt.Errorf("create volume: %w", err)
 	}
 	cfg, host, endpoints := instanceContainer(spec, image, i.network, ip, instanceRootless())
-	if _, err := client.ContainerCreate(ctx, cfg, host, endpoints, nil, name); err != nil {
+	created, err := client.ContainerCreate(ctx, cfg, host, endpoints, nil, name)
+	if err != nil {
 		return infra.Instance{}, fmt.Errorf("create container: %w", err)
+	}
+	for _, warning := range created.Warnings {
+		slog.Warn("container create warning", "instance", spec.Name, "warning", warning)
 	}
 	key, err := i.bootInstance(ctx, client, spec, ip.String(), host.Resources)
 	if err != nil {
 		return infra.Instance{}, err
 	}
 	return infra.Instance{Name: spec.Name, IP: ip.String(), HostKey: key, Running: true}, nil
+}
+
+// instanceSlot runs the cheap host checks before any image download and returns a free address.
+func (i *Infra) instanceSlot(ctx context.Context, client *dockerclient.Client, spec infra.InstanceSpec) (netip.Addr, error) {
+	info, err := client.Info(ctx)
+	if err != nil {
+		return netip.Addr{}, fmt.Errorf("inspect Docker host: %w", err)
+	}
+	if spec.Shape.CPUs > info.NCPU || int64(spec.Shape.MemoryMiB)*1024*1024 > info.MemTotal {
+		return netip.Addr{}, errors.New("machine shape exceeds Docker host resources")
+	}
+	existing, err := i.instanceContainers(ctx, client)
+	if err != nil {
+		return netip.Addr{}, fmt.Errorf("list instances: %w", err)
+	}
+	reserved, err := reservedAddresses(existing, spec.Name)
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	// A volume left by a lost record would hand the old /var to a new instance.
+	name := instancePrefix + spec.Name
+	if _, err := client.VolumeInspect(ctx, name); err == nil {
+		return netip.Addr{}, fmt.Errorf("volume %s already exists; remove it or choose another name", name)
+	} else if !cerrdefs.IsNotFound(err) {
+		return netip.Addr{}, fmt.Errorf("inspect volume: %w", err)
+	}
+	n, err := client.NetworkInspect(ctx, i.network, network.InspectOptions{})
+	if err != nil {
+		return netip.Addr{}, fmt.Errorf("inspect lab network: %w", err)
+	}
+	return instanceAddress(n, reserved)
 }
 
 // bootInstance starts a created container, prepares it for the student and returns its host key.
@@ -189,7 +206,7 @@ func (i *Infra) bootInstance(ctx context.Context, client *dockerclient.Client, s
 			return "", err
 		}
 	}
-	if err := waitSSH(ctx, ip); err != nil {
+	if err := waitSSH(ctx, net.JoinHostPort(ip, "22"), containerAlive(client, name)); err != nil {
 		return "", err
 	}
 	if err := execRoot(ctx, client, name, []string{"SSH_USER=" + spec.SSHUser, "AUTHORIZED_KEY=" + spec.AuthorizedKey}, prepareInstance); err != nil {
@@ -210,9 +227,29 @@ func verifyInstanceLimits(ctx context.Context, client *dockerclient.Client, name
 	return nil
 }
 
-func waitSSH(ctx context.Context, ip string) error {
-	address := net.JoinHostPort(ip, "22")
+// containerAlive fails once the container stops, so a crashed boot is not reported as an SSH timeout.
+func containerAlive(client *dockerclient.Client, name string) func(context.Context) error {
+	return func(ctx context.Context) error {
+		observed, err := client.ContainerInspect(ctx, name)
+		if err != nil {
+			return fmt.Errorf("inspect container: %w", err)
+		}
+		if observed.State == nil || !observed.State.Running {
+			code := 0
+			if observed.State != nil {
+				code = observed.State.ExitCode
+			}
+			return fmt.Errorf("container %s exited with code %d", name, code)
+		}
+		return nil
+	}
+}
+
+func waitSSH(ctx context.Context, address string, alive func(context.Context) error) error {
 	err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+		if err := alive(ctx); err != nil {
+			return false, err
+		}
 		conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", address)
 		if err != nil {
 			return false, nil // keep polling until sshd listens
@@ -263,7 +300,7 @@ func (i *Infra) StartInstance(ctx context.Context, name string) (infra.Instance,
 		return infra.Instance{}, err
 	}
 	ip := observed.Config.Labels[instanceIPLabel]
-	if err := waitSSH(ctx, ip); err != nil {
+	if err := waitSSH(ctx, net.JoinHostPort(ip, "22"), containerAlive(client, id)); err != nil {
 		return infra.Instance{}, err
 	}
 	key, err := readHostKey(ctx, client, id)
