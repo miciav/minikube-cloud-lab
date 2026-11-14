@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -137,8 +138,15 @@ func TestRunSSHExitStatus(t *testing.T) {
 
 func TestRunSSHShellWithoutTTY(t *testing.T) {
 	access, _ := startSSHServer(t)
+	// A pipe is an *os.File that is not a terminal, like stdin under compose exec -T.
+	stdin, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stdin.Close() })
+	go func() { _, _ = io.WriteString(writer, "echo hi\nexit\n"); _ = writer.Close() }()
 	var out bytes.Buffer
-	if err := runSSH(context.Background(), access, nil, strings.NewReader("echo hi\nexit\n"), &out, io.Discard); err != nil || !strings.Contains(out.String(), "shell: echo hi") {
+	if err := runSSH(context.Background(), access, nil, stdin, &out, io.Discard); err != nil || !strings.Contains(out.String(), "shell: echo hi") {
 		t.Fatalf("shell: %q %v", out.String(), err)
 	}
 }
