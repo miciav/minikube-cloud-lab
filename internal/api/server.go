@@ -147,6 +147,38 @@ func NewServer(svc *cloud.Service) http.Handler {
 		machines, err := svc.Machines(r.URL.Query().Get("cluster"))
 		respond(w, 200, machines, err)
 	})
+	mux.HandleFunc("GET /v1/images", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, cloud.Images(), nil) })
+	mux.HandleFunc("GET /v1/instances", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Instances(), nil) })
+	mux.HandleFunc("POST /v1/instances", func(w http.ResponseWriter, r *http.Request) {
+		var request instanceRequest
+		if err := decodeJSON(w, r, &request); err != nil {
+			respond(w, 400, nil, cloud.ErrInvalid)
+			return
+		}
+		op, err := svc.CreateInstance(request.Name, request.Image, request.MachineType, "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		respond(w, http.StatusAccepted, op, err)
+	})
+	mux.HandleFunc("GET /v1/instances/{name}", func(w http.ResponseWriter, r *http.Request) {
+		i, err := svc.Instance(r.PathValue("name"))
+		respond(w, 200, i, err)
+	})
+	mux.HandleFunc("POST /v1/instances/{name}/start", func(w http.ResponseWriter, r *http.Request) {
+		op, err := svc.StartInstance(r.PathValue("name"), "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		respond(w, http.StatusAccepted, op, err)
+	})
+	mux.HandleFunc("POST /v1/instances/{name}/stop", func(w http.ResponseWriter, r *http.Request) {
+		op, err := svc.StopInstance(r.PathValue("name"), "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		respond(w, http.StatusAccepted, op, err)
+	})
+	mux.HandleFunc("DELETE /v1/instances/{name}", func(w http.ResponseWriter, r *http.Request) {
+		op, err := svc.DeleteInstance(r.PathValue("name"), "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		respond(w, http.StatusAccepted, op, err)
+	})
+	mux.HandleFunc("GET /v1/instances/{name}/ssh", func(w http.ResponseWriter, r *http.Request) {
+		access, err := svc.InstanceSSH(r.PathValue("name"))
+		w.Header().Set("Cache-Control", "no-store")
+		respond(w, 200, access, err)
+	})
 	mux.HandleFunc("GET /v1/operations", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Operations(), nil) })
 	mux.HandleFunc("GET /v1/operations/{id}", func(w http.ResponseWriter, r *http.Request) {
 		op, err := svc.Operation(r.PathValue("id"))

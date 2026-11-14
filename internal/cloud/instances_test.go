@@ -389,3 +389,20 @@ func TestReconcileBackendErrorMarksInstancesError(t *testing.T) {
 		t.Fatalf("backend error: %+v", s2.Instances())
 	}
 }
+
+func TestInstanceSSH(t *testing.T) {
+	s, _, _ := newService(t)
+	createInstance(t, s, "vm1")
+	access, err := s.InstanceSSH("vm1")
+	if err != nil || access.User != "docker" || access.Host != "172.30.0.200" || access.Port != 22 || access.HostKey != "ssh-ed25519 FAKE-vm1" || !strings.HasPrefix(access.PrivateKey, "-----BEGIN OPENSSH PRIVATE KEY-----") {
+		t.Fatalf("access: %+v %v", access, err)
+	}
+	op, err := s.StopInstance("vm1", "student")
+	finish(t, s, op, err, "DONE")
+	if _, err := s.InstanceSSH("vm1"); !errors.Is(err, cloud.ErrFailedPrecondition) {
+		t.Fatalf("stopped: %v", err)
+	}
+	if _, err := s.InstanceSSH("missing"); !errors.Is(err, cloud.ErrNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+}

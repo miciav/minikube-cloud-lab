@@ -312,3 +312,30 @@ func (s *Service) reconcileInstances(now time.Time) {
 		s.logger.Warn("ignoring unregistered instance container", "instance", name)
 	}
 }
+
+// SSHAccess holds what a client needs to open an SSH session to an instance.
+type SSHAccess struct {
+	User       string `json:"user"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	PrivateKey string `json:"privateKey"`
+	HostKey    string `json:"hostKey"`
+}
+
+// InstanceSSH returns the credentials of a running instance.
+func (s *Service) InstanceSSH(name string) (SSHAccess, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i, err := s.state.instance(name)
+	if err != nil {
+		return SSHAccess{}, err
+	}
+	if i.Status != "RUNNING" {
+		return SSHAccess{}, fmt.Errorf("%w: instance %s is %s", ErrFailedPrecondition, name, i.Status)
+	}
+	key, err := os.ReadFile(filepath.Join(s.instanceDir(name), "id_ed25519"))
+	if err != nil {
+		return SSHAccess{}, fmt.Errorf("read instance key: %w", err)
+	}
+	return SSHAccess{User: i.SSHUser, Host: i.IP, Port: 22, PrivateKey: string(key), HostKey: i.HostKey}, nil
+}

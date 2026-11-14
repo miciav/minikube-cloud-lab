@@ -181,3 +181,67 @@ func (c *Client) UnpublishVolume(ctx context.Context, id string) error {
 	_, err := c.request(ctx, http.MethodPost, "/v1/volumes/"+url.PathEscape(id)+"/unpublish", nil, nil)
 	return err
 }
+
+type instanceRequest struct {
+	Name        string `json:"name"`
+	Image       string `json:"image"`
+	MachineType string `json:"machineType"`
+}
+
+func instancePath(name string) string { return "/v1/instances/" + url.PathEscape(name) }
+
+// Images lists the instance image catalog.
+func (c *Client) Images(ctx context.Context) ([]cloud.Image, error) {
+	var result []cloud.Image
+	_, err := c.request(ctx, http.MethodGet, "/v1/images", nil, &result)
+	return result, err
+}
+
+// CreateInstance requests a standalone instance asynchronously.
+func (c *Client) CreateInstance(ctx context.Context, name, image, kind string) (cloud.Operation, error) {
+	var result cloud.Operation
+	_, err := c.request(ctx, http.MethodPost, "/v1/instances", instanceRequest{Name: name, Image: image, MachineType: kind}, &result)
+	return result, err
+}
+
+// Instances lists standalone instances.
+func (c *Client) Instances(ctx context.Context) ([]cloud.Instance, error) {
+	var result []cloud.Instance
+	_, err := c.request(ctx, http.MethodGet, "/v1/instances", nil, &result)
+	return result, err
+}
+
+// Instance describes a standalone instance.
+func (c *Client) Instance(ctx context.Context, name string) (cloud.Instance, error) {
+	var result cloud.Instance
+	_, err := c.request(ctx, http.MethodGet, instancePath(name), nil, &result)
+	return result, err
+}
+
+// StartInstance requests a boot asynchronously.
+func (c *Client) StartInstance(ctx context.Context, name string) (cloud.Operation, error) {
+	var result cloud.Operation
+	_, err := c.request(ctx, http.MethodPost, instancePath(name)+"/start", nil, &result)
+	return result, err
+}
+
+// StopInstance requests a halt asynchronously.
+func (c *Client) StopInstance(ctx context.Context, name string) (cloud.Operation, error) {
+	var result cloud.Operation
+	_, err := c.request(ctx, http.MethodPost, instancePath(name)+"/stop", nil, &result)
+	return result, err
+}
+
+// DeleteInstance requests removal asynchronously.
+func (c *Client) DeleteInstance(ctx context.Context, name string) (cloud.Operation, error) {
+	var result cloud.Operation
+	_, err := c.request(ctx, http.MethodDelete, instancePath(name), nil, &result)
+	return result, err
+}
+
+// InstanceSSH downloads the SSH credentials of a running instance.
+func (c *Client) InstanceSSH(ctx context.Context, name string) (cloud.SSHAccess, error) {
+	var result cloud.SSHAccess
+	_, err := c.request(ctx, http.MethodGet, instancePath(name)+"/ssh", nil, &result)
+	return result, err
+}
