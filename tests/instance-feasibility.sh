@@ -35,11 +35,11 @@ pass() { echo "PASS $1"; }
 ex() { local n=$1; shift; $RUNTIME exec "mcl-vm-$n" "$@"; }
 booted() {
     local state
-    # The entrypoint prepares mounts before exec'ing systemd, which reports offline meanwhile.
+    # After a restart the entrypoint runs before systemd, and D-Bus starts after it:
+    # systemctl reports offline, then "Failed to connect to bus", for a few seconds.
     for _ in $(seq 60); do
         state=$(ex "$1" timeout 180 systemctl is-system-running --wait 2>&1 || true)
-        [ "$state" = offline ] || break
-        sleep 1
+        case $state in offline | "Failed to connect to bus"*) sleep 1 ;; *) break ;; esac
     done
     case $state in
     running) ;;
