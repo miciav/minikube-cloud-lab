@@ -322,6 +322,31 @@ class VerificationTest(unittest.TestCase):
             self.assertEqual(verify.main(), 0)
             self.assertTrue(suite.call_args.args[0].no_pull)
 
+    def test_port_released_detects_a_listener(self):
+        import socket
+
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        self.assertFalse(verify.port_released(port))
+        listener.close()
+        self.assertTrue(verify.port_released(port))
+
+    def test_port_forward_waits_for_the_port_to_be_released(self):
+        # Docker Desktop releases a published port shortly after the forward container exits.
+        released = iter([False, True])
+        self.suite.http = Mock(return_value=True)
+        process = Mock()
+        process.poll.return_value = None
+        with (
+            patch.object(verify.subprocess, "Popen", return_value=process),
+            patch.object(verify, "stop_process"),
+            patch.object(verify, "port_released", side_effect=lambda port: next(released)),
+            patch.object(verify.time, "sleep"),
+        ):
+            self.suite.port_forward()
+
     def test_start_records_actual_compose_owner_for_shutdown(self):
         self.suite.wait = Mock()
         self.suite.api = Mock(return_value=[])

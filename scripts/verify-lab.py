@@ -28,6 +28,12 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
+def port_released(port):
+    with socket.socket() as sock:
+        sock.settimeout(3)
+        return sock.connect_ex(("127.0.0.1", port)) != 0
+
+
 def stop_process(process):
     if process.poll() is None:
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
@@ -611,9 +617,8 @@ class Verification:
             finally:
                 stop_process(self.forward)
                 self.forward = None
-        with socket.socket() as sock:
-            sock.settimeout(3)
-            require(sock.connect_ex(("127.0.0.1", port)) != 0, "Port-forward still listening after shutdown")
+        # Docker Desktop releases the published port shortly after the forward container exits.
+        self.wait("port-forward still listening after shutdown", lambda: port_released(port), timeout=30)
 
     def monitoring(self):
         self.wait(
