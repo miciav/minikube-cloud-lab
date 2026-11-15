@@ -440,9 +440,13 @@ cloud instances delete vm1
 | `debian-12` | Debian 12, the minikube node image (kicbase) without Kubernetes | `docker` | Preinstalled: `sudo docker run --rm hello-world` |
 
 Both users have passwordless `sudo`, and services installed with `apt` start as on
-a regular machine. Choose an image with `--image debian-12`; the Ubuntu image is
-published with the cloud images and downloaded on first use (`UBUNTU_IMAGE` in
-`.env` selects another build). Each instance gets its own SSH key, stored in the cloud data
+a regular machine; SSH logins get a systemd user session (`systemctl --user`) on
+Ubuntu. Choose an image with `--image debian-12`. The Ubuntu image is published with
+the cloud images and downloaded on the first create, which therefore takes longer
+(`docker compose logs cloud` shows the download); `UBUNTU_IMAGE` in `.env` selects
+another build. Compose does not pull it: after updating the lab, refresh it with
+`docker pull ghcr.io/miciav/minikube-cloud-lab/instance-ubuntu:26.04` (`podman pull`
+on Podman). Existing instances keep the image they were created from. Each instance gets its own SSH key, stored in the cloud data
 directory and never shown in `cloud instances describe`; `cloud instances ssh`
 connects from the cloud container and verifies the instance host key. Use
 `--` before a remote command; its exit status becomes the command's exit status.

@@ -136,6 +136,8 @@ func ensureImage(ctx context.Context, client *dockerclient.Client, ref string) e
 	} else if !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("inspect image %s: %w", ref, err)
 	}
+	// The create operation waits on this download; the log shows why the first create is slow.
+	slog.Info("pulling instance image", "image", ref)
 	stream, err := client.ImagePull(ctx, ref, imagetypes.PullOptions{})
 	if err != nil {
 		return fmt.Errorf("pull %s: %w", ref, err)

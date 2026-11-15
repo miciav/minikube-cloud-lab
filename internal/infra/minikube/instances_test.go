@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -247,5 +248,24 @@ func TestEnsureImageFailsWhenPullLeavesNoImage(t *testing.T) {
 	defer func() { _ = client.Close() }()
 	if err := ensureImage(context.Background(), client, "example/ubuntu:test"); err == nil || !strings.Contains(err.Error(), "missing after pull") {
 		t.Fatalf("truncated pull: %v", err)
+	}
+}
+
+func TestEnsureImageLogsThePull(t *testing.T) {
+	pullingDocker(t, `{"status":"Downloaded newer image"}`+"\n")
+	var logs strings.Builder
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	client, err := dockerClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	if err := ensureImage(context.Background(), client, "example/ubuntu:test"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), "pulling instance image") || !strings.Contains(logs.String(), "example/ubuntu:test") {
+		t.Fatalf("logs: %s", logs.String())
 	}
 }
