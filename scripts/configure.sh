@@ -79,9 +79,11 @@ _cloud_lab_configure() {
     function kubectl {
         local -a _cloud_forward_ports _cloud_forward_args
         local forward_status
+        local -a _cloud_tty=()
+        [ -t 1 ] || _cloud_tty=(-T) # no TTY when output is captured, else docker adds \r
         if _cloud_kubectl_forward_prepare "$@"; then
             docker compose --progress quiet --project-directory "$CLOUD_LAB_ROOT" --env-file "$CLOUD_LAB_ROOT/.env" \
-                -f "$CLOUD_LAB_ROOT/compose.yaml" run --rm --no-deps --entrypoint kubectl \
+                -f "$CLOUD_LAB_ROOT/compose.yaml" run "${_cloud_tty[@]}" --rm --no-deps --entrypoint kubectl \
                 "${_cloud_forward_ports[@]}" --volume "$PWD:/workspace" --workdir /workspace \
                 kubectl-forward "${_cloud_forward_args[@]}"
             return $?
@@ -90,7 +92,7 @@ _cloud_lab_configure() {
             [ "$forward_status" = 125 ] || return "$forward_status"
         fi
         docker compose --progress quiet --project-directory "$CLOUD_LAB_ROOT" --env-file "$CLOUD_LAB_ROOT/.env" \
-            -f "$CLOUD_LAB_ROOT/compose.yaml" run --rm --entrypoint kubectl \
+            -f "$CLOUD_LAB_ROOT/compose.yaml" run "${_cloud_tty[@]}" --rm --entrypoint kubectl \
             --volume "$PWD:/workspace" --workdir /workspace lab "$@"
     }
     unalias labcompose cloud lab kubectl 2>/dev/null || true

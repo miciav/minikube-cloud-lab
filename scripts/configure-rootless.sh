@@ -61,15 +61,17 @@ _cloud_rootless_configure() {
     function kubectl {
         local -a _cloud_forward_ports _cloud_forward_args
         local forward_status
+        local -a _cloud_tty=()
+        [ -t 1 ] || _cloud_tty=(-T) # no TTY when output is captured, else docker adds \r
         if _cloud_kubectl_forward_prepare "$@"; then
-            labcompose --profile tools run --rm --no-deps --entrypoint kubectl "${_cloud_forward_ports[@]}" \
+            labcompose --profile tools run "${_cloud_tty[@]}" --rm --no-deps --entrypoint kubectl "${_cloud_forward_ports[@]}" \
                 --volume "$PWD:/workspace" --workdir /workspace kubectl-forward "${_cloud_forward_args[@]}"
             return $?
         else
             forward_status=$?
             [ "$forward_status" = 125 ] || return "$forward_status"
         fi
-        labcompose --profile tools run --rm --entrypoint kubectl --volume "$PWD:/workspace" --workdir /workspace lab "$@"
+        labcompose --profile tools run "${_cloud_tty[@]}" --rm --entrypoint kubectl --volume "$PWD:/workspace" --workdir /workspace lab "$@"
     }
     unalias labcompose cloud lab kubectl 2>/dev/null || true
     printf 'Ready. Start: labcompose up -d cloud\n'
