@@ -45,7 +45,7 @@ non richiedere host networking o binari cloud/lab nativi agli studenti.
 - `lab-small`: 2 CPU / 2048 MiB; `lab-medium`: 4 CPU / 8192 MiB.
 - Creazione cluster installa YAKD dagli asset minikube via client-go, senza helper addon fatal; il rollout resta osservabile via Kubernetes.
 - `source scripts/configure.sh` prepara soltanto directory/.env/comandi di sessione; non deve eseguire Docker o operazioni sul cluster.
-- Configurazione Bash/zsh su Linux/macOS; socket Docker Desktop GID0, GNUstat su Linux/BSDstat su Mac.
+- Configurazione unica `scripts/configure.sh` (Docker rootful o Podman rootless), Bash/zsh su Linux/macOS; socket Docker Desktop GID0, GNUstat su Linux/BSDstat su Mac.
 - Compose usa rete condivisa con cloud .254, distinta dagli IP2..253 assegnati da minikube. Kubeconfig privato per cloud/lab, endpoint localhost pubblicato per kubectl host; gRPC non pubblicato.
 - Un solo cluster per servizio, un tipo per cluster, control plane incluso nei
   limiti min/max e protetto dalla cancellazione. Non introdurre supporto multi-cluster.

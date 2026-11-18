@@ -179,8 +179,10 @@ class Verification:
         require(shutil.which(self.args.runtime), f"Missing {self.args.runtime}")
         if self.args.runtime == "podman":
             self.run(["systemctl", "--user", "start", "podman.socket"])
-        script = "configure-rootless.sh" if self.args.runtime == "podman" else "configure.sh"
-        self.run(["bash", "-c", 'source "$1"', "verify", str(ROOT / "scripts" / script)], timeout=600)
+        self.run(
+            ["bash", "-c", 'export CLOUD_RUNTIME="$2"; source "$1"', "verify", str(ROOT / "scripts" / "configure.sh"), self.args.runtime],
+            timeout=600,
+        )
         # Configuration may have just installed the standalone provider.
         if self.args.runtime == "podman" and shutil.which("podman-compose"):
             self.compose = ["podman-compose", "-f", str(ROOT / "compose.rootless.yaml")]
@@ -599,16 +601,16 @@ class Verification:
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
-        script = "configure-rootless.sh" if self.args.runtime == "podman" else "configure.sh"
         argv = [
             "bash",
             "-c",
-            'source "$1" >/dev/null && kubectl --context "$2" -n "$3" port-forward service/web "$4:80"',
+            'export CLOUD_RUNTIME="$5"; source "$1" >/dev/null && kubectl --context "$2" -n "$3" port-forward service/web "$4:80"',
             "verify",
-            str(ROOT / "scripts" / script),
+            str(ROOT / "scripts" / "configure.sh"),
             self.cluster,
             self.name,
             str(port),
+            self.args.runtime,
         ]
         with (self.directory / "port-forward.log").open("w") as log:
             self.forward = subprocess.Popen(argv, cwd=ROOT, stdout=log, stderr=log, start_new_session=True)

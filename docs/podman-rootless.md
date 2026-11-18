@@ -19,7 +19,7 @@ Enable the user's API socket with `systemctl --user enable --now podman.socket`.
 The CI builds and publishes the cloud and tools images to GHCR for amd64 and arm64 after checks pass on main. Once publication finishes, pull those images in the student VM:
 
 ```sh
-source scripts/configure-rootless.sh
+source scripts/configure.sh
 labcompose --profile tools pull
 labcompose up -d cloud
 cloud clusters create demo --min-nodes 1 --max-nodes 2
@@ -28,7 +28,7 @@ lab install autoscaler
 lab load start
 ```
 
-The helper supports Bash and defines `labcompose`, `cloud`, `lab` and containerized `kubectl`. `labcompose` uses the standalone `podman-compose` command when installed, otherwise `podman compose`. No host kubectl installation is required. The wrapper uses the private cluster kubeconfig and mounts the current directory at `/workspace`, so `kubectl apply -f manifest.yaml` works normally. Read and write files relative to the current directory. Host kubeconfig export is optional. `kubectl port-forward pod/nginx 18080:80` starts a separate temporary tools container on the cluster network and publishes port 18080 on the VM's loopback address. It requires no host kubectl. Ctrl+C removes it. Choose an explicit free local port allowed by the rootless host (normally 1024 or above); random ports and non-loopback `--address` values are unsupported. For a remote VM, use an SSH tunnel to access its localhost from your laptop.
+The helper supports Bash and zsh, detects rootless Podman and defines `labcompose`, `cloud`, `lab` and containerized `kubectl`. `labcompose` uses the standalone `podman-compose` command when installed, otherwise `podman compose`. No host kubectl installation is required. The wrapper uses the private cluster kubeconfig and mounts the current directory at `/workspace`, so `kubectl apply -f manifest.yaml` works normally. Read and write files relative to the current directory. Host kubeconfig export is optional. `kubectl port-forward pod/nginx 18080:80` starts a separate temporary tools container on the cluster network and publishes port 18080 on the VM's loopback address. It requires no host kubectl. Ctrl+C removes it. Choose an explicit free local port allowed by the rootless host (normally 1024 or above); random ports and non-loopback `--address` values are unsupported. For a remote VM, use an SSH tunnel to access its localhost from your laptop.
 
 `CLOUD_STORAGE_CAPACITY` defaults to `20Gi`. A claim requesting `100Gi` with StorageClass `cloud-standard` remains Pending and produces `StorageCapacityExceeded`. Valid claims use shared directory-backed PVs. Retain keeps both data and the capacity reservation; Delete returns the budget after deleting the volume. Test persistence by recreating a pod on its original node. A directory volume's advertised capacity is an allocation request, not a limit on bytes written.
 
@@ -62,12 +62,12 @@ Upgrading the operating system is not required just to install Compose. The conf
 
 ```sh
 systemctl --user enable --now podman.socket
-source scripts/configure-rootless.sh
+source scripts/configure.sh
 labcompose --profile tools pull
 labcompose up -d cloud
 ```
 
-Source `scripts/configure-rootless.sh` in each terminal; it adds `~/.local/bin` to PATH automatically without duplicating an existing entry. Podman Compose 1.x documents support for Podman 3.4 and later; the helper accepts both old and new cgroup info field names. This does not certify the complete lab on Podman 3.4.4: the full runtime test above used 6.1.4. Missing kernel modules, subordinate UID/GID mappings or cgroup delegation must still be prepared by the VM administrator. If pip is unavailable or user installation is blocked by the Python environment, setup stops with an error; ask for Python/pip or a Compose provider to be included in the VM image. Existing working providers are not reinstalled.
+Source `scripts/configure.sh` in each terminal; it adds `~/.local/bin` to PATH automatically without duplicating an existing entry. Podman Compose 1.x documents support for Podman 3.4 and later; the helper accepts both old and new cgroup info field names. This does not certify the complete lab on Podman 3.4.4: the full runtime test above used 6.1.4. Missing kernel modules, subordinate UID/GID mappings or cgroup delegation must still be prepared by the VM administrator. If pip is unavailable or user installation is blocked by the Python environment, setup stops with an error; ask for Python/pip or a Compose provider to be included in the VM image. Existing working providers are not reinstalled.
 
 ## Automated live verification
 
@@ -79,9 +79,8 @@ python3 scripts/verify-lab.py
 
 Runtime selection is automatic: working Docker takes precedence over rootless
 Podman. Use `--runtime podman` to select Podman when both are available.
-`source scripts/configure.sh` now also detects Podman and delegates to the
-rootless helper; `configure-rootless.sh` remains an explicit Podman entry point.
-Both require Bash for Podman configuration. Detection checks the runtime's
+`source scripts/configure.sh` detects Docker or rootless Podman in Bash or zsh;
+set `CLOUD_RUNTIME=podman` before sourcing to force Podman. Detection checks the runtime's
 reported rootless mode and rejects unsupported Podman rootful or Docker rootless
 configurations before changing state.
 

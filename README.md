@@ -80,7 +80,7 @@ preserved. Run it in each terminal; it queries runtime info but does not edit sh
 images, start Docker services, or create cluster resources. Students run Compose
 and all cloud/Kubernetes commands explicitly.
 
-After sourcing `scripts/configure.sh` (or `scripts/configure-rootless.sh`), `kubectl` runs in the lab tools container with the cloud's private kubeconfig. The current directory is mounted at `/workspace`, so relative manifest paths and `kubectl cp` work without installing kubectl on the host. Use paths relative to this directory; files outside it are not mounted. `port-forward` starts a temporary container on the cluster network and publishes each requested local port on the host's `127.0.0.1`. For example, `kubectl port-forward pod/nginx 18080:80` is reachable at `http://localhost:18080`; Ctrl+C ends the forwarding. Namespace/context flags and multiple mappings are supported, including named remote ports (`18080:http`). Choose explicit local ports from 1 to 65535; random local ports (`:80` or `0:80`) and non-loopback `--address` values are rejected. `kubectl proxy` still listens inside the cloud container's network namespace.
+After sourcing `scripts/configure.sh`, `kubectl` runs in the lab tools container with the cloud's private kubeconfig. The current directory is mounted at `/workspace`, so relative manifest paths and `kubectl cp` work without installing kubectl on the host. Use paths relative to this directory; files outside it are not mounted. `port-forward` starts a temporary container on the cluster network and publishes each requested local port on the host's `127.0.0.1`. For example, `kubectl port-forward pod/nginx 18080:80` is reachable at `http://localhost:18080`; Ctrl+C ends the forwarding. Namespace/context flags and multiple mappings are supported, including named remote ports (`18080:http`). Choose explicit local ports from 1 to 65535; random local ports (`:80` or `0:80`) and non-loopback `--address` values are rejected. `kubectl proxy` still listens inside the cloud container's network namespace.
 
 An existing host kubectl installation is unchanged. The shell function takes precedence;
 use `command kubectl` to run the host binary with a host-accessible kubeconfig
@@ -578,8 +578,8 @@ verification also accepts `--runtime podman|docker|auto`. Explicit selection doe
 not fall back to another engine when unavailable. Docker rootless and Podman
 rootful are detected and rejected because the supplied Compose configurations
 do not support them. Detection queries runtime info but starts no services.
-For Podman, source from Bash; `labcompose` selects the appropriate Compose file
-on both runtimes. Direct `docker compose` commands apply only to Docker.
+Bash and zsh are supported on both runtimes; `labcompose` selects the appropriate
+Compose file. Direct `docker compose` commands apply only to Docker.
 
 No host kubectl or Go is needed. The platform must have no existing cluster;
 the script never deletes an existing cluster or unrelated containers. Persistent

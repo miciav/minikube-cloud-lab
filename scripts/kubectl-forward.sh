@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared by the Bash/zsh Docker wrapper and the Bash Podman wrapper.
+# Used by the kubectl wrapper in configure.sh (Bash/zsh, Docker/Podman).
 # Returns 125 for ordinary kubectl commands; arrays are local to the caller.
 _cloud_kubectl_forward_prepare() {
     local arg value local_port command_seen=0 resource_seen=0 literal=0 invalid_address=0

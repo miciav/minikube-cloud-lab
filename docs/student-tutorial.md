@@ -47,14 +47,14 @@ images is only needed when developing the lab itself.
 
 ### A. Student Linux VM with Podman rootless
 
-Use Bash. The instructor prepares Podman, a Compose provider, the user's API
+Use Bash or zsh. The instructor prepares Podman, a Compose provider, the user's API
 socket, subordinate UID/GID mappings, cgroups v2 delegation and the kernel
 modules `br_netfilter`/`vxlan`; see [VM preparation](podman-rootless.md).
 Students run the following without sudo:
 
 ```sh
 podman info --format '{{.Host.Security.Rootless}}'
-source scripts/configure-rootless.sh
+source scripts/configure.sh
 ```
 
 The first command must print `true`. The helper defines `cloud`, `lab` and
@@ -330,9 +330,7 @@ before starting the workload.
 In **terminal B**, watch the lab's Pods:
 
 ```sh
-# Podman rootless VM:
-source ~/cloud-lab/scripts/configure-rootless.sh
-# For Docker, use source ~/cloud-lab/scripts/configure.sh instead.
+source ~/cloud-lab/scripts/configure.sh
 kubectl get pods -l app=lab-load -w
 ```
 
@@ -341,9 +339,7 @@ An initially empty list is expected. Leave the watch running.
 In **terminal C**, watch Nodes:
 
 ```sh
-# Podman rootless VM:
-source ~/cloud-lab/scripts/configure-rootless.sh
-# For Docker, use source ~/cloud-lab/scripts/configure.sh instead.
+source ~/cloud-lab/scripts/configure.sh
 kubectl get nodes -w
 ```
 

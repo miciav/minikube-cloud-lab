@@ -25,7 +25,7 @@ func newConfigurationFixture(t *testing.T) configurationFixture {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"configure.sh", "configure-rootless.sh", "kubectl-forward.sh", "detect-runtime.sh"} {
+	for _, name := range []string{"configure.sh", "kubectl-forward.sh", "detect-runtime.sh"} {
 		script, err := os.ReadFile(filepath.Join("scripts", name)) // #nosec G304 -- names come from the fixed list above.
 		if err != nil {
 			t.Fatal(err)
@@ -334,7 +334,7 @@ printf 'manifest-input' | kubectl apply -f - --namespace 'name with spaces'
 				t.Fatalf("stdin lost: %q %v", input, err)
 			}
 			got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
-			want := []string{"compose", "--progress", "quiet", "--project-directory", f.root, "--env-file", filepath.Join(f.root, ".env"), "-f", filepath.Join(f.root, "compose.yaml"), "run", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "-", "--namespace", "name with spaces"}
+			want := []string{"compose", "--progress", "quiet", "--project-directory", f.root, "--env-file", filepath.Join(f.root, ".env"), "-f", filepath.Join(f.root, "compose.yaml"), "run", "-T", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "-", "--namespace", "name with spaces"}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("argv: %q want %q", got, want)
 			}
@@ -342,92 +342,89 @@ printf 'manifest-input' | kubectl apply -f - --namespace 'name with spaces'
 	}
 }
 
+// podmanWrappers returns the session wrappers from configure.sh, set up for rootless Podman
+// without running the host preflight.
+func podmanWrappers(t *testing.T) string {
+	t.Helper()
+	script, err := os.ReadFile("scripts/configure.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, end := strings.Index(string(script), "    function labcompose"), strings.Index(string(script), "    unalias ")
+	if start < 0 || end <= start {
+		t.Fatal("wrappers missing")
+	}
+	return "source \"$CONFIG_TEST_ROOT/scripts/kubectl-forward.sh\"\nCLOUD_LAB_ROOT=\"$CONFIG_TEST_ROOT\"\nCLOUD_LAB_RUNTIME=podman\n" + string(script[start:end])
+}
+
+// fakeRootlessPodman makes runtime detection report rootless Podman; every other query prints "true".
+func (f configurationFixture) fakeRootlessPodman(t *testing.T) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(f.bin, "podman"), []byte("#!/bin/sh\necho true\n"), 0o700); err != nil { // #nosec G306 -- private executable test fixture, not a data file.
+		t.Fatal(err)
+	}
+}
+
 func TestRootlessWrappersUseAvailableComposeProvider(t *testing.T) {
-	for _, standalone := range []bool{false, true} {
-		t.Run(fmt.Sprint(standalone), func(t *testing.T) {
-			f := newConfigurationFixture(t)
-			if standalone {
-				if err := os.Symlink(filepath.Join(f.bin, "podman"), filepath.Join(f.bin, "podman-compose")); err != nil {
-					t.Fatal(err)
+	for _, shell := range []string{"bash", "zsh"} {
+		for _, standalone := range []bool{false, true} {
+			t.Run(fmt.Sprint(shell, "/", standalone), func(t *testing.T) {
+				f := newConfigurationFixture(t)
+				if standalone {
+					if err := os.Symlink(filepath.Join(f.bin, "podman"), filepath.Join(f.bin, "podman-compose")); err != nil {
+						t.Fatal(err)
+					}
 				}
-			}
-			script, err := os.ReadFile("scripts/configure-rootless.sh")
-			if err != nil {
-				t.Fatal(err)
-			}
-			start, end := strings.Index(string(script), "    function "), strings.Index(string(script), "    unalias ")
-			if start < 0 || end <= start {
-				t.Fatal("rootless wrappers missing")
-			}
-			body := "source \"$CONFIG_TEST_ROOT/scripts/kubectl-forward.sh\"\nCLOUD_ROOTLESS_ROOT=\"$CONFIG_TEST_ROOT\"\nPATH=\"$CONFIG_TEST_BIN\"\n" + string(script[start:end]) + `
+				body := "PATH=\"$CONFIG_TEST_BIN\"\n" + podmanWrappers(t) + `
 labcompose up -d cloud || exit
 cloud clusters list || exit
 lab load start || exit
 kubectl apply -f 'manifest with spaces.yaml'
 `
-			out, err := f.run(t, body, "CONFIG_TEST_ROOT="+f.root, "CONFIG_TEST_BIN="+f.bin)
-			if err != nil {
-				t.Fatalf("wrappers: %s (%v)", out, err)
-			}
-			data, err := os.ReadFile(f.dockerLog)
-			if err != nil {
-				t.Fatal(err)
-			}
-			prefix := []string{"-f", filepath.Join(f.root, "compose.rootless.yaml")}
-			if !standalone {
-				prefix = append([]string{"compose"}, prefix...)
-			}
-			var want []string
-			for _, args := range [][]string{
-				{"up", "-d", "cloud"},
-				{"exec", "cloud", "cloud", "clusters", "list"},
-				{"--profile", "tools", "run", "--rm", "lab", "load", "start"},
-				{"--profile", "tools", "run", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "manifest with spaces.yaml"},
-			} {
-				want = append(want, prefix...)
-				want = append(want, args...)
-			}
-			got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("argv: %q want %q", got, want)
-			}
-		})
-	}
-}
-
-func TestRootlessConfigurationIgnoresCDPATH(t *testing.T) {
-	f := newConfigurationFixture(t)
-	out, err := f.run(t, `builtin cd -- "$CONFIG_TEST_ROOT" || exit
-export CDPATH=.
-function podman {
-    # Inspect the helper's local path before the Linux-only preflight checks.
-    printf '%s' "$root" > "$CONFIG_TEST_ROOT_LOG"
-    printf 'false\n'
-}
-
-source scripts/configure-rootless.sh
-test "$?" = 1
-`, "CONFIG_TEST_ROOT="+f.root, "CONFIG_TEST_ROOT_LOG="+f.dockerLog)
-	if err != nil {
-		t.Fatalf("preflight: %s (%v)", out, err)
-	}
-	got, err := os.ReadFile(f.dockerLog)
-	if err != nil || string(got) != f.root {
-		t.Fatalf("checkout path: %q, want %q (%v)", got, f.root, err)
+				out, err := f.runShell(t, shell, body, "CONFIG_TEST_ROOT="+f.root, "CONFIG_TEST_BIN="+f.bin)
+				if err != nil {
+					t.Fatalf("wrappers: %s (%v)", out, err)
+				}
+				data, err := os.ReadFile(f.dockerLog)
+				if err != nil {
+					t.Fatal(err)
+				}
+				prefix := []string{"-f", filepath.Join(f.root, "compose.rootless.yaml")}
+				if !standalone {
+					prefix = append([]string{"compose"}, prefix...)
+				}
+				var want []string
+				for _, args := range [][]string{
+					{"up", "-d", "cloud"},
+					{"exec", "cloud", "cloud", "clusters", "list"},
+					{"--profile", "tools", "run", "--rm", "lab", "load", "start"},
+					{"--profile", "tools", "run", "-T", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "manifest with spaces.yaml"},
+				} {
+					want = append(want, prefix...)
+					want = append(want, args...)
+				}
+				got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("argv: %q want %q", got, want)
+				}
+			})
+		}
 	}
 }
 
 func TestRootlessConfigurationCgroupVersionCompatibility(t *testing.T) {
-	for _, tc := range []struct{ field, version, want string }{
-		{"CgroupsVersion", "v2", "Start the user API socket"},
-		{"CGroupsVersion", "v2", "Start the user API socket"},
-		{"CgroupsVersion", "v1", "Rootless resource limits require cgroups v2"},
-		{"CGroupsVersion", "v1", "Rootless resource limits require cgroups v2"},
-		{"unavailable", "", "Cannot read the Podman cgroup version"},
-	} {
-		t.Run(tc.field+"/"+tc.version, func(t *testing.T) {
-			f := newConfigurationFixture(t)
-			out, err := f.run(t, `function podman {
+	for _, shell := range []string{"bash", "zsh"} {
+		for _, tc := range []struct{ field, version, want string }{
+			{"CgroupsVersion", "v2", "Start the user API socket"},
+			{"CGroupsVersion", "v2", "Start the user API socket"},
+			{"CgroupsVersion", "v1", "Rootless resource limits require cgroups v2"},
+			{"CGroupsVersion", "v1", "Rootless resource limits require cgroups v2"},
+			{"unavailable", "", "Cannot read the Podman cgroup version"},
+		} {
+			t.Run(shell+"/"+tc.field+"/"+tc.version, func(t *testing.T) {
+				f := newConfigurationFixture(t)
+				f.fakeRootlessPodman(t)
+				out, err := f.runShell(t, shell, `function podman {
     if [[ "$*" == 'info --format {{.Host.Security.Rootless}}' ]]; then
         printf 'true\n'
     elif [[ "$*" == "info --format {{.Host.$CONFIG_TEST_CGROUP_FIELD}}" ]]; then
@@ -437,18 +434,19 @@ func TestRootlessConfigurationCgroupVersionCompatibility(t *testing.T) {
         return 1
     fi
 }
-source "$(dirname -- "$CONFIG_TEST_SCRIPT")/configure-rootless.sh"
+source "$CONFIG_TEST_SCRIPT"
 test "$?" = 1
-`, "XDG_RUNTIME_DIR=", "CONFIG_TEST_CGROUP_FIELD="+tc.field, "CONFIG_TEST_CGROUP_VERSION="+tc.version)
-			if err != nil || !strings.Contains(string(out), tc.want) {
-				t.Fatalf("preflight: %s (%v), want %q", out, err, tc.want)
-			}
-		})
+`, "CLOUD_RUNTIME=podman", "XDG_RUNTIME_DIR=", "CONFIG_TEST_CGROUP_FIELD="+tc.field, "CONFIG_TEST_CGROUP_VERSION="+tc.version)
+				if err != nil || !strings.Contains(string(out), tc.want) {
+					t.Fatalf("preflight: %s (%v), want %q", out, err, tc.want)
+				}
+			})
+		}
 	}
 }
 
 func TestContainerPortForward(t *testing.T) {
-	for _, mode := range []string{"bash", "zsh", "podman"} {
+	for _, mode := range []string{"bash", "zsh", "podman", "podman-zsh"} {
 		for _, tc := range []struct {
 			name, command string
 			ports         []string
@@ -467,14 +465,9 @@ func TestContainerPortForward(t *testing.T) {
 			t.Run(mode+"/"+tc.name, func(t *testing.T) {
 				f := newConfigurationFixture(t)
 				shell, setup := mode, "source \"$CONFIG_TEST_SCRIPT\" || exit\n"
-				if mode == "podman" {
-					shell = "bash"
-					script, err := os.ReadFile("scripts/configure-rootless.sh")
-					if err != nil {
-						t.Fatal(err)
-					}
-					start, end := strings.Index(string(script), "    function "), strings.Index(string(script), "    unalias ")
-					setup = "source \"$CONFIG_TEST_ROOT/scripts/kubectl-forward.sh\"\nCLOUD_ROOTLESS_ROOT=\"$CONFIG_TEST_ROOT\"\n" + string(script[start:end])
+				if strings.HasPrefix(mode, "podman") {
+					shell = map[string]string{"podman": "bash", "podman-zsh": "zsh"}[mode]
+					setup = podmanWrappers(t)
 				}
 				out, err := f.runShell(t, shell, setup+"\nkubectl "+tc.command, "CONFIG_TEST_ROOT="+f.root)
 				if tc.fail {
@@ -517,6 +510,7 @@ func TestRootlessConfigurationAddsUserBinOnce(t *testing.T) {
 	for _, alreadyPresent := range []bool{false, true} {
 		t.Run(fmt.Sprint(alreadyPresent), func(t *testing.T) {
 			f := newConfigurationFixture(t)
+			f.fakeRootlessPodman(t)
 			setup := ""
 			if alreadyPresent {
 				setup = `PATH="$PATH:$HOME/.local/bin"`
@@ -524,16 +518,16 @@ func TestRootlessConfigurationAddsUserBinOnce(t *testing.T) {
 			out, err := f.run(t, setup+`
 before=$PATH
 # The fake Podman fails preflight; PATH must already support user-installed tools.
-source "$CONFIG_TEST_ROOT/scripts/configure-rootless.sh" >/dev/null 2>&1 || true
+source "$CONFIG_TEST_SCRIPT" >/dev/null 2>&1 || true
 first=$PATH
-source "$CONFIG_TEST_ROOT/scripts/configure-rootless.sh" >/dev/null 2>&1 || true
+source "$CONFIG_TEST_SCRIPT" >/dev/null 2>&1 || true
 [[ "$PATH" == "$first" ]] || exit 21
 case ":$before:" in
  *":$HOME/.local/bin:"*) [[ "$PATH" == "$before" ]] || exit 22 ;;
  *) [[ "$PATH" == "$HOME/.local/bin:$before" ]] || exit 23 ;;
 esac
 bash -c '[[ ":$PATH:" == *":$HOME/.local/bin:"* ]]' || exit 24
-`, "CONFIG_TEST_ROOT="+f.root)
+`, "CLOUD_RUNTIME=podman")
 			if err != nil {
 				t.Fatalf("user PATH setup: %s (%v)", out, err)
 			}
@@ -542,12 +536,12 @@ bash -c '[[ ":$PATH:" == *":$HOME/.local/bin:"* ]]' || exit 24
 }
 
 func TestRootlessComposeInstallation(t *testing.T) {
-	script, err := os.ReadFile("scripts/configure-rootless.sh")
+	script, err := os.ReadFile("scripts/configure.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := strings.Index(string(script), "    # Install only when")
-	end := strings.Index(string(script), "    source \"$root/scripts/kubectl-forward.sh\"")
+	start := strings.Index(string(script), "        # Install only when")
+	end := strings.Index(string(script), "    else\n        case $(uname -s) in")
 	if start < 0 || end <= start {
 		t.Fatal("missing provider setup")
 	}
@@ -573,23 +567,22 @@ func TestRootlessComposeInstallation(t *testing.T) {
 	}
 }
 
-func TestConfigurationDetectsPodmanAndDelegates(t *testing.T) {
-	f := newConfigurationFixture(t)
-	if err := os.WriteFile(filepath.Join(f.bin, "docker"), []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil { // #nosec G306 -- private executable test fixture, not a data file.
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(f.bin, "podman"), []byte("#!/bin/sh\necho true\n"), 0o700); err != nil { // #nosec G306 -- private executable test fixture, not a data file.
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(f.root, "scripts/configure-rootless.sh"), []byte("CLOUD_ROOTLESS_ROOT=delegated\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	out, err := f.run(t, `source "$CONFIG_TEST_SCRIPT" || exit
-[[ "$CLOUD_ROOTLESS_ROOT" == delegated ]] || exit 9
-[[ ! -e "$CONFIG_TEST_ROOT/.env" ]] || exit 10
-`, "CONFIG_TEST_ROOT="+f.root)
-	if err != nil {
-		t.Fatalf("Podman routing: %s (%v)", out, err)
+func TestConfigurationDetectsPodmanWithoutDockerState(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh"} {
+		t.Run(shell, func(t *testing.T) {
+			f := newConfigurationFixture(t)
+			if err := os.WriteFile(filepath.Join(f.bin, "docker"), []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil { // #nosec G306 -- private executable test fixture, not a data file.
+				t.Fatal(err)
+			}
+			f.fakeRootlessPodman(t)
+			// The fake reports cgroup "true", so the Podman preflight stops before defining wrappers.
+			out, err := f.runShell(t, shell, `source "$CONFIG_TEST_SCRIPT"
+[[ $? == 1 && ! -e "$CONFIG_TEST_ROOT/.env" && -z "${KUBECONFIG:-}" ]] || exit 9
+`, "CONFIG_TEST_ROOT="+f.root, "KUBECONFIG=")
+			if err != nil || !strings.Contains(string(out), "Detected runtime: podman") || !strings.Contains(string(out), "cgroups v2") {
+				t.Fatalf("Podman routing: %s (%v)", out, err)
+			}
+		})
 	}
 }
 

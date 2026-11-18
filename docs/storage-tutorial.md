@@ -3,8 +3,7 @@
 For the Podman rootless VM variant, use [these setup instructions](podman-rootless.md). Its storage allocation budget is simulated and does not impose physical write quotas.
 
 Use the runtime already started in the [autoscaling tutorial](student-tutorial.md):
-`source scripts/configure-rootless.sh` for the Podman VM, or `source
-scripts/configure.sh` for Docker. The helpers provide containerized `kubectl`;
+`source scripts/configure.sh` (it detects Docker or the Podman VM). The helpers provide containerized `kubectl`;
 no host installation is required. Pull images published by the CI before starting
 an updated lab. The optional portal is available only in the Docker configuration.
 Allocated capacity is a reservation, not measured disk usage.
