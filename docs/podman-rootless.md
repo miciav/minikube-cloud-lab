@@ -139,3 +139,30 @@ cleanup; forcibly killing the script or shutting down the VM can leave resources
 
 Exit codes: **0** all checks passed, **1** failures (including cleanup), **2** no
 failures but some checks skipped. A SKIP is not full certification of the VM.
+
+## Reproducible Multipass VM
+
+From a checkout containing the changes to test, run:
+
+```sh
+bash scripts/multipass-rootless.sh
+```
+
+The host needs Git and Multipass. The script creates a dedicated Ubuntu 26.04
+VM named `mcl-rootless-test` with 4 CPUs, 8 GiB of RAM and a 48 GiB virtual
+disk. It provisions Podman, Compose, kernel modules and cgroup delegation,
+then builds the cloud image from the indicated Git commit inside the VM.
+Commit local edits before running. The VM needs internet access to Ubuntu
+package mirrors, container registries and Go modules on its first run.
+
+The short test checks the management API's rootless disk response, attempts
+a native loop-backed ext4 mount in a disposable instance, and checks SSH and
+file persistence across instance stop/start. The managed `cloud disks` feature
+currently requires rootful Docker. The native probe prints the VM's observed
+result separately. Use `--full` to also build the lab image and run
+`verify-lab.py --runtime podman --no-pull` with its Kubernetes and storage
+checks. A nonzero exit indicates a failed or incomplete verification.
+
+Rerunning the command reuses the marked VM and its image cache. Specify
+`--vm NAME` for a separate environment. The script leaves the VM available
+for inspection. Stop it with `multipass stop mcl-rootless-test`.
