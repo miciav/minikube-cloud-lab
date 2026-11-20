@@ -166,3 +166,23 @@ checks. A nonzero exit indicates a failed or incomplete verification.
 Rerunning the command reuses the marked VM and its image cache. Specify
 `--vm NAME` for a separate environment. The script leaves the VM available
 for inspection. Stop it with `multipass stop mcl-rootless-test`.
+
+### Block-device feasibility on the test VM
+
+From the checkout on the host, after provisioning the Multipass VM:
+
+```sh
+multipass exec mcl-rootless-test -- bash -s < tests/rootless-block-device.sh
+```
+
+The probe uses sudo in the dedicated VM to associate a fresh 64 MiB file with
+a loop device and create a private device node for the lab user. Two successive
+rootless Podman containers receive that node as `/dev/cloud-disks/dati`. The
+first formats the block device using `mkfs.ext4` and writes a file through
+`fuse2fs`. The second mounts the same disk and checks the file contents.
+The probe removes its device and image on exit.
+
+This verifies guest formatting and persistence with host-assisted allocation.
+The host gives each container the device when it starts. Hot attachment,
+exclusive ownership, busy-device rejection and cloud-managed recovery still
+require integration before the rootless management API can enable disks.
