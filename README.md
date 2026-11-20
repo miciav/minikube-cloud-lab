@@ -469,9 +469,9 @@ for that instance. Use instances only on a trusted lab host.
 
 ## Development
 
-You need Go 1.27.3, Bash and zsh for the configuration tests, `uv` for pre-commit,
+You need Go 1.27.4, Bash and zsh for the configuration tests, `uv` for pre-commit,
 and Docker for real infrastructure tests. Frontend development/tests also require
-Node.js 26.12.1 and `npm --prefix web ci`; students need neither Node nor Go.
+Node.js 26.13.1 and `npm --prefix web ci`; students need neither Node nor Go.
 
 ```sh
 make build

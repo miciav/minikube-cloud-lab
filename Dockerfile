@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4-bookworm AS build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
@@ -13,7 +13,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/portal ./cmd/portal
 
 # Build the upstream CLI with patched dependencies isolated from the cloud module.
-FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm AS kubectl-cli
+FROM --platform=$BUILDPLATFORM golang:1.27.4-bookworm AS kubectl-cli
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
@@ -64,7 +64,7 @@ COPY storage/supervisord.conf /etc/supervisor/conf.d/nfs.conf
 LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-lab"
 ENTRYPOINT ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/nfs.conf"]
 
-FROM --platform=$BUILDPLATFORM node:26.12.1-bookworm-slim AS web-build
+FROM --platform=$BUILDPLATFORM node:26.13.1-bookworm-slim AS web-build
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
