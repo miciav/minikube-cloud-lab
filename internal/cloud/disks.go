@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,7 +26,7 @@ type diskGuest interface {
 }
 
 func (s *Service) disksEnabled() bool {
-	return os.Getenv("CLOUD_DISK_VOLUME") != "" && os.Getenv("CLOUD_ROOTLESS") != "true"
+	return os.Getenv("CLOUD_DISK_VOLUME") != ""
 }
 func (s *Service) diskRoot() string { return filepath.Join(s.dir, "instance-disks") }
 
@@ -49,7 +50,7 @@ func (s *Service) InstanceDisks() ([]Disk, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.disksEnabled() {
-		return nil, unavailable("instance disks require rootful Docker")
+		return nil, unavailable("instance disk storage is not configured")
 	}
 	files, err := os.ReadDir(filepath.Join(s.diskRoot(), "images"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -74,7 +75,7 @@ func (s *Service) ChangeDisk(ctx context.Context, action, name, size, instance s
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.disksEnabled() {
-		return Disk{}, unavailable("instance disks require rootful Docker")
+		return Disk{}, unavailable("instance disk storage is not configured")
 	}
 	if len(validation.IsDNS1123Label(name)) != 0 {
 		return Disk{}, fmt.Errorf("%w: invalid disk name", ErrInvalid)
@@ -186,6 +187,22 @@ func (s *Service) changeAttachment(ctx context.Context, d Disk, instance string,
 	if !attach && d.Instance == "" {
 		return d, nil
 	}
+	emulated := os.Getenv("CLOUD_ROOTLESS") == "true"
+	if emulated {
+		if err := os.MkdirAll(filepath.Dir(link), 0700); err != nil {
+			return Disk{}, err
+		}
+		f, err := os.Open(image) // #nosec G304 -- validated disk name in the cloud image directory.
+		if err != nil {
+			return Disk{}, err
+		}
+		defer func() { _ = f.Close() }()
+		if err = unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); errors.Is(err, unix.EWOULDBLOCK) {
+			return Disk{}, fmt.Errorf("%w: exit the active disk console first", ErrConflict)
+		} else if err != nil {
+			return Disk{}, err
+		}
+	}
 	if _, err := os.Stat(filepath.Dir(link)); errors.Is(err, os.ErrNotExist) {
 		return Disk{}, fmt.Errorf("%w: instance predates disk support; attach to a newly created instance", ErrFailedPrecondition)
 	} else if err != nil {
@@ -201,10 +218,12 @@ func (s *Service) changeAttachment(ctx context.Context, d Disk, instance string,
 	if err := linkDiskImage(image, link); err != nil {
 		return Disk{}, err
 	}
-	if err := guest.SetInstanceDisk(ctx, instance, name, attach); errors.Is(err, infra.ErrDiskBusy) {
-		return Disk{}, fmt.Errorf("%w: %w", ErrConflict, err)
-	} else if err != nil {
-		return Disk{}, err
+	if !emulated {
+		if err := guest.SetInstanceDisk(ctx, instance, name, attach); errors.Is(err, infra.ErrDiskBusy) {
+			return Disk{}, fmt.Errorf("%w: %w", ErrConflict, err)
+		} else if err != nil {
+			return Disk{}, err
+		}
 	}
 	if !attach {
 		if err := os.Remove(link); err != nil {

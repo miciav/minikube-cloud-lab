@@ -96,55 +96,9 @@ started=true
 labcompose up -d cloud
 for _ in {1..40}; do if cloud images list >/dev/null 2>&1; then break; fi; sleep 1; done
 cloud images list
-# Check the installed API, including its exact rootless capability boundary.
-python3 - <<'PY'
-import json
-import urllib.error
-import urllib.request
-
-for method, path, body in [
-    ("GET", "/v1/disks", None),
-    ("POST", "/v1/disks/rootless-probe", b'{"size":"64Mi"}'),
-]:
-    req = urllib.request.Request("http://127.0.0.1:8080" + path, data=body,
-                                 method=method, headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            raise SystemExit(f"Unexpected {response.status} for {method} {path}")
-    except urllib.error.HTTPError as error:
-        if error.code != 503 or json.load(error).get("error") != "instance disks require rootful Docker":
-            raise
-print("PASS: disk requests return the documented rootless error")
-PY
+python3 tests/rootless-disk-console.py
 created=true
 cloud instances create "$instance"
-podman exec -i --user 0 "mcl-vm-$instance" bash -se <<'BLOCK'
-export LC_ALL=C
-dir=$(mktemp -d)
-device=
-cleanup() {
-    if mountpoint -q "$dir/mount"; then umount "$dir/mount" || return 1; fi
-    if [[ -n $device ]]; then losetup -d "$device" || return 1; fi
-    rm -rf "$dir"
-}
-trap cleanup EXIT
-truncate -s 64M "$dir/disk"
-if device=$(losetup --find --show "$dir/disk" 2>"$dir/error"); then
-    mkfs.ext4 -q "$device"
-    mkdir "$dir/mount"
-    if mount "$device" "$dir/mount" 2>"$dir/error"; then
-        echo preserved > "$dir/mount/proof"
-        umount "$dir/mount"
-        mount "$device" "$dir/mount"
-        grep -qx preserved "$dir/mount/proof"
-        echo "Native probe: this VM permits a loop-backed ext4 mount."
-        exit 0
-    fi
-fi
-cat "$dir/error" >&2
-grep -Eiq 'permission denied|operation not permitted|cannot find an unused loop device|no such device' "$dir/error"
-echo "Native probe: an unprivileged guest cannot complete the loop-backed ext4 exercise here."
-BLOCK
 cloud instances ssh "$instance" -- sudo touch "/var/tmp/$instance"
 cloud instances stop "$instance"
 cloud instances start "$instance"

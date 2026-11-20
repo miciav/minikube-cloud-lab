@@ -144,7 +144,7 @@ func TestInstanceDiskHTTPContract(t *testing.T) {
 	if _, err = c.ChangeDisk(t.Context(), "typo", "data", "64Mi", ""); err == nil {
 		t.Fatal("unknown action accepted")
 	}
-	t.Setenv("CLOUD_ROOTLESS", "true")
+	t.Setenv("CLOUD_DISK_VOLUME", "")
 	_, err = c.InstanceDisks(t.Context())
 	assertStatus(t, err, http.StatusServiceUnavailable)
 }

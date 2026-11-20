@@ -119,7 +119,14 @@ _cloud_lab_configure() {
             labcompose --profile tools run "$@"
         fi
     }
-    function cloud { labcompose exec cloud cloud "$@"; }
+    function cloud {
+        if [[ $CLOUD_LAB_RUNTIME == podman && ${1:-} == disks && ${2:-} == shell ]]; then
+            shift 2
+            "$CLOUD_LAB_ROOT/scripts/rootless-disk-shell.sh" "$@"
+        else
+            labcompose exec cloud cloud "$@"
+        fi
+    }
     function lab { _cloud_lab_run --rm lab "$@"; }
     function kubectl {
         local -a _cloud_forward_ports _cloud_forward_args

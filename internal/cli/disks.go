@@ -2,13 +2,14 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 )
 
 func addDiskCommands(root *cobra.Command) {
-	parent := &cobra.Command{Use: "disks", Short: "Manage standalone instance data disks (rootful Docker)"}
+	parent := &cobra.Command{Use: "disks", Short: "Manage standalone instance data disks "}
 	for _, action := range []string{"create", "attach", "detach", "delete"} {
 		var size, instance string
 		sub := &cobra.Command{Use: action + " NAME", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -16,7 +17,9 @@ func addDiskCommands(root *cobra.Command) {
 			if err != nil {
 				return err
 			}
-			if action == "attach" {
+			if action == "attach" && os.Getenv("CLOUD_ROOTLESS") == "true" {
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Open on the lab host: cloud disks shell %s %s\n", d.Instance, d.Name)
+			} else if action == "attach" {
 				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s: /dev/cloud-disks/%s\n", d.Instance, d.Name)
 			} else {
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), d.Name)

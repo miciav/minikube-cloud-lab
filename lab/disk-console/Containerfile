@@ -1,0 +1,12 @@
+FROM alpine:3.22 AS guest
+RUN apk add --no-cache linux-virt mkinitfs e2fsprogs util-linux && \
+    printf '%s\n' /sbin/mke2fs /sbin/mkfs.ext4 /etc/mke2fs.conf /bin/lsblk > /etc/mkinitfs/features.d/disk.files
+COPY init /init
+RUN mkinitfs -q -i /init -F 'base virtio ext4 disk' -o /guest-initrd "$(ls /lib/modules)" && cp /boot/vmlinuz-virt /guest-kernel
+
+FROM alpine:3.22
+RUN case "$(apk --print-arch)" in aarch64) cpu=aarch64 ;; x86_64) cpu=x86_64 ;; *) exit 1 ;; esac && \
+    apk add --no-cache "qemu-system-$cpu" flock
+COPY --from=guest /guest-kernel /guest-initrd /
+COPY run /usr/local/bin/run
+ENTRYPOINT ["/usr/local/bin/run"]

@@ -75,11 +75,11 @@ func TestDiskReservationSurvivesAmbiguousGuestFailure(t *testing.T) {
 func TestDiskValidation(t *testing.T) {
 	s, _, _ := newService(t)
 	t.Setenv("CLOUD_DISK_VOLUME", "test")
-	t.Setenv("CLOUD_ROOTLESS", "true")
+	t.Setenv("CLOUD_DISK_VOLUME", "")
 	if _, err := s.InstanceDisks(); !errors.Is(err, cloud.ErrUnavailable) {
 		t.Fatal(err)
 	}
-	t.Setenv("CLOUD_ROOTLESS", "")
+	t.Setenv("CLOUD_DISK_VOLUME", "test")
 	for _, test := range []struct{ name, size string }{{"../x", "1Gi"}, {"data", "0"}, {"data", "1"}, {"data", "-1Gi"}, {"data", "oops"}} {
 		if _, err := s.ChangeDisk(t.Context(), "create", test.name, test.size, ""); !errors.Is(err, cloud.ErrInvalid) {
 			t.Errorf("%v: %v", test, err)
@@ -145,7 +145,7 @@ func TestDiskAttachmentPreconditionsAndDeletion(t *testing.T) {
 	wait(t, s, del)
 	require("delete", nil)
 	require("delete", cloud.ErrNotFound)
-	t.Setenv("CLOUD_ROOTLESS", "true")
+	t.Setenv("CLOUD_DISK_VOLUME", "")
 	require("create", cloud.ErrUnavailable)
 }
 
