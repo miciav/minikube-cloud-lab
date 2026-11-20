@@ -44,6 +44,7 @@ func respond(w http.ResponseWriter, status int, value any, err error) {
 // NewServer routes management requests to the shared cloud service.
 func NewServer(svc *cloud.Service) http.Handler {
 	mux := http.NewServeMux()
+	diskRoutes(mux, svc)
 	mux.HandleFunc("GET /v1/clusters/{name}/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		v, err := svc.Dashboard(r.Context(), r.PathValue("name"))
 		respond(w, 200, v, err)

@@ -43,3 +43,12 @@ service. Rootless Podman and Kubernetes PVCs are outside the first release.
 On 2026-11-20 the probe passed on rootful Docker using the Ubuntu 26.04 instance
 image at digest `sha256:0a5d61efc113b2ce3100318d474cc4406a42534ae9232c3d8e599797d6a29ef8`.
 The second container read the marker written to ext4 by the first container.
+
+## Implemented acceptance test
+
+The rootful cloud exposes the commands above for standalone instances created
+with disk support. `tests/instance-disks.sh` runs the exercise over the cloud
+CLI and SSH, checks that a mounted disk cannot be detached or deleted, and
+checks persistence across instance stop/start, transfer and deletion. With
+`TEST_RESTART_CLOUD=1` it also restarts the cloud service and checks ownership.
+The Student path workflow runs this test after the Kubernetes storage exercises.

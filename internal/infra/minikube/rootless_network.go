@@ -44,6 +44,10 @@ func restoreRootlessMAC(ctx context.Context, name, network string) error {
 	return nil
 }
 
+type guestExitCode int
+
+func (code guestExitCode) Error() string { return fmt.Sprintf("command exited %d", int(code)) }
+
 // execRoot runs script as root inside a container through the API and waits for success.
 func execRoot(ctx context.Context, client *dockerclient.Client, name string, env []string, script string) error {
 	task, err := client.ContainerExecCreate(ctx, name, container.ExecOptions{User: "0", Env: env, Cmd: []string{"sh", "-c", script}})
@@ -62,7 +66,7 @@ func execRoot(ctx context.Context, client *dockerclient.Client, name string, env
 			return false, nil
 		}
 		if status.ExitCode != 0 {
-			return false, fmt.Errorf("command exited %d", status.ExitCode)
+			return false, guestExitCode(status.ExitCode)
 		}
 		return true, nil
 	})

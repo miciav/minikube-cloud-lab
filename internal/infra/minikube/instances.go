@@ -11,8 +11,11 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/docker/docker/api/types/mount"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
@@ -211,6 +214,21 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 		return infra.Instance{}, fmt.Errorf("create volume: %w", err)
 	}
 	cfg, host, endpoints := instanceContainer(spec, image, i.network, ip, instanceRootless())
+	if diskVolume := os.Getenv("CLOUD_DISK_VOLUME"); diskVolume != "" && !instanceRootless() {
+		slot := filepath.Join("slots", spec.Name)
+		path := filepath.Join(filepath.Dir(i.home), "instance-disks", slot)
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			return infra.Instance{}, err
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return infra.Instance{}, err
+		}
+		if len(entries) != 0 {
+			return infra.Instance{}, fmt.Errorf("disk attachments remain for %s", spec.Name)
+		}
+		host.Mounts = append(host.Mounts, mount.Mount{Type: mount.TypeVolume, Source: diskVolume, Target: "/var/lib/mcl-disk-images", VolumeOptions: &mount.VolumeOptions{Subpath: slot, NoCopy: true}})
+	}
 	created, err := client.ContainerCreate(ctx, cfg, host, endpoints, nil, name)
 	if err != nil {
 		return infra.Instance{}, fmt.Errorf("create container: %w", err)

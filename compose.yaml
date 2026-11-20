@@ -6,6 +6,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
+      CLOUD_DISK_VOLUME: minikube-cloud-lab-disks
       CLOUD_NFS_IP: ${CLOUD_NFS_IP:-172.30.0.253}
       CLOUD_STORAGE_CAPACITY: ${CLOUD_STORAGE_CAPACITY:-20Gi}
       CLOUD_DOCKER_NETWORK: minikube-cloud-lab
@@ -24,6 +25,7 @@ services:
       - ${HOME}/.minikube-cloud-lab:/data
       - ${HOME}/.kube:/kube
       - storage:/data/storage
+      - instance-disks:/data/instance-disks
     restart: unless-stopped
   nfs:
     image: ${NFS_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/nfs:latest}
@@ -75,5 +77,7 @@ networks:
           gateway: ${CLOUD_DOCKER_GATEWAY:-172.30.0.1}
 
 volumes:
+  instance-disks:
+    name: minikube-cloud-lab-disks
   storage:
     name: minikube-cloud-lab-storage

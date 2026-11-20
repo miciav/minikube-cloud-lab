@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -267,14 +268,25 @@ func (s *Service) DeleteInstance(name, requester string) (Operation, error) {
 		if err := s.instances.DeleteInstance(context.Background(), name); err != nil {
 			return err
 		}
-		return os.RemoveAll(s.instanceDir(name))
+		return s.removeInstanceFiles(name)
 	}, func(st *snapshot, err error) {
 		if err == nil {
+			maps.DeleteFunc(st.DiskOwners, func(_ string, owner string) bool { return owner == name })
 			st.Instances = slices.DeleteFunc(st.Instances, func(i Instance) bool { return i.Name == name })
 		} else if i, lookup := st.instance(name); lookup == nil {
 			i.Status = "ERROR"
 		}
 	})
+}
+
+func (s *Service) removeInstanceFiles(name string) error {
+	if s.disksEnabled() {
+		// Attachment links live here. The independent images survive instance deletion.
+		if err := os.RemoveAll(filepath.Join(s.diskRoot(), "slots", name)); err != nil {
+			return err
+		}
+	}
+	return os.RemoveAll(s.instanceDir(name))
 }
 
 // reconcileInstances aligns recorded instances with the containers that survived a restart.
@@ -300,7 +312,13 @@ func (s *Service) reconcileInstances(now time.Time) {
 		delete(byName, i.Name)
 		switch {
 		case !found && i.Status == "DELETING":
-			_ = os.RemoveAll(s.instanceDir(i.Name))
+			if err := s.removeInstanceFiles(i.Name); err != nil {
+				s.logger.Error("removing instance files", "error", err)
+				i.Status = "ERROR"
+				kept = append(kept, i)
+				continue
+			}
+			maps.DeleteFunc(s.state.DiskOwners, func(_ string, owner string) bool { return owner == i.Name })
 			continue
 		case !found:
 			i.Status = "ERROR"

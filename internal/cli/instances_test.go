@@ -84,3 +84,22 @@ func TestCreateInstanceDefaultsToUbuntu(t *testing.T) {
 		}
 	}
 }
+
+func TestDiskCommands(t *testing.T) {
+	t.Setenv("CLOUD_DISK_VOLUME", "test")
+	_, url := setup(t, nil)
+	if out, err := execute(t, url, "disks", "create", "data", "--size", "1Gi"); err != nil || out != "data\n" {
+		t.Fatalf("create: %q %v", out, err)
+	}
+	if out, err := execute(t, url, "disks", "list"); err != nil || !strings.Contains(out, "1073741824") {
+		t.Fatalf("list: %q %v", out, err)
+	}
+	for _, action := range []string{"attach", "detach"} {
+		if _, err := execute(t, url, "disks", action, "data", "--instance", "missing"); err == nil || !strings.Contains(err.Error(), "missing") {
+			t.Fatalf("%s: %v", action, err)
+		}
+	}
+	if out, err := execute(t, url, "disks", "delete", "data"); err != nil || out != "data\n" {
+		t.Fatalf("delete: %q %v", out, err)
+	}
+}

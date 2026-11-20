@@ -1,0 +1,18 @@
+[Unit]
+Description=Cloud data disk %i
+ConditionPathExists=/var/lib/mcl-disk-images/%i
+Before=local-fs.target
+DefaultDependencies=no
+After=systemd-remount-fs.service
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=notify
+NotifyAccess=all
+ExecStart=/usr/local/libexec/mcl-instance-disk %i
+ExecStopPost=/bin/rm -f /dev/cloud-disks/%i
+TimeoutStartSec=10s
+
+[Install]
+WantedBy=local-fs.target

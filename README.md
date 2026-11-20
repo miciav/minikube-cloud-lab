@@ -467,6 +467,36 @@ instances generate their own SSH host keys at first boot; `debian-12` instances 
 the host keys baked into kicbase. Each connection is checked against the key recorded
 for that instance. Use instances only on a trusted lab host.
 
+### Persistent disks for standalone instances
+
+On rootful Docker, a student can create a blank disk and attach it to a running
+instance. Use instances created with this release. Each disk is a sparse file
+in the Docker volume `minikube-cloud-lab-disks`. Its capacity is independent of
+the Kubernetes PVC budget. A write consumes real space on the Docker host.
+
+With two running instances named `vm1` and `vm2`, run:
+
+```sh
+cloud disks create dati --size 1Gi
+cloud disks attach dati --instance vm1
+cloud instances ssh vm1 -- sudo mkfs.ext4 /dev/cloud-disks/dati
+cloud instances ssh vm1 -- sudo mount /dev/cloud-disks/dati /mnt
+cloud instances ssh vm1 -- sudo touch /mnt/created-on-vm1
+cloud instances ssh vm1 -- sudo umount /mnt
+cloud disks detach dati --instance vm1
+cloud disks attach dati --instance vm2
+cloud instances ssh vm2 -- sudo mount /dev/cloud-disks/dati /mnt
+cloud instances ssh vm2 -- ls -l /mnt/created-on-vm1
+```
+
+Format a new disk once. Attaching it again preserves its filesystem. The
+device path returns after an instance restart. Mount the filesystem again
+to access its contents. `cloud disks list` shows disk sizes and owners.
+Unmount the filesystem before detaching. Each disk can belong to one instance
+at a time. Deleting the instance releases the disk for reuse. To erase the
+disk itself, detach it and run `cloud disks delete dati`. Docker Compose's
+`down -v` also deletes the named disk volume and all its images.
+
 ## Development
 
 You need Go 1.27.4, Bash and zsh for the configuration tests, `uv` for pre-commit,

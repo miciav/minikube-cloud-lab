@@ -1,7 +1,10 @@
 // Package infra defines the cloud's infrastructure boundary.
 package infra
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 type (
 	// MachineShape specifies the resources of each machine.
@@ -33,6 +36,9 @@ type Instance struct {
 	Name, IP, HostKey string
 	Running           bool
 }
+
+// ErrDiskBusy indicates a data disk is still held open in a guest.
+var ErrDiskBusy = errors.New("disk is busy")
 
 // Instances manages standalone instances, separately from clusters.
 type Instances interface {
