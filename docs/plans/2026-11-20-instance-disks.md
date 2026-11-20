@@ -39,3 +39,7 @@ This probe exercises the kernel, runtime and guest tools. Release acceptance als
 requires running the student workflow against cloud-managed instances, checking
 busy and duplicate attachment, and rebooting an attached instance and the cloud
 service. Rootless Podman and Kubernetes PVCs are outside the first release.
+
+On 2026-11-20 the probe passed on rootful Docker using the Ubuntu 26.04 instance
+image at digest `sha256:0a5d61efc113b2ce3100318d474cc4406a42534ae9232c3d8e599797d6a29ef8`.
+The second container read the marker written to ext4 by the first container.
