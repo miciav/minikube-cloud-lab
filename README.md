@@ -469,6 +469,8 @@ for that instance. Use instances only on a trusted lab host.
 
 ### Persistent disks for standalone instances
 
+With rootless Podman, use the [QEMU disk console exercise](docs/podman-rootless.md#student-disk-exercise-with-qemu).
+
 On rootful Docker, a student can create a blank disk and attach it to a running
 instance. Use instances created with this release. Each disk is a sparse file
 in the Docker volume `minikube-cloud-lab-disks`. Its capacity is independent of

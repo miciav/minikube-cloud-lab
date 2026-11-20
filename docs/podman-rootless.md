@@ -155,11 +155,10 @@ then builds the cloud image from the indicated Git commit inside the VM.
 Commit local edits before running. The VM needs internet access to Ubuntu
 package mirrors, container registries and Go modules on its first run.
 
-The short test checks the management API's rootless disk response, attempts
-a native loop-backed ext4 mount in a disposable instance, and checks SSH and
-file persistence across instance stop/start. The managed `cloud disks` feature
-currently requires rootful Docker. The native probe prints the VM's observed
-result separately. Use `--full` to also build the lab image and run
+The short test creates two standalone instances and a blank disk, formats it
+in an emulated Linux console, checks that detachment is refused while the
+console is open and reads the file from the second instance. It also checks
+SSH and ordinary instance persistence across stop/start. Use `--full` to also build the lab image and run
 `verify-lab.py --runtime podman --no-pull` with its Kubernetes and storage
 checks. A nonzero exit indicates a failed or incomplete verification.
 
@@ -182,7 +181,45 @@ first formats the block device using `mkfs.ext4` and writes a file through
 `fuse2fs`. The second mounts the same disk and checks the file contents.
 The probe removes its device and image on exit.
 
-This verifies guest formatting and persistence with host-assisted allocation.
-The host gives each container the device when it starts. Hot attachment,
-exclusive ownership, busy-device rejection and cloud-managed recovery still
-require integration before the rootless management API can enable disks.
+This optional probe demonstrates host-assisted loop allocation. Student disk
+consoles use QEMU software emulation and can run without the probe.
+
+### Student disk exercise with QEMU
+
+In the VM, source `scripts/configure.sh` and start the rootless cloud. With two
+running instances named `vm1` and `vm2`, run:
+
+```sh
+cloud disks create dati --size 64Mi
+cloud disks attach dati --instance vm1
+cloud disks shell vm1 dati
+```
+
+The shell opens a minimal Linux guest with one virtio data disk. On first use
+Podman builds the console image from this checkout. In that shell run:
+
+```sh
+lsblk
+mkfs.ext4 /dev/vda
+mount /dev/vda /mnt
+echo hello > /mnt/message
+umount /mnt
+exit
+```
+
+Back on the VM, move the disk to the second instance:
+
+```sh
+cloud disks detach dati --instance vm1
+cloud disks attach dati --instance vm2
+cloud disks shell vm2 dati
+```
+
+Run `mount /dev/vda /mnt` and `cat /mnt/message`. The guest root filesystem is
+temporary; the disk image lives in the named Podman volume
+`minikube-cloud-lab-rootless-disks`. The emulated console is separate from the
+instance's ordinary SSH shell and shares the instance's lifetime. Exit the
+console before stopping the instance, detaching the disk or deleting the owner.
+Only one console can open a disk at a time. The host-side shell command is
+provided by `scripts/configure.sh`; it runs QEMU with TCG, without KVM, sudo
+or a privileged device helper.

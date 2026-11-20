@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/sys/unix"
 
 	"k8s.io/apimachinery/pkg/util/validation"
 
@@ -189,19 +190,14 @@ func (s *Service) changeAttachment(ctx context.Context, d Disk, instance string,
 	}
 	emulated := os.Getenv("CLOUD_ROOTLESS") == "true"
 	if emulated {
-		if err := os.MkdirAll(filepath.Dir(link), 0700); err != nil {
+		if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
 			return Disk{}, err
 		}
-		f, err := os.Open(image) // #nosec G304 -- validated disk name in the cloud image directory.
+		f, err := lockConsoleImage(image)
 		if err != nil {
 			return Disk{}, err
 		}
 		defer func() { _ = f.Close() }()
-		if err = unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); errors.Is(err, unix.EWOULDBLOCK) {
-			return Disk{}, fmt.Errorf("%w: exit the active disk console first", ErrConflict)
-		} else if err != nil {
-			return Disk{}, err
-		}
 	}
 	if _, err := os.Stat(filepath.Dir(link)); errors.Is(err, os.ErrNotExist) {
 		return Disk{}, fmt.Errorf("%w: instance predates disk support; attach to a newly created instance", ErrFailedPrecondition)
@@ -251,4 +247,20 @@ func (s *Service) reserveDisk(name, instance string) error {
 	}
 	next.DiskOwners[name] = instance
 	return s.store(next)
+}
+
+// lockConsoleImage serializes attachment changes with the emulator's flock on the same inode.
+func lockConsoleImage(image string) (*os.File, error) {
+	f, err := os.Open(image) // #nosec G304 -- the caller validated the disk name in the cloud image directory.
+	if err != nil {
+		return nil, err
+	}
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		_ = f.Close()
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			return nil, fmt.Errorf("%w: exit the active disk console first", ErrConflict)
+		}
+		return nil, err
+	}
+	return f, nil
 }

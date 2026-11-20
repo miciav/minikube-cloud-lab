@@ -12,7 +12,9 @@ modprobe ext4
 test -b /dev/vda
 mkdir -p /mnt
 echo 'Disk console ready. Use /dev/vda. Exit the shell to shut down.'
-setsid cttyhack /bin/sh -i || true
+export PS1="disk:/ # "
+serial=$(cat /sys/class/tty/console/active)
+setsid /bin/sh -c 'exec /bin/sh -i <"/dev/$1" >"/dev/$1" 2>&1' sh "$serial" || true
 sync
 umount -a -t ext4 || true
 poweroff -f

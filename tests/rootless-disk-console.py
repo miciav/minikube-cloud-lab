@@ -40,6 +40,8 @@ def console(owner, disk):
                     if not chunk:
                         raise RuntimeError(output[-3000:])
                     output = (output + chunk)[-16000:]
+                    if re.search(rb"\nDISK_FAIL\r?\n", output):
+                        raise RuntimeError(output[-3000:])
 
             wait_for(rb"[/~] # ")
             def command(text):

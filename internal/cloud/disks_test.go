@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/miciav/minikube-cloud-lab/internal/cloud"
 	"github.com/miciav/minikube-cloud-lab/internal/infra"
 	"github.com/miciav/minikube-cloud-lab/internal/infra/fake"
@@ -194,6 +196,44 @@ func TestInvalidDiskStorageFailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.ChangeDisk(t.Context(), "delete", "foreign", "", ""); !errors.Is(err, cloud.ErrFailedPrecondition) {
+		t.Fatal(err)
+	}
+}
+
+func TestRootlessConsolePreventsDetachment(t *testing.T) {
+	t.Setenv("CLOUD_DISK_VOLUME", "test")
+	t.Setenv("CLOUD_ROOTLESS", "true")
+	dir := t.TempDir()
+	backend := &diskBackend{Infra: fake.New(), failure: errors.New("native loop operations must not run")}
+	svc, err := cloud.NewService(backend, dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createInstance(t, svc, "vm")
+	change := func(action string) error {
+		_, err := svc.ChangeDisk(t.Context(), action, "disk", "64Mi", "vm")
+		return err
+	}
+	for _, action := range []string{"create", "attach"} {
+		if err := change(action); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file, err := os.Open(filepath.Join(dir, "instance-disks", "slots", "vm", "disk"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	if err := change("detach"); !errors.Is(err, cloud.ErrConflict) {
+		t.Fatal(err)
+	}
+	if err := unix.Flock(int(file.Fd()), unix.LOCK_UN); err != nil {
+		t.Fatal(err)
+	}
+	if err := change("detach"); err != nil {
 		t.Fatal(err)
 	}
 }
