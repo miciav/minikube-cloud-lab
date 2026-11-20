@@ -44,6 +44,9 @@ if ! command -v podman >/dev/null || ! command -v podman-compose >/dev/null; the
     sudo apt-get update
     sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y podman podman-compose uidmap dbus-user-session fuse-overlayfs slirp4netns
 fi
+# Ubuntu's pasta AppArmor profile denies the termination signal from Podman at teardown.
+mkdir -p "$HOME/.config/containers/containers.conf.d"
+printf '%s\n' '[network]' 'default_rootless_network_cmd="slirp4netns"' > "$HOME/.config/containers/containers.conf.d/90-mcl-test.conf"
 sudo modprobe br_netfilter
 sudo modprobe vxlan
 sudo loginctl enable-linger "$(id -un)"
@@ -150,6 +153,11 @@ cloud instances delete "$instance"
 created=false
 labcompose down
 started=false
+remaining=$(labcompose ps -q)
+[[ -z $remaining ]] || { echo "Compose containers remain: $remaining" >&2; exit 1; }
+if podman container exists "mcl-vm-$instance" || podman volume exists "mcl-vm-$instance"; then
+    echo "Test instance resources remain: $instance" >&2; exit 1
+fi
 echo "PASS: rootless instance create, SSH, persistence across stop/start and deletion"
 if $full; then
     export LAB_IMAGE="localhost/mcl-test/lab:$revision"
