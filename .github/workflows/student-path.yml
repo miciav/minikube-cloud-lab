@@ -45,7 +45,7 @@ jobs:
               jq -e 'map(rtrimstr("/")) | index("https://mirror.gcr.io") != null'
           }
           check_node_mirror demo
-          [[ "$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')" == https://127.0.0.1:* ]]
+          [[ "$(command kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')" == https://127.0.0.1:* ]]
           kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
           export TEST_CLUSTER=demo TEST_NETWORK=minikube-cloud-lab
           export TEST_CLOUD_CONTAINER
