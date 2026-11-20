@@ -191,10 +191,7 @@ func (s *Service) changeAttachment(ctx context.Context, d Disk, instance string,
 	}
 	emulated := os.Getenv("CLOUD_ROOTLESS") == "true"
 	if emulated {
-		if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
-			return Disk{}, err
-		}
-		f, err := lockConsoleImage(image)
+		f, err := lockConsoleImage(image, filepath.Dir(link))
 		if err != nil {
 			return Disk{}, err
 		}
@@ -253,7 +250,10 @@ func (s *Service) reserveDisk(name, instance string) error {
 }
 
 // lockConsoleImage serializes attachment changes with the emulator's flock on the same inode.
-func lockConsoleImage(image string) (*os.File, error) {
+func lockConsoleImage(image, slot string) (*os.File, error) {
+	if err := os.MkdirAll(slot, 0o700); err != nil {
+		return nil, err
+	}
 	f, err := os.Open(image) // #nosec G304 -- the caller validated the disk name in the cloud image directory.
 	if err != nil {
 		return nil, err
