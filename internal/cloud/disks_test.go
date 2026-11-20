@@ -219,7 +219,7 @@ func TestRootlessConsolePreventsDetachment(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	file, err := os.Open(filepath.Join(dir, "instance-disks", "slots", "vm", "disk"))
+	file, err := os.Open(filepath.Join(dir, "instance-disks", "slots", "vm", "disk")) // #nosec G304 -- fixed fixture path under t.TempDir().
 	if err != nil {
 		t.Fatal(err)
 	}

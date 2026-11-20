@@ -20,6 +20,7 @@ type Disk struct {
 	Name     string `json:"name"`
 	Bytes    int64  `json:"bytes"`
 	Instance string `json:"instance,omitempty"`
+	Emulated bool   `json:"emulated,omitempty"`
 }
 
 type diskGuest interface {
@@ -221,23 +222,25 @@ func (s *Service) changeAttachment(ctx context.Context, d Disk, instance string,
 			return Disk{}, err
 		}
 	}
-	if !attach {
-		if err := os.Remove(link); err != nil {
-			return Disk{}, err
-		}
-		if err := syncDiskDir(filepath.Dir(link)); err != nil {
-			return Disk{}, err
-		}
-		next := s.state.clone()
-		delete(next.DiskOwners, name)
-		if err := s.store(next); err != nil {
-			return Disk{}, err
-		}
-		d.Instance = ""
+	if attach {
+		d.Instance = instance
+		d.Emulated = emulated
 		return d, nil
 	}
-	d.Instance = instance
-	return d, nil
+	d.Instance = ""
+	return d, s.releaseDisk(name, link)
+}
+
+func (s *Service) releaseDisk(name, link string) error {
+	if err := os.Remove(link); err != nil {
+		return err
+	}
+	if err := syncDiskDir(filepath.Dir(link)); err != nil {
+		return err
+	}
+	next := s.state.clone()
+	delete(next.DiskOwners, name)
+	return s.store(next)
 }
 
 func (s *Service) reserveDisk(name, instance string) error {

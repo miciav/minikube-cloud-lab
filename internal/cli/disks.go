@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -18,7 +17,7 @@ func addDiskCommands(root *cobra.Command) {
 				return err
 			}
 			switch {
-			case action == "attach" && os.Getenv("CLOUD_ROOTLESS") == "true":
+			case action == "attach" && d.Emulated:
 				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Open on the lab host: cloud disks shell %s %s\n", d.Instance, d.Name)
 			case action == "attach":
 				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s: /dev/cloud-disks/%s\n", d.Instance, d.Name)

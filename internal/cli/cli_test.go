@@ -477,3 +477,25 @@ func TestServeRejectsInvalidStorageBudget(t *testing.T) {
 		t.Fatalf("invalid storage budget: %v", err)
 	}
 }
+
+func TestDiskConsoleAttachHint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"name":"data","instance":"vm","emulated":true}`)
+	}))
+	defer server.Close()
+	out, err := execute(t, server.URL, "disks", "attach", "data", "--instance", "vm")
+	if err != nil || !strings.Contains(out, "cloud disks shell vm data") {
+		t.Fatalf("attach hint: %q %v", out, err)
+	}
+}
+
+func TestDiskCommandsInventory(t *testing.T) {
+	t.Setenv("CLOUD_DISK_VOLUME", "test")
+	_, url := setup(t, nil)
+	for _, args := range [][]string{{"create", "data", "--size", "64Mi"}, {"list"}, {"delete", "data"}} {
+		out, err := execute(t, url, append([]string{"disks"}, args...)...)
+		if err != nil || !strings.Contains(out, "data") {
+			t.Fatalf("%v: %q %v", args, out, err)
+		}
+	}
+}
