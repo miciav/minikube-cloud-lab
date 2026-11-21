@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Run with the cloud and instance images built from the same checkout.
 set -euo pipefail
-: "${TEST_CLOUD_CONTAINER:?Set TEST_CLOUD_CONTAINER to the running cloud container ID}"
 runtime=${RUNTIME:-docker}
-cloud() { "$runtime" exec -i "$TEST_CLOUD_CONTAINER" cloud "$@"; }
+if [[ -n ${TEST_CLOUD_CONTAINER:-} ]]; then
+    cloud() { "$runtime" exec -i "$TEST_CLOUD_CONTAINER" cloud "$@"; }
+else
+    export CLOUD_RUNTIME="$runtime"
+    source "$(dirname -- "${BASH_SOURCE[0]}")/../scripts/configure.sh"
+    cloud() { labcompose exec -T cloud cloud "$@"; }
+fi
 image=${1:-ubuntu-26.04}
 case "$image" in
     ubuntu-26.04) login=ubuntu ;;

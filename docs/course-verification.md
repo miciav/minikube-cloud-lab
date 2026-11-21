@@ -2,6 +2,30 @@
 
 Run the checks against the runtime and images you will distribute. Use the general suite for the Kubernetes exercises and the instance group smoke for the HTTP autoscaling exercise.
 
+## Annual acceptance on the IT-provided VM
+
+Log in to the actual teaching VM as the student account. Complete the [rootless Podman setup](podman-rootless.md#prepare-an-existing-linux-vm), install the course version and select its images. Run the check before creating any class resources. It uses the configured images, including local build overrides. Allow exclusive use of the lab, access to the exercise image registries and package mirrors, and enough capacity for the two lab-medium nodes used by MySQL (4 CPUs and 8 GiB each, plus services). The host also needs Python 3 with PyYAML, Bash, zsh, curl, OpenSSL and ssh-keygen.
+
+From the checkout run:
+
+```sh
+python3 scripts/verify-course-vm.py
+```
+
+The command starts the user socket and cloud, checks the inventory, then runs the following suites in sequence:
+
+| Suite | Evidence |
+| --- | --- |
+| Runner tests and Lecture 02 validation | Verification logic, manifest consistency and worker setup in Bash and zsh. Lecture 02's interactive slide exercises are a separate manual rehearsal. |
+| Standalone compute and storage | Test cloud-init and SSH on both Ubuntu and Debian. Write a disk on one instance and read it on another through the QEMU console. |
+| Instance autoscaling | Generate HTTP load, check scale-out and scale-in, simulate a metrics outage, replace a failed member and uninstall the module. |
+| Lecture 03 | Exercise HPA, VPA, Cluster Autoscaler, KEDA, custom resources and the MySQL Operator on disposable clusters. |
+| General platform | Verify real Kubernetes node scaling, networking, monitoring, storage, standalone instances and clean shutdown. |
+
+Reserve a few hours for the first run. Exit 0 and a final **PASS** indicate that every listed suite completed. A failed or skipped suite stops the run and gives a nonzero exit. The private report directory under `~/.local/state/minikube-cloud-lab/` (or `$XDG_STATE_HOME`) contains the summary, one numbered log per stage, and the detailed Kubernetes reports. Keep that directory with the course version and VM specifications for the annual handover.
+
+On success the lab's Compose stack is stopped. On failure, inspect the indicated step and remaining lab resources before retrying. The VM stays available throughout. Real guest reboot recovery is a separate check on a disposable Multipass guest.
+
 ## Kubernetes and cloud lifecycle
 
 For the complete automatic lifecycle, run on the Docker host or inside the prepared Podman VM from the repository:

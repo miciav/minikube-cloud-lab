@@ -43,6 +43,8 @@ printf '%s\n' "${modules[@]}" | sudo tee /etc/modules-load.d/cloud-lab.conf
 
 Enable the user's API socket with `systemctl --user enable --now podman.socket`. For recovery after a guest reboot, enable `podman-restart.service` with `systemctl --user enable podman-restart.service` and enable lingering for the lab user. Verify `podman info` reports rootless and cgroups v2.
 
+For annual acceptance, use the [course VM checklist](course-verification.md#annual-acceptance-on-the-it-provided-vm) before creating the example cluster below.
+
 The CI builds and publishes the cloud and tools images to GHCR for amd64 and arm64 after checks pass on main. Once publication finishes, pull those images in the student VM:
 
 ```sh

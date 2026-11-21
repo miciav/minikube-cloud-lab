@@ -26,7 +26,15 @@ The pull step is for published images. With local image overrides, go straight f
 
 ## Verify before class
 
-On a disposable lab with no existing cluster, run the acceptance suite for the runtime you will teach. Allow roughly 20–40 minutes. It creates a temporary cluster, grows it from one node to two, scales it back down, exercises networking and storage, then removes the cluster and stops the project. Exit code 0 means all checks passed. The last line gives the report location.
+On the annual **IT-provided Linux VM**, install the course images and run the acceptance checks as the student account before creating any class resources:
+
+```sh
+python3 scripts/verify-course-vm.py
+```
+
+The [course VM checklist](docs/course-verification.md#annual-acceptance-on-the-it-provided-vm) describes prerequisites, coverage and the saved report.
+
+For the shorter Kubernetes check on a disposable lab with no existing cluster, run the acceptance suite for the runtime you will teach. Allow roughly 20–40 minutes. It creates a temporary cluster, grows it from one node to two, scales it back down, exercises networking and storage, then removes the cluster and stops the project. Exit code 0 means all checks passed. The last line gives the report location.
 
 ```sh
 python3 scripts/verify-lab.py --runtime docker
