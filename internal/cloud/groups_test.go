@@ -228,3 +228,33 @@ func TestUninstallResumesAfterRestartAndRejectsLateScale(t *testing.T) {
 		t.Fatalf("reinstallation state: groups=%+v instances=%+v", s.Groups(), instances)
 	}
 }
+
+func TestGroupKeepsHealthyMemberWhenStartupInventoryFails(t *testing.T) {
+	s, f, dir := newService(t)
+	if err := s.ActivateInstanceAutoscaling(); err != nil {
+		t.Fatal(err)
+	}
+	group, err := s.CreateGroup(cloud.GroupSpec{Name: "web", Image: "debian-12", MachineType: "lab-small",
+		Bootstrap: "true", Min: 1, Desired: 1, Max: 2, Port: 8080, HealthPath: "/health", TargetRPS: 40})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); s.RunInstanceGroups(ctx) }()
+	awaitGroup(t, func() bool {
+		members := s.Instances()
+		return len(members) == 1 && members[0].GroupID == group.ID && members[0].Status == "RUNNING"
+	})
+	cancel()
+	<-done
+	member := s.Instances()[0]
+	f.Errors["Instances"] = errors.New("runtime unavailable")
+	restarted, err := cloud.NewService(f, dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := restarted.Instances(); len(got) != 1 || got[0] != member {
+		t.Fatalf("healthy group member changed during inventory outage: %+v", got)
+	}
+}

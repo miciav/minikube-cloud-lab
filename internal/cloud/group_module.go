@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -107,8 +108,10 @@ func (s *Service) FinishInstanceAutoscalingRemoval() error {
 			return fmt.Errorf("%w: group member %s remains", ErrFailedPrecondition, member.Name)
 		}
 	}
-	if err := os.RemoveAll(s.groupFiles()); err != nil {
-		return err
+	for _, dir := range []string{"traefik", "policies"} {
+		if err := os.RemoveAll(filepath.Join(s.groupFiles(), dir)); err != nil {
+			return err
+		}
 	}
 	next := s.state.clone()
 	next.Autoscaling = ""

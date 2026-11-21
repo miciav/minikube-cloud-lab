@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/miciav/minikube-cloud-lab/internal/atomicfile"
@@ -100,37 +101,74 @@ func groupGet(ctx context.Context, address string) (*http.Response, error) {
 	return groupHTTP.Do(req)
 }
 
-func probeGroupMember(ctx context.Context, address string) bool {
-	response, err := groupGet(ctx, address)
-	if err != nil {
-		return false
-	}
-	_ = response.Body.Close()
-	return response.StatusCode >= 200 && response.StatusCode < 400
+type groupHealth int
+
+const (
+	healthUnknown groupHealth = iota
+	healthOK
+	healthFailed
+)
+
+type proxyGroupView struct {
+	LoadBalancer *struct {
+		Servers []proxyServer `json:"servers"`
+	} `json:"loadBalancer"`
+	ServerStatus map[string]string `json:"serverStatus"`
 }
 
-func (s *Service) groupBackendAbsent(ctx context.Context, groupID, backend string) bool {
+func (s *Service) groupProxyView(ctx context.Context, groupID string) (*proxyGroupView, bool) {
 	res, err := groupGet(ctx, s.groupProxy+"/api/http/services/"+groupID+"@file")
 	if err != nil {
-		// If the proxy has stopped accepting connections there are no new requests.
-		var op *net.OpError
-		return errors.As(err, &op) && op.Op == "dial" && !op.Timeout()
+		return nil, false
 	}
 	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode == http.StatusNotFound {
-		return true
+		return nil, true
 	}
-	var service struct {
-		LoadBalancer struct {
-			Servers []proxyServer `json:"servers"`
-		} `json:"loadBalancer"`
+	var service proxyGroupView
+	if res.StatusCode != http.StatusOK || json.NewDecoder(res.Body).Decode(&service) != nil || service.LoadBalancer == nil {
+		return nil, false
 	}
-	if res.StatusCode != http.StatusOK || json.NewDecoder(res.Body).Decode(&service) != nil {
-		return false
+	return &service, true
+}
+
+func groupMemberHealth(ctx context.Context, address string, service *proxyGroupView, backend string, registered bool) groupHealth {
+	if registered && service != nil {
+		switch service.ServerStatus[backend] {
+		case "UP":
+			return healthOK
+		case "DOWN":
+			return healthFailed
+		}
 	}
-	for _, server := range service.LoadBalancer.Servers {
-		if server.URL == backend {
+	response, err := groupGet(ctx, address)
+	if err != nil {
+		if !registered && errors.Is(err, syscall.ECONNREFUSED) {
+			return healthFailed
+		}
+		return healthUnknown
+	}
+	_ = response.Body.Close()
+	if response.StatusCode >= 200 && response.StatusCode < 400 {
+		return healthOK
+	}
+	return healthFailed
+}
+
+func (s *Service) groupBackendAbsent(ctx context.Context, groupID, backend string) bool {
+	service, known := s.groupProxyView(ctx, groupID)
+	if !known {
+		if s.instances == nil {
 			return false
+		}
+		running, err := s.instances.InstanceLoadBalancerRunning(ctx)
+		return err == nil && !running
+	}
+	if service != nil {
+		for _, server := range service.LoadBalancer.Servers {
+			if server.URL == backend {
+				return false
+			}
 		}
 	}
 	return true
@@ -164,13 +202,23 @@ func (s *Service) observeGroupRouting(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("group health URL: %w", err)
 			}
-			if probeGroupMember(ctx, address) {
+			var proxy *proxyGroupView
+			registered := !member.ReadyAt.IsZero()
+			if registered {
+				proxy, _ = s.groupProxyView(ctx, group.ID)
+			}
+			switch groupMemberHealth(ctx, address, proxy, backend, registered) {
+			case healthOK:
 				if nextMember.ReadyAt.IsZero() || !nextMember.FailedHealthAt.IsZero() {
 					nextMember.ReadyAt = now
 				}
 				nextMember.FailedHealthAt = time.Time{}
-			} else if nextMember.FailedHealthAt.IsZero() {
-				nextMember.FailedHealthAt = now
+			case healthFailed:
+				if nextMember.FailedHealthAt.IsZero() {
+					nextMember.FailedHealthAt = now
+				}
+			case healthUnknown:
+				nextMember.FailedHealthAt = time.Time{}
 			}
 		}
 		if ctx.Err() != nil {

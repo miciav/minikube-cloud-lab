@@ -44,6 +44,7 @@ type Instances interface {
 	DeleteInstance(context.Context, string) error // An absent instance is success.
 	Instances(context.Context) ([]Instance, error)
 	DeleteOwnedInstance(context.Context, string, string) error
+	InstanceLoadBalancerRunning(context.Context) (bool, error)
 }
 
 // Infra manages cluster and machine lifecycles.

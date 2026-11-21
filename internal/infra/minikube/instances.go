@@ -460,6 +460,26 @@ func (i *Infra) DeleteOwnedInstance(ctx context.Context, name, groupID string) e
 	return nil
 }
 
+// InstanceLoadBalancerRunning reports the runtime state of the lab frontend.
+func (i *Infra) InstanceLoadBalancerRunning(ctx context.Context) (bool, error) {
+	client, err := dockerClient()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = client.Close() }()
+	filter := filters.NewArgs(filters.Arg("label", "com.docker.compose.service=instance-lb"))
+	rows, err := client.ContainerList(ctx, container.ListOptions{Filters: filter})
+	if err != nil {
+		return false, err
+	}
+	for _, row := range rows {
+		if row.NetworkSettings != nil && row.NetworkSettings.Networks[i.network] != nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Instances lists the instance containers on the lab network.
 func (i *Infra) Instances(ctx context.Context) ([]infra.Instance, error) {
 	client, err := dockerClient()

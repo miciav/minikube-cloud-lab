@@ -308,7 +308,11 @@ func (s *Service) reconcileInstances(now time.Time) {
 	if err != nil {
 		s.logger.Error("cannot reconcile instances; records preserved for cleanup", "error", err)
 		for i := range s.state.Instances {
-			s.state.Instances[i].Status = "ERROR"
+			member := &s.state.Instances[i]
+			if member.GroupID != "" && member.Status != "CREATING" && member.Status != "DELETING" {
+				continue
+			}
+			member.Status = "ERROR"
 		}
 		return
 	}

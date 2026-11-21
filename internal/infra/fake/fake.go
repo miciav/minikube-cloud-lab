@@ -224,6 +224,11 @@ func (f *Infra) DeleteOwnedInstance(ctx context.Context, name, groupID string) e
 	return nil
 }
 
+// InstanceLoadBalancerRunning reports a live frontend by default.
+func (f *Infra) InstanceLoadBalancerRunning(ctx context.Context) (bool, error) {
+	return true, f.record(ctx, Call{Method: "InstanceLoadBalancerRunning"})
+}
+
 // Instances returns the observed instances sorted by name.
 func (f *Infra) Instances(ctx context.Context) ([]infra.Instance, error) {
 	if err := f.record(ctx, Call{Method: "Instances"}); err != nil {

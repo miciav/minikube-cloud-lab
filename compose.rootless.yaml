@@ -21,6 +21,7 @@ services:
     volumes:
       - ${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR must identify the student runtime directory}/podman/podman.sock:/var/run/docker.sock
       - state:/data
+      - autoscaling:/data/autoscaling
       - kube:/kube
       - storage:/data/storage
   lab:
@@ -47,9 +48,9 @@ services:
     profiles: [instance-autoscaling]
     ports: ["127.0.0.1:8084:8080"]
     networks: [lab]
-    volumes: [state:/state:ro]
+    volumes: [autoscaling:/autoscaling:ro]
     command:
-      - --providers.file.directory=/state/autoscaling/traefik
+      - --providers.file.directory=/autoscaling/traefik
       - --entrypoints.web.address=:8080
       - --entrypoints.metrics.address=:8081
       - --metrics.prometheus.entrypoint=metrics
@@ -69,8 +70,7 @@ services:
     build: ./tools/instance-autoscaler
     profiles: [instance-autoscaling]
     network_mode: service:cloud
-    volumes: [state:/state:ro]
-    command: [agent, '-config=/etc/autoscaler.hcl', '-policy-dir=/state/autoscaling/policies']
+    volumes: [autoscaling:/autoscaling:ro]
 
 networks:
   lab:
@@ -81,6 +81,7 @@ networks:
         - subnet: 172.30.0.0/23
           gateway: 172.30.0.1
 volumes:
+  autoscaling:
   state:
     name: minikube-cloud-lab-rootless-state
   kube:
