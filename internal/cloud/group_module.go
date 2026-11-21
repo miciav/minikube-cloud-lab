@@ -47,7 +47,7 @@ func (s *Service) ActivateReadyInstanceAutoscaling(ctx context.Context) error {
 	for _, endpoint := range []string{s.groupProxy + "/api/version", s.groupMetrics + "/-/ready", s.groupAutoscaler + "/v1/health"} {
 		res, err := groupGet(ctx, endpoint)
 		if err != nil {
-			return fmt.Errorf("%w: wait for %s: %v", ErrUnavailable, endpoint, err)
+			return fmt.Errorf("%w: wait for %s: %w", ErrUnavailable, endpoint, err)
 		}
 		_ = res.Body.Close()
 		if res.StatusCode != http.StatusOK {

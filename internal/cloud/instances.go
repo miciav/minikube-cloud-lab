@@ -116,10 +116,10 @@ func newInstanceKey() (private []byte, authorized string, err error) {
 func (s *Service) CreateInstance(name, image, kind, requester string) (Operation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.createInstanceLocked(name, image, kind, requester, "", "")
+	return s.createInstanceLocked(context.Background(), name, image, kind, requester, "", "")
 }
 
-func (s *Service) createInstanceLocked(name, image, kind, requester, groupID, bootstrap string) (Operation, error) {
+func (s *Service) createInstanceLocked(ctx context.Context, name, image, kind, requester, groupID, bootstrap string) (Operation, error) {
 	if s.instances == nil {
 		return Operation{}, errNoInstances
 	}
@@ -162,7 +162,7 @@ func (s *Service) createInstanceLocked(name, image, kind, requester, groupID, bo
 	var observed infra.Instance
 	s.launch(op.ID, func() error {
 		var err error
-		observed, err = s.instances.CreateInstance(context.Background(), spec)
+		observed, err = s.instances.CreateInstance(ctx, spec)
 		return err
 	}, func(st *snapshot, err error) {
 		s.finishInstance(st, name, observed, err)

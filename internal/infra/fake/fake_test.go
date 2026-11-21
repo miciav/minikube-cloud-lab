@@ -116,3 +116,23 @@ func TestFakeInstanceLifecycle(t *testing.T) {
 		t.Fatalf("configured error: %v", err)
 	}
 }
+
+func TestOwnedInstanceDeletionChecksGroup(t *testing.T) {
+	f := fake.New()
+	ctx := t.Context()
+	machine, err := f.CreateInstance(ctx, infra.InstanceSpec{Name: "member", GroupID: "asg-web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.DeleteOwnedInstance(ctx, machine.Name, "asg-other"); err == nil {
+		t.Fatal("deleted instance belonging to another group")
+	}
+	for range 2 {
+		if err := f.DeleteOwnedInstance(ctx, machine.Name, machine.GroupID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if running, err := f.InstanceLoadBalancerRunning(ctx); err != nil || !running {
+		t.Fatalf("fake load balancer: %v %v", running, err)
+	}
+}

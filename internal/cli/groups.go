@@ -31,9 +31,9 @@ func addGroupCommands(root *cobra.Command) {
 	var spec cloud.GroupSpec
 	var bootstrap string
 	create := &cobra.Command{Use: "create NAME", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		var reader io.Reader = cmd.InOrStdin()
+		reader := cmd.InOrStdin()
 		if bootstrap != "-" {
-			file, err := os.Open(bootstrap)
+			file, err := os.Open(bootstrap) // #nosec G304 -- explicitly supplied by the CLI user.
 			if err != nil {
 				return err
 			}

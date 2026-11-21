@@ -98,18 +98,22 @@ func (spec GroupSpec) validate() error {
 	if spec.Min < 1 || spec.Min > spec.Desired || spec.Desired > spec.Max || spec.Max > MaxInstances {
 		return fmt.Errorf("%w: require 1 <= min <= desired <= max <= %d", ErrInvalid, MaxInstances)
 	}
+	if spec.DrainSeconds < 0 || spec.DrainSeconds > 120 {
+		return fmt.Errorf("%w: drain timeout must be between 0 and 120 seconds", ErrInvalid)
+	}
+	if strings.TrimSpace(spec.Bootstrap) == "" || len(spec.Bootstrap) > MaxGroupBootstrapBytes || strings.ContainsRune(spec.Bootstrap, 0) {
+		return fmt.Errorf("%w: bootstrap must contain 1–%d bytes of script", ErrInvalid, MaxGroupBootstrapBytes)
+	}
+	return spec.validateHTTP()
+}
+
+func (spec GroupSpec) validateHTTP() error {
 	path, err := url.ParseRequestURI(spec.HealthPath)
 	if err != nil || !strings.HasPrefix(spec.HealthPath, "/") || strings.HasPrefix(spec.HealthPath, "//") || path.RawQuery != "" || strings.ContainsAny(spec.HealthPath, "?#") {
 		return fmt.Errorf("%w: health check requires an absolute URL path", ErrInvalid)
 	}
 	if spec.Port < 1 || spec.Port > 65535 || spec.TargetRPS <= 0 || math.IsNaN(spec.TargetRPS) || math.IsInf(spec.TargetRPS, 0) {
 		return fmt.Errorf("%w: require a valid port and a positive requests-per-second target", ErrInvalid)
-	}
-	if spec.DrainSeconds < 0 || spec.DrainSeconds > 120 {
-		return fmt.Errorf("%w: drain timeout must be between 0 and 120 seconds", ErrInvalid)
-	}
-	if strings.TrimSpace(spec.Bootstrap) == "" || len(spec.Bootstrap) > MaxGroupBootstrapBytes || strings.ContainsRune(spec.Bootstrap, 0) {
-		return fmt.Errorf("%w: bootstrap must contain 1–%d bytes of script", ErrInvalid, MaxGroupBootstrapBytes)
 	}
 	return nil
 }

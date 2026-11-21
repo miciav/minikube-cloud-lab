@@ -49,10 +49,10 @@ func backendURL(member Instance, group Group) (string, bool) {
 }
 
 func writeGroupFile(path string, data []byte) error {
-	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(data, existing) {
+	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(data, existing) { // #nosec G304 -- generated configuration belongs to cloud state.
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	return atomicfile.Write(path, data)
@@ -190,57 +190,68 @@ func (s *Service) observeGroupRouting(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		nextMember := member
-		now := time.Now().UTC()
-		switch {
-		case member.Draining && member.DrainUntil.IsZero():
-			if s.groupBackendAbsent(ctx, group.ID, backend) {
-				nextMember.DrainUntil = now.Add(time.Duration(group.DrainSeconds) * time.Second)
-			}
-		case !member.Draining && !group.Deleting && member.Status == "RUNNING":
-			address, err := url.JoinPath(backend, group.HealthPath)
-			if err != nil {
-				return fmt.Errorf("group health URL: %w", err)
-			}
-			var proxy *proxyGroupView
-			registered := !member.ReadyAt.IsZero()
-			if registered {
-				proxy, _ = s.groupProxyView(ctx, group.ID)
-			}
-			switch groupMemberHealth(ctx, address, proxy, backend, registered) {
-			case healthOK:
-				if nextMember.ReadyAt.IsZero() || !nextMember.FailedHealthAt.IsZero() {
-					nextMember.ReadyAt = now
-				}
-				nextMember.FailedHealthAt = time.Time{}
-			case healthFailed:
-				if nextMember.FailedHealthAt.IsZero() {
-					nextMember.FailedHealthAt = now
-				}
-			case healthUnknown:
-				nextMember.FailedHealthAt = time.Time{}
-			}
+		next, err := s.observeMember(ctx, member, *group, backend)
+		if err != nil {
+			return err
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if nextMember == member {
-			continue
-		}
-		s.mu.Lock()
-		next := s.state.clone()
-		if current, err := next.instance(member.Name); err == nil && *current == member && !next.instanceBusy(member.Name) {
-			*current = nextMember
-			err = s.store(next)
-			s.mu.Unlock()
-			if err != nil {
+		if next != member {
+			if err := s.saveMemberObservation(member, next); err != nil {
 				return err
 			}
-		} else {
-			s.mu.Unlock()
 		}
 	}
 	return nil
+}
+
+func (s *Service) observeMember(ctx context.Context, member Instance, group Group, backend string) (Instance, error) {
+	now := time.Now().UTC()
+	if member.Draining {
+		if member.DrainUntil.IsZero() && s.groupBackendAbsent(ctx, group.ID, backend) {
+			member.DrainUntil = now.Add(time.Duration(group.DrainSeconds) * time.Second)
+		}
+		return member, nil
+	}
+	if group.Deleting || member.Status != "RUNNING" {
+		return member, nil
+	}
+	address, err := url.JoinPath(backend, group.HealthPath)
+	if err != nil {
+		return member, fmt.Errorf("group health URL: %w", err)
+	}
+	var proxy *proxyGroupView
+	registered := !member.ReadyAt.IsZero()
+	if registered {
+		proxy, _ = s.groupProxyView(ctx, group.ID)
+	}
+	switch groupMemberHealth(ctx, address, proxy, backend, registered) {
+	case healthOK:
+		if !registered || !member.FailedHealthAt.IsZero() {
+			member.ReadyAt = now
+		}
+		member.FailedHealthAt = time.Time{}
+	case healthFailed:
+		if member.FailedHealthAt.IsZero() {
+			member.FailedHealthAt = now
+		}
+	case healthUnknown:
+		member.FailedHealthAt = time.Time{}
+	}
+	return member, nil
+}
+
+func (s *Service) saveMemberObservation(previous, observation Instance) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.state.clone()
+	current, err := next.instance(previous.Name)
+	if err != nil || *current != previous || next.instanceBusy(previous.Name) {
+		return nil
+	}
+	*current = observation
+	return s.store(next)
 }
 
 func groupMemberFailed(i Instance) bool {

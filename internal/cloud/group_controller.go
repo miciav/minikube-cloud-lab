@@ -10,8 +10,10 @@ import (
 	"time"
 )
 
-const groupControllerInterval = 2 * time.Second
-const groupRetryDelay = 15 * time.Second
+const (
+	groupControllerInterval = 2 * time.Second
+	groupRetryDelay         = 15 * time.Second
+)
 
 // RunInstanceGroups reconciles persisted group intent until the daemon stops.
 func (s *Service) RunInstanceGroups(ctx context.Context) {
@@ -32,7 +34,7 @@ func (s *Service) RunInstanceGroups(ctx context.Context) {
 				s.logger.Error("observe instance group routing", "error", err)
 			}
 		}
-		s.reconcileGroups()
+		s.reconcileGroups(ctx)
 		if err := s.publishGroupPolicies(ctx); err != nil && ctx.Err() == nil {
 			s.logger.Error("publish instance group policies", "error", err)
 		}
@@ -46,7 +48,7 @@ func (s *Service) RunInstanceGroups(ctx context.Context) {
 	}
 }
 
-func (s *Service) reconcileGroups() {
+func (s *Service) reconcileGroups(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state.Autoscaling == "" {
@@ -59,13 +61,13 @@ func (s *Service) reconcileGroups() {
 		}
 	}
 	for _, group := range slices.Clone(s.state.Groups) {
-		if err := s.reconcileGroup(group); err != nil {
+		if err := s.reconcileGroup(context.WithoutCancel(ctx), group); err != nil {
 			s.logger.Error("reconcile instance group", "group", group.Name, "error", err)
 		}
 	}
 }
 
-func (s *Service) reconcileGroup(group Group) error {
+func (s *Service) reconcileGroup(ctx context.Context, group Group) error {
 	if time.Now().Before(group.RetryAt) {
 		return nil
 	}
@@ -85,11 +87,11 @@ func (s *Service) reconcileGroup(group Group) error {
 	}
 	for _, member := range slices.Backward(members) {
 		if group.Deleting || member.Draining || member.Status == "DELETING" || member.Status == "ERROR" || member.Status == "STOPPED" || groupMemberFailed(member) {
-			return s.deleteGroupMember(member)
+			return s.deleteGroupMember(ctx, member)
 		}
 	}
 	if len(members) > group.Desired {
-		return s.deleteGroupMember(members[len(members)-1])
+		return s.deleteGroupMember(ctx, members[len(members)-1])
 	}
 	if len(members) == group.Desired {
 		return nil
@@ -97,7 +99,7 @@ func (s *Service) reconcileGroup(group Group) error {
 	var id [8]byte
 	rand.Read(id[:])
 	name := group.ID + "-" + hex.EncodeToString(id[:])
-	if _, err := s.createInstanceLocked(name, group.Image, group.MachineType, "cloud", group.ID, group.Bootstrap); err != nil {
+	if _, err := s.createInstanceLocked(ctx, name, group.Image, group.MachineType, "cloud", group.ID, group.Bootstrap); err != nil {
 		next := s.state.clone()
 		recordGroupError(&next, group.ID, err)
 		return s.store(next)
@@ -118,7 +120,7 @@ func recordGroupError(st *snapshot, key string, err error) {
 	}
 }
 
-func (s *Service) deleteGroupMember(instance Instance) error {
+func (s *Service) deleteGroupMember(ctx context.Context, instance Instance) error {
 	next := s.state.clone()
 	member, err := next.instance(instance.Name)
 	if err != nil {
@@ -139,7 +141,7 @@ func (s *Service) deleteGroupMember(instance Instance) error {
 		return err
 	}
 	s.launch(op.ID, func() error {
-		if err := s.instances.DeleteOwnedInstance(context.Background(), instance.Name, instance.GroupID); err != nil {
+		if err := s.instances.DeleteOwnedInstance(ctx, instance.Name, instance.GroupID); err != nil {
 			return fmt.Errorf("remove group member %s: %w", instance.Name, err)
 		}
 		return os.RemoveAll(s.instanceDir(instance.Name))

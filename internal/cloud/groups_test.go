@@ -14,16 +14,18 @@ import (
 )
 
 func TestGroupPersistsTemplateAndDesiredCapacity(t *testing.T) {
-	s, backend, dir := newService(t)
-	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"instances":[]}`), 0600); err != nil {
+	_, backend, dir := newService(t)
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"instances":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	s, err := cloud.NewService(backend, dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := cloud.GroupSpec{Name: "web", Image: "debian-12", MachineType: "lab-small",
-		Bootstrap: "#!/bin/sh\ntrue", Min: 1, Desired: 2, Max: 4, Port: 8080, HealthPath: "/health", TargetRPS: 40}
+	spec := cloud.GroupSpec{
+		Name: "web", Image: "debian-12", MachineType: "lab-small",
+		Bootstrap: "#!/bin/sh\ntrue", Min: 1, Desired: 2, Max: 4, Port: 8080, HealthPath: "/health", TargetRPS: 40,
+	}
 	if _, err := s.CreateGroup(spec); !errors.Is(err, cloud.ErrFailedPrecondition) {
 		t.Fatalf("create with module off: %v", err)
 	}
@@ -131,7 +133,7 @@ func TestGroupRecoversInterruptedCreationByOwnership(t *testing.T) {
 				t.Fatal(err)
 			}
 			statePath := filepath.Join(dir, "state.json")
-			data, err := os.ReadFile(statePath)
+			data, err := os.ReadFile(statePath) // #nosec G304 -- snapshot under t.TempDir.
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -144,7 +146,7 @@ func TestGroupRecoversInterruptedCreationByOwnership(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(statePath, data, 0600); err != nil {
+			if err := os.WriteFile(statePath, data, 0o600); err != nil {
 				t.Fatal(err)
 			}
 			s, err = cloud.NewService(f, dir, nil)
@@ -176,8 +178,10 @@ func TestUninstallResumesAfterRestartAndRejectsLateScale(t *testing.T) {
 	if err := s.ActivateInstanceAutoscaling(); err != nil {
 		t.Fatal(err)
 	}
-	group, err := s.CreateGroup(cloud.GroupSpec{Name: "web", Image: "debian-12", MachineType: "lab-small",
-		Bootstrap: "true", Min: 1, Desired: 1, Max: 2, Port: 8080, HealthPath: "/health", TargetRPS: 40})
+	group, err := s.CreateGroup(cloud.GroupSpec{
+		Name: "web", Image: "debian-12", MachineType: "lab-small",
+		Bootstrap: "true", Min: 1, Desired: 1, Max: 2, Port: 8080, HealthPath: "/health", TargetRPS: 40,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,8 +238,10 @@ func TestGroupKeepsHealthyMemberWhenStartupInventoryFails(t *testing.T) {
 	if err := s.ActivateInstanceAutoscaling(); err != nil {
 		t.Fatal(err)
 	}
-	group, err := s.CreateGroup(cloud.GroupSpec{Name: "web", Image: "debian-12", MachineType: "lab-small",
-		Bootstrap: "true", Min: 1, Desired: 1, Max: 2, Port: 8080, HealthPath: "/health", TargetRPS: 40})
+	group, err := s.CreateGroup(cloud.GroupSpec{
+		Name: "web", Image: "debian-12", MachineType: "lab-small",
+		Bootstrap: "true", Min: 1, Desired: 1, Max: 2, Port: 8080, HealthPath: "/health", TargetRPS: 40,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,5 +262,38 @@ func TestGroupKeepsHealthyMemberWhenStartupInventoryFails(t *testing.T) {
 	}
 	if got := restarted.Instances(); len(got) != 1 || got[0] != member {
 		t.Fatalf("healthy group member changed during inventory outage: %+v", got)
+	}
+}
+
+func TestGroupRejectsInvalidTemplatesAndHTTPConfiguration(t *testing.T) {
+	service, _, _ := newService(t)
+	if err := service.ActivateInstanceAutoscaling(); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(*cloud.GroupSpec)
+	}{
+		{"reserved name", func(g *cloud.GroupSpec) { g.Name = "asg-user-group" }},
+		{"unknown image", func(g *cloud.GroupSpec) { g.Image = "missing" }},
+		{"unknown shape", func(g *cloud.GroupSpec) { g.MachineType = "missing" }},
+		{"invalid health URL", func(g *cloud.GroupSpec) { g.HealthPath = "//other-host" }},
+		{"invalid port", func(g *cloud.GroupSpec) { g.Port = 65536 }},
+		{"invalid drain timeout", func(g *cloud.GroupSpec) { g.DrainSeconds = 121 }},
+		{"empty bootstrap", func(g *cloud.GroupSpec) { g.Bootstrap = " " }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := cloud.GroupSpec{
+				Name: "web", Image: "debian-12", MachineType: "lab-small", Bootstrap: "true",
+				Min: 1, Desired: 1, Max: 2, Port: 8080, HealthPath: "/health", TargetRPS: 40,
+			}
+			tc.change(&spec)
+			if _, err := service.CreateGroup(spec); !errors.Is(err, cloud.ErrInvalid) {
+				t.Fatalf("invalid group accepted: %v", err)
+			}
+		})
+	}
+	if len(service.Groups()) != 0 {
+		t.Fatal("a rejected template was stored")
 	}
 }
