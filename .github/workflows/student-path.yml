@@ -13,6 +13,8 @@ env:
   CLOUD_IMAGE: minikube-cloud-lab/cloud:dev
   LAB_IMAGE: minikube-cloud-lab/lab:dev
   NFS_IMAGE: minikube-cloud-lab/nfs:dev
+  UBUNTU_IMAGE: minikube-cloud-lab/instance-ubuntu:dev
+  DEBIAN_IMAGE: minikube-cloud-lab/instance-debian:dev
   KUBECTL_VERSION: v1.35.6
 jobs:
   student-path:
@@ -32,12 +34,12 @@ jobs:
         run: |
           source scripts/configure.sh
           docker compose up -d cloud
-          cloud() { timeout 10m docker compose exec -T cloud cloud "$@"; }
-          lab() { docker compose --progress quiet run --rm -T lab "$@"; }
           for _ in $(seq 1 60); do
             if cloud machine-types list; then break; fi
             sleep 2
           done
+          bash tests/instance-autoscaling.sh
+          lab install instance-autoscaling
           cloud clusters create demo
           cloud clusters get-credentials demo
           check_node_mirror() {
@@ -51,6 +53,8 @@ jobs:
           export TEST_CLOUD_CONTAINER
           TEST_CLOUD_CONTAINER=$(docker compose ps -q cloud)
           export TEST_ARTIFACT_DIR="$RUNNER_TEMP/service-exposure"
+          lab uninstall yakd
+          lab status yakd | grep -F disabled
           bash tests/service-exposure.sh prepare
           lab services
           docker compose up -d --force-recreate cloud
@@ -103,6 +107,8 @@ jobs:
           done
           bash tests/service-exposure.sh check
           bash tests/service-exposure.sh mutate-cleanup
+          lab install yakd
+          lab uninstall instance-autoscaling
           bash tests/storage-capacity.sh
           bash tests/storage.sh prepare
           cloud clusters delete demo

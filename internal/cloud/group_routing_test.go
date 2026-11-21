@@ -298,3 +298,25 @@ func TestGroupPolicyWithLimitedQuotaAndManualResize(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestReadingModuleHealthDoesNotActivate(t *testing.T) {
+	s, err := NewService(fake.New(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.InstanceAutoscalingHealth(t.Context()); got.State != "disabled" {
+		t.Fatal(got)
+	}
+	components := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/-/ready" {
+			w.WriteHeader(503)
+		}
+	}))
+	defer components.Close()
+	s.ConfigureInstanceGroupRouting(components.URL, components.URL, components.URL)
+	s.state.Autoscaling = "active"
+	got := s.InstanceAutoscalingHealth(t.Context())
+	if got.State != "degraded" || !strings.Contains(got.Detail, "/-/ready") || s.InstanceAutoscaling().State != "active" {
+		t.Fatal(got)
+	}
+}

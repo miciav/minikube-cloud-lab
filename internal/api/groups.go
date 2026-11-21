@@ -14,6 +14,9 @@ type resizeGroupRequest struct {
 }
 
 func registerGroups(mux *http.ServeMux, svc *cloud.Service) {
+	mux.HandleFunc("GET /v1/instance-autoscaling/health", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, http.StatusOK, svc.InstanceAutoscalingHealth(r.Context()), nil)
+	})
 	mux.HandleFunc("GET /v1/instance-autoscaling", func(w http.ResponseWriter, _ *http.Request) {
 		respond(w, http.StatusOK, svc.InstanceAutoscaling(), nil)
 	})
@@ -123,4 +126,11 @@ func (c *Client) InstanceAutoscaling(ctx context.Context, action string) (cloud.
 	var result cloud.InstanceAutoscalingStatus
 	_, err := c.request(ctx, method, path, nil, &result)
 	return result, err
+}
+
+// InstanceAutoscalingHealth reads the observed readiness of the optional module.
+func (c *Client) InstanceAutoscalingHealth(ctx context.Context) (cloud.ModuleHealth, error) {
+	var h cloud.ModuleHealth
+	_, err := c.request(ctx, http.MethodGet, "/v1/instance-autoscaling/health", nil, &h)
+	return h, err
 }

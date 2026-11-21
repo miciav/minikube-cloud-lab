@@ -3,10 +3,13 @@
 set -euo pipefail
 vm=mcl-rootless-test
 full=false
-usage() { echo "Usage: $0 [--vm NAME] [--full]"; }
+ephemeral=false
+created_vm=false
+usage() { echo "Usage: $0 [--vm NAME] [--full] [--ephemeral]"; }
 while (( $# )); do
     case $1 in
         --vm) vm=${2:?missing VM name}; shift 2 ;;
+        --ephemeral) ephemeral=true; shift ;;
         --full) full=true; shift ;;
         -h|--help) usage; exit 0 ;;
         *) usage >&2; exit 2 ;;
@@ -17,7 +20,13 @@ root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 revision=$(git -C "$root" rev-parse HEAD)
 echo "Testing $revision in $vm"
 scratch=$(mktemp -d)
-trap 'rm -rf "$scratch"' EXIT
+cleanup_host() {
+    local rc=$?
+    rm -rf "$scratch"
+    if $ephemeral && $created_vm; then multipass delete --purge "$vm" || exit 1; fi
+    exit "$rc"
+}
+trap cleanup_host EXIT
 if ! multipass info "$vm" >/dev/null 2>&1; then
     cat > "$scratch/cloud-init.yaml" <<'CLOUD'
 #cloud-config
@@ -34,7 +43,9 @@ write_files:
       vxlan
 CLOUD
     multipass launch 26.04 --name "$vm" --cpus 4 --memory 8G --disk 48G --cloud-init "$scratch/cloud-init.yaml"
+    created_vm=true
 else
+    if $ephemeral; then echo "Temporary VM name already in use" >&2; exit 1; fi
     multipass start "$vm"
 fi
 guest() { multipass exec "$vm" -- "$@"; }
@@ -58,7 +69,7 @@ PROVISION
 git -C "$root" archive --format=tar.gz -o "$scratch/source.tgz" "$revision"
 guest_archive=$(guest mktemp /tmp/mcl-source-XXXXXXXX.tgz)
 multipass transfer "$scratch/source.tgz" "$vm:$guest_archive"
-guest bash -se -- "$revision" "$full" "$guest_archive" <<'VERIFY'
+guest bash -c 'file=$(mktemp) || exit; cat > "$file" && bash -e "$file" "$@" </dev/null; rc=$?; rm -f "$file"; exit "$rc"' verify "$revision" "$full" "$guest_archive" <<'VERIFY'
 set -o pipefail
 revision=$1
 full=$2
@@ -81,7 +92,7 @@ build instance-debian "$DEBIAN_IMAGE"
 build instance-ubuntu "$UBUNTU_IMAGE"
 build cloud "$CLOUD_IMAGE"
 source scripts/configure.sh
-cloud() { labcompose exec -T cloud cloud "$@" </dev/null; }
+
 active=$(labcompose ps -q)
 if [[ -n $active ]]; then echo "Test stack already active; inspect it before retrying" >&2; exit 1; fi
 instance="probe-$(cat /proc/sys/kernel/random/uuid)"
@@ -104,6 +115,7 @@ for image in ubuntu-26.04 debian-12; do
     TEST_CLOUD_CONTAINER=$(labcompose ps -q cloud) RUNTIME=podman bash tests/instance-cloud-init.sh "$image"
 done
 python3 tests/rootless-disk-console.py
+if $full; then bash tests/instance-autoscaling.sh; fi
 created=true
 cloud instances create "$instance"
 cloud instances ssh "$instance" -- sudo touch "/var/tmp/$instance"

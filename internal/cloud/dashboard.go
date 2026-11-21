@@ -62,3 +62,32 @@ func dashboardPort(svc *corev1.Service) int {
 
 	return 0
 }
+
+// SetDashboard records the requested addon change before starting infrastructure work.
+func (s *Service) SetDashboard(name, uid string, enabled bool) (Operation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if uid == "" {
+		return Operation{}, ErrInvalid
+	}
+	if _, err := s.ready(name); err != nil {
+		return Operation{}, err
+	}
+	backend, ok := s.inf.(interface {
+		SetDashboard(context.Context, string, string, bool) error
+	})
+	if !ok {
+		return Operation{}, ErrUnavailable
+	}
+	kind := "UNINSTALL_YAKD"
+	if enabled {
+		kind = "INSTALL_YAKD"
+	}
+	next := s.state.clone()
+	op := next.newOperation(kind, name, "student")
+	if err := s.store(next); err != nil {
+		return Operation{}, err
+	}
+	s.launch(op.ID, func() error { return backend.SetDashboard(context.Background(), name, uid, enabled) }, func(*snapshot, error) {})
+	return op, nil
+}

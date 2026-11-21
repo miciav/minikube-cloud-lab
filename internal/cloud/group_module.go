@@ -41,6 +41,13 @@ func (s *Service) PrepareInstanceAutoscaling() error {
 
 // ActivateReadyInstanceAutoscaling enables the controller after its optional services start.
 func (s *Service) ActivateReadyInstanceAutoscaling(ctx context.Context) error {
+	if err := s.checkGroupServices(ctx); err != nil {
+		return err
+	}
+	return s.ActivateInstanceAutoscaling()
+}
+
+func (s *Service) checkGroupServices(ctx context.Context) error {
 	if s.groupProxy == "" || s.groupMetrics == "" || s.groupAutoscaler == "" {
 		return fmt.Errorf("%w: instance autoscaling requires the lab Compose configuration", ErrFailedPrecondition)
 	}
@@ -54,7 +61,7 @@ func (s *Service) ActivateReadyInstanceAutoscaling(ctx context.Context) error {
 			return fmt.Errorf("%w: %s returned %s", ErrUnavailable, endpoint, res.Status)
 		}
 	}
-	return s.ActivateInstanceAutoscaling()
+	return nil
 }
 
 // BeginInstanceAutoscalingRemoval blocks changes and persists deletion intent for every group.
@@ -116,4 +123,22 @@ func (s *Service) FinishInstanceAutoscalingRemoval() error {
 	next := s.state.clone()
 	next.Autoscaling = ""
 	return s.store(next)
+}
+
+// ModuleHealth reports lifecycle and readiness independently of resource inventory.
+type ModuleHealth struct {
+	State  string `json:"state"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// InstanceAutoscalingHealth observes the module without changing its desired state.
+func (s *Service) InstanceAutoscalingHealth(ctx context.Context) ModuleHealth {
+	state := s.InstanceAutoscaling().State
+	if state != "active" {
+		return ModuleHealth{State: state}
+	}
+	if err := s.checkGroupServices(ctx); err != nil {
+		return ModuleHealth{State: "degraded", Detail: err.Error()}
+	}
+	return ModuleHealth{State: "ready"}
 }

@@ -246,3 +246,10 @@ func (c *Client) InstanceSSH(ctx context.Context, name string) (cloud.SSHAccess,
 	_, err := c.request(ctx, http.MethodGet, instancePath(name)+"/ssh", nil, &result)
 	return result, err
 }
+
+// SetDashboard requests an addon operation for the selected Kubernetes cluster identity.
+func (c *Client) SetDashboard(ctx context.Context, name, uid, action string) (cloud.Operation, error) {
+	var op cloud.Operation
+	_, err := c.request(ctx, http.MethodPost, "/v1/clusters/"+url.PathEscape(name)+"/dashboard/"+url.PathEscape(action), map[string]string{"uid": uid}, &op)
+	return op, err
+}

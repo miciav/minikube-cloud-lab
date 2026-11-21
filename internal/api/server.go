@@ -46,6 +46,20 @@ func NewServer(svc *cloud.Service) http.Handler {
 	mux := http.NewServeMux()
 	registerGroups(mux, svc)
 	diskRoutes(mux, svc)
+	mux.HandleFunc("POST /v1/clusters/{name}/dashboard/{action}", func(w http.ResponseWriter, r *http.Request) {
+		action := r.PathValue("action")
+		if action != "install" && action != "uninstall" {
+			http.NotFound(w, r)
+			return
+		}
+		var req struct{ UID string }
+		if err := decodeJSON(w, r, &req); err != nil {
+			respond(w, 400, nil, cloud.ErrInvalid)
+			return
+		}
+		op, err := svc.SetDashboard(r.PathValue("name"), req.UID, action == "install")
+		respond(w, http.StatusAccepted, op, err)
+	})
 	mux.HandleFunc("GET /v1/clusters/{name}/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		v, err := svc.Dashboard(r.Context(), r.PathValue("name"))
 		respond(w, 200, v, err)

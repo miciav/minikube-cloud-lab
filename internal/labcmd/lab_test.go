@@ -239,3 +239,15 @@ func TestRealKubeconfigContextOverride(t *testing.T) {
 		t.Fatalf("unsafe or incomplete equivalent: %s", output.String())
 	}
 }
+
+func TestModuleStatusThroughLab(t *testing.T) {
+	f := newFake()
+	for _, tc := range []struct{ cmd, module, want string }{
+		{"status", "yakd", "disabled"}, {"status", "autoscaler", "disabled"}, {"install", "autoscaler", "equivalent:"}, {"status", "autoscaler", "installing"}, {"uninstall", "autoscaler", "equivalent:"}, {"status", "autoscaler", "disabled"},
+	} {
+		out, err := run(t, f, tc.cmd, tc.module)
+		if err != nil || !strings.Contains(out, tc.want) {
+			t.Fatalf("%s %s: %q %v", tc.cmd, tc.module, out, err)
+		}
+	}
+}

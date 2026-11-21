@@ -219,7 +219,7 @@ or place the downloaded file in the current directory and use `kubectl --kubecon
 ### Open the dashboard installed by the cloud
 
 The cloud automatically installs the YAKD addon in new clusters. No separate
-install command is needed. Confirm that it is ready:
+install command is needed. Use `lab status yakd` to inspect readiness, `lab uninstall yakd` to remove the dashboard and `lab install yakd` to restore it. The namespace is retained for existing student resources. Confirm that the Deployment is ready:
 
 ```sh
 kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
@@ -617,3 +617,5 @@ Submit your evidence table and brief answers to these questions:
 
 Use operation IDs, timestamps, scheduling events, and Pod/Node observations to
 support your answers.
+
+Use `lab status autoscaler` for the cluster autoscaler and `lab status instance-autoscaling` for the shared instance group services.

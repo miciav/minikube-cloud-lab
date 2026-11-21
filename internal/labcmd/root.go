@@ -82,8 +82,13 @@ func newRoot(factory connector) *cobra.Command {
 		parent.AddCommand(&cobra.Command{Use: "autoscaler", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 			return action(cmd, autoscalerFiles, verb == "uninstall", nil)
 		}})
+		parent.AddCommand(dashboardCommand(verb, factory, &path, &context))
+		parent.AddCommand(&cobra.Command{Use: "instance-autoscaling", Short: "Manage instance groups and their local filesystems through the lab shell", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
+			return fmt.Errorf("source scripts/configure.sh and run lab %s instance-autoscaling", verb)
+		}})
 		root.AddCommand(parent)
 	}
+	root.AddCommand(moduleStatus(factory, &path, &context, autoscalerFiles))
 	load := &cobra.Command{Use: "load", Short: "Generate resource pressure"}
 	var replicas int32
 	start := &cobra.Command{Use: "start", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
