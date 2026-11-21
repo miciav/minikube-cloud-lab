@@ -20,6 +20,7 @@ import {
   Spinner,
 } from "@fluentui/react-components";
 import { request, downloadKubeconfig } from "./api";
+import { History } from "./History";
 import { Monitoring } from "./Monitoring";
 import { Dashboard } from "./Dashboard";
 import { useResource } from "./useResource";
@@ -280,7 +281,7 @@ function CloudApp() {
       <div className="workspace">
         <nav aria-label="Cloud navigation">
           <div className="nav-caption">YOUR CLOUD</div>
-          {["Overview", "Clusters", "Machines", "Volumes", "Operations"].map(
+          {["Overview", "Clusters", "Machines", "Volumes", "Operations", "Monitoring"].map(
             (label) => (
               <a
                 key={label}
@@ -297,6 +298,7 @@ function CloudApp() {
                       Machines: "▣",
                       Volumes: "▤",
                       Operations: "↻",
+                      Monitoring: "∿",
                     }[label as "Overview"]
                   }
                 </span>
@@ -351,6 +353,7 @@ function CloudApp() {
                       machines: "Machines",
                       volumes: "Storage volumes",
                       operations: "Cloud operations",
+                      monitoring: "Monitoring",
                     }[section] ?? "Cluster unavailable")}
               </Title1>
               <p className="subtitle">
@@ -366,6 +369,7 @@ function CloudApp() {
               Refresh
             </Button>
           </div>
+          {section === "monitoring" && <History refresh={refresh} />}
           {section === "overview" && (
             <OverviewSection
               clusters={clusters}

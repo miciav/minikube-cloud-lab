@@ -75,7 +75,7 @@ the partial cluster available for inspection or deletion through `cloud`.
 
 ## Cloud portal
 
-Open <http://localhost:3000> after `docker compose up -d`. The separate `portal`
+Run `lab install portal` and open <http://localhost:3000>. On a remote VM, run `ssh -L 3000:127.0.0.1:3000 student@course-vm` from your own computer. The separate `portal`
 container serves an Azure-inspired interface for the existing cloud API. It has
 no Docker socket, kubeconfig mount or extra privileges. Both the portal and
 management API are published only on localhost.
@@ -93,7 +93,9 @@ A cluster's **Monitoring** tab shows Ready nodes, actual CPU/memory usage, resou
 requests versus allocatable capacity, Pending/unhealthy Pod counts and the cloud
 storage allocation budget. Allocated storage is reserved capacity, not bytes written.
 Metrics refresh every 15 seconds while the page is visible. Missing, partial or stale
-measurements are labelled; there is no persistent history or alerting service.
+measurements are labelled; the cluster tab works independently of the optional history module.
+
+Install `monitoring` to collect samples every 15 seconds. Select **Monitoring** in the main navigation and choose 15 minutes, one hour or 24 hours. Cluster usage is shown in cores and MiB. Queue gauges estimate available, in-flight and delayed messages. Bucket gauges show object count and logical bytes. A gap indicates a missed observation. A measured zero means the source actually returned zero. History survives closing the browser and `lab uninstall monitoring`. Reinstall to inspect retained samples within the retention period. To erase the owned volume, run `lab uninstall monitoring` followed by `lab purge monitoring --yes`.
 
 The **Kubernetes** tab embeds the automatically installed YAKD dashboard using its
 existing localhost Service endpoint. YAKD provides workload details and logs; it is

@@ -32,7 +32,7 @@ class InstanceAutoscalingSmokeTest(unittest.TestCase):
     def test_name_conflict_leaves_preexisting_instance_alone(self):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "cloud.log"
-            shell = r"""lab() { return 99; }
+            shell = r"""lab() { case "$*" in "status monitoring"|"status queue") echo "$2 disabled empty";; *) return 99;; esac; }
 curl() { echo '{"state":"disabled","remaining":[]}'; }
 cloud() { echo "$*" >> "$CLOUD_TEST_LOG"; return 23; }
 source "$1"

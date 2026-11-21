@@ -128,3 +128,11 @@ cluster between machine sizes and deletes it after successful cleanup, leaving c
 ## Course tooling image
 
 The `lab` target supplies kubectl, OpenTofu, the local provider, ansible-core and OpenSSH. CI publishes the same amd64/arm64 lab image used by the shell wrappers. The provider lives in `tools/tofu-provider`, a separate Go module using the existing cloud API client. The Docker build places the Linux binary for the target architecture in OpenTofu's filesystem mirror. Rebuild the course image when changing the provider, and keep the source address and version aligned with the capstone handout. Run `go -C tools/tofu-provider test -race ./...` for provider tests and `bash tests/capstone.sh` for the complete disposable deployment.
+
+## Course monitoring
+
+A dedicated Prometheus instance shares the cloud network namespace and listens on loopback port 9092. Its TSDB volume is separate from instance autoscaling. It scrapes three loopback-only paths under `/internal/metrics/` every 15 seconds. The existing portal proxies only `/v1/`. The history API translates allowlisted metrics and windows to Prometheus range vectors, preserving original timestamps and gaps.
+
+For Garage and ElasticMQ the cloud service selects the running container by exact Compose project and service labels using its existing runtime client. It issues fixed read-only requests inside the service network namespace. Garage 2.1 returns `objects` and `bytes` through `json-api GetBucketInfo`. ElasticMQ 1.6 returns the three approximate message counts through `GetQueueAttributes`. Only aggregate values leave the collector. No monitoring credentials or additional service bridges are required. A source with over 128 buckets or queues exceeds the lab's per-scrape budget.
+
+The ARM64 rehearsal used Docker 29.9.3 and rootless Podman 5.7.0 with podman-compose 1.5.0. The ten capstone uploads added 130 logical bytes. Podman also reported nonzero per-container CPU and memory for both standalone instances and autoscaling members under cgroup v2. Standalone VM usage and PostgreSQL counters are reserved for a later portal release.

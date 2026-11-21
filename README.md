@@ -22,7 +22,7 @@ labcompose up -d cloud
 cloud machine-types list
 ```
 
-The pull step is for published images. With local image overrides, go straight from sourcing the helper to starting the cloud. Expect `lab-small` (2 CPUs, 2 GiB) and `lab-medium` (4 CPUs, 8 GiB). If the API is still starting, inspect `labcompose logs cloud` and retry the catalog command. For a Docker lesson using the portal, start it with `labcompose up -d portal` and open `http://localhost:3000`.
+The pull step is for published images. With local image overrides, go straight from sourcing the helper to starting the cloud. Expect `lab-small` (2 CPUs, 2 GiB) and `lab-medium` (4 CPUs, 8 GiB). If the API is still starting, inspect `labcompose logs cloud` and retry the catalog command. On either runtime, run `lab install portal` and open `http://localhost:3000`. Install `monitoring` to record the lesson while the portal is closed.
 
 ## Verify before class
 
@@ -66,6 +66,8 @@ Use `lab install NAME`, `lab status NAME` and `lab uninstall NAME` from a config
 | --- | --- | --- |
 | `autoscaler` | Kubernetes cluster. Install before the Pod scheduling exercise. | Removes the controller and its configuration. Existing nodes and workloads remain. |
 | `instance-autoscaling` | Shared by instance groups in the lab. Install to start Traefik, Prometheus and Nomad Autoscaler. | Drains and deletes **all groups, their machines and local filesystems**. Independently created instances and persistent volumes survive. |
+| `portal` | Local web console on port 3000. | Releases the port. Monitoring can continue independently. |
+| `monitoring` | Up to 24 hours of cluster, queue and bucket history. | Stops sampling. Reinstall to reopen retained history, or purge the disabled module to erase it. |
 | `yakd` | Kubernetes dashboard. Included when a new cluster is created. | Removes the managed dashboard resources and retains its namespace for student resources. |
 
 The [managed services exercises](docs/tutorials/README.md#managed-services) use three independent modules: `object-storage` (Garage), `queue` (ElasticMQ) and `database` (PostgreSQL). Install any one from the configured shell without starting Kubernetes. Uninstall releases its containers and ports while retaining its data. See the [command reference](docs/commands.md#managed-services).

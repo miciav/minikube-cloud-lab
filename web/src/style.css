@@ -354,3 +354,13 @@ select:focus-visible {
   border-radius: 4px;
   background: white;
 }
+
+.history-filters, .history-axis { display: flex; gap: 1rem; flex-wrap: wrap; }
+.history-filters select { padding: .4rem; }
+.history-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1rem; margin: 1rem 0; }
+.history-metric { border: 1px solid #dbe2ec; padding: 1rem; background: white; }
+.history-metric h2 { font-size: 1.05rem; margin: 0 0 .75rem; }
+.history-metric figure { margin: 1rem 0; }
+.history-metric svg { display: block; width: 100%; color: #1965a4; border-bottom: 1px solid #bccbd8; }
+.history-scale, .history-axis { font-size: .75rem; color: #435769; }
+.history-axis { justify-content: space-between; }

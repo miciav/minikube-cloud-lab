@@ -8,6 +8,12 @@ on:
       - 'internal/**'
       - 'scripts/configure.sh'
       - 'scripts/course-service.py'
+      - 'scripts/console-module.py'
+      - 'tests/monitoring.sh'
+      - 'tests/history-sample.py'
+      - 'tests/capstone.sh'
+      - 'lab/capstone/**'
+      - 'web/**'
       - 'lab/services/**'
       - 'tests/managed-services.sh'
       - 'tools/instance-autoscaler/**'
@@ -24,6 +30,7 @@ concurrency:
   cancel-in-progress: false
 env:
   CLOUD_IMAGE: minikube-cloud-lab/cloud:dev
+  PORTAL_IMAGE: minikube-cloud-lab/portal:dev
   LAB_IMAGE: minikube-cloud-lab/lab:dev
   NFS_IMAGE: minikube-cloud-lab/nfs:dev
   UBUNTU_IMAGE: minikube-cloud-lab/instance-ubuntu:dev
@@ -57,6 +64,8 @@ jobs:
             if cloud machine-types list; then break; fi
             sleep 2
           done
+          bash tests/monitoring.sh
+          bash tests/capstone.sh
           bash tests/instance-autoscaling.sh
           lab install instance-autoscaling
           cloud clusters create demo

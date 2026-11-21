@@ -17,10 +17,11 @@ The command starts the user socket and cloud, checks the inventory, then runs th
 | Suite | Evidence |
 | --- | --- |
 | Runner tests and Lecture 02 validation | Verification logic, manifest consistency and worker setup in Bash and zsh. Lecture 02's interactive slide exercises are a separate manual rehearsal. |
+| Portal and monitoring | Install each module alone, observe queue delivery states, reopen retained history, verify purge and release the portal port. |
 | Managed services | Install Garage, ElasticMQ and PostgreSQL individually, check persistence and isolation, run the CSV exercise, then remove the test installations. Existing service data stops this stage. |
 | Standalone compute and storage | Test cloud-init and SSH on both Ubuntu and Debian. Write a disk on one instance and read it on another through the QEMU console. |
 | Instance autoscaling | Generate HTTP load, check scale-out and scale-in, simulate a metrics outage, replace a failed member and uninstall the module. |
-| Mixed VM and Kubernetes capstone | Run the bundled OpenTofu and Ansible tools as the student. Verify a no-change plan, idempotent playbook, worker rollout, CSV total and cleanup. |
+| Mixed VM and Kubernetes capstone | Run the bundled OpenTofu and Ansible tools as the student. Verify a no-change plan, idempotent playbook, worker rollout and cleanup. Pause the worker, submit ten CSVs, reopen the portal, check object count, bytes and queue depth, then drain the backlog and verify ten totals. |
 | Lecture 03 | Exercise HPA, VPA, Cluster Autoscaler, KEDA, custom resources and the MySQL Operator on disposable clusters. |
 | General platform | Verify real Kubernetes node scaling, networking, monitoring, storage, standalone instances and clean shutdown. |
 

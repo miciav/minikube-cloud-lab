@@ -63,6 +63,10 @@ kubectl -n csv-capstone logs deployment/csv-worker
 
 Expect `{"total": 8}`. A result request returns 404 until the worker completes the job. For a second experiment scale the worker to zero, submit another CSV, then restore one replica and watch the waiting job finish. The submission and result endpoints are for the trusted course network. The worker token grants access to the lease and completion endpoints. After replacing the VM rerun preparation and the playbook, update the Secret from the new worker.env, and restart the Deployment.
 
+## Observe the backlog
+
+Install `monitoring` before submitting jobs, then open the `portal` module and select **Monitoring**. Use `kubectl -n csv-capstone scale deployment/csv-worker --replicas=0` and wait for the worker pod to terminate. Submit ten CSVs using the job submission command above. The bucket should gain ten objects and the queue should gain ten available messages. Scale the worker back to one replica, watch the queue drain and retrieve the ten job results. The portal can be closed during ingestion and reopened to view the same interval.
+
 ## Tear down
 
 ```sh

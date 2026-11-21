@@ -263,7 +263,7 @@ class Verification:
             "Cluster deletion did not complete; keeping management services available for recovery",
         )
         require(self.project_label, "Cannot verify project ownership for teardown")
-        self.run(self.compose + ["--profile", "tools", "down"], timeout=300)
+        self.run(self.compose + ["--profile", "portal", "--profile", "tools", "down"], timeout=300)
         remaining = self.run([self.args.runtime, "ps", "-aq", "--filter", "label=" + self.project_label])
         require(not remaining, "Compose project containers remain: " + remaining)
 

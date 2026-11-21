@@ -56,6 +56,8 @@ module_disabled() {
 }
 
 module_disabled
+[[ $(lab status monitoring) == "monitoring disabled empty" ]] || { echo "Existing monitoring state" >&2; exit 1; }
+[[ $(lab status queue) == "queue disabled empty" ]] || { echo "Existing queue state" >&2; exit 1; }
 trap cleanup EXIT
 manual_op=$(cloud instances create "$manual" --async)
 manual_created=yes
@@ -66,6 +68,8 @@ installed=yes
 lab install instance-autoscaling
 cloud groups create web-smoke --desired 2 --max 3 --target-rps 3 --bootstrap "$repo/lab/instance-autoscaling/web.sh"
 wait_for capacity 2
+lab install monitoring
+lab uninstall monitoring
 id=$(group id)
 member >/dev/null
 
@@ -93,6 +97,11 @@ cloud instances stop "$stopped"
 cloud groups create cleanup-smoke --desired 2 --max 2 --bootstrap - < "$repo/lab/instance-autoscaling/web.sh"
 cleanup_id=$(curl -fsS "$base/v1/groups/cleanup-smoke" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 # Resume an uninstall whose caller disconnected after the cloud persisted its intent.
+lab install monitoring
+lab install queue
+probe_url=$(lab client queue sqs create-queue --queue-name autoscaling-observer --query QueueUrl --output text)
+probe_resource=${probe_url#*://}
+probe_resource=${probe_resource#*/}
 curl -fsS -X POST "$base/v1/instance-autoscaling/begin-removal" >/dev/null
 lab uninstall instance-autoscaling
 module_disabled
@@ -108,5 +117,12 @@ lab install instance-autoscaling
 test "$(curl -fsS "$base/v1/groups")" = "[]"
 lab uninstall instance-autoscaling
 module_disabled
+since=$(date +%s)
+lab client queue sqs send-message --queue-url "$probe_url" --message-body marker >/dev/null
+python3 "$repo/tests/history-sample.py" visible "$probe_resource" --equals 1 --since "$since"
+lab uninstall queue
+lab purge queue --yes
+lab uninstall monitoring
+lab purge monitoring --yes
 installed=
 printf 'PASS instance autoscaling lifecycle\n'

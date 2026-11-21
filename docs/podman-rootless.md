@@ -2,6 +2,8 @@
 
 Use this guide to prepare a Linux VM for the class. For a rehearsal on a fresh Ubuntu guest, use Multipass. To configure an existing course image, follow the host preparation below. Students use the same shell commands for the exercises on either VM.
 
+Install the optional console with `lab install portal`. The module helper reads the resolved Podman Compose configuration using Python 3 and PyYAML (included with the course VM prerequisites). For lesson history, also run `lab install monitoring`. Follow the [portal and SSH forwarding instructions](operations.md#cloud-portal) from your workstation.
+
 ## Reproducible Multipass VM
 
 From a checkout containing the changes to test, run:

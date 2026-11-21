@@ -14,7 +14,8 @@ export function Dashboard({
   if (error)
     return (
       <div className="error" role="alert">
-        {error}. The dashboard may still be starting; retrying every 15 seconds.
+        {error}. Check <code>lab status yakd</code>. If disabled, run{" "}
+        <code>lab install yakd</code>.
       </div>
     );
   if (!data)

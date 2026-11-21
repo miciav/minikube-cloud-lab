@@ -38,6 +38,7 @@ def verify(run):
     run("Wait for course API", ["curl", "--retry", "60", "--retry-delay", "2", "--retry-all-errors",
                                "--max-time", "5", "-fsS", "http://127.0.0.1:8080/v1/machine-types"])
     check_empty()
+    run("Portal and monitoring lifecycle", ["bash", "tests/monitoring.sh"])
     run("Independent course services and CSV worker", ["bash", "tests/managed-services.sh"])
     for image in ("ubuntu-26.04", "debian-12"):
         run("Cloud-init and SSH: " + image, ["env", "RUNTIME=podman", "TEST_CLOUD_CONTAINER=",

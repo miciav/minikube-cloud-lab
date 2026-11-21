@@ -4,6 +4,9 @@ Run the commands from a checkout after `source scripts/configure.sh`. `cloud` ma
 
 | Command | Purpose / options |
 | --- | --- |
+| `lab install portal` / `lab status portal` / `lab uninstall portal` | Start, inspect or remove the local course console. |
+| `lab install monitoring` / `lab status monitoring` / `lab uninstall monitoring` | Start, inspect or stop collection. History survives uninstall. |
+| `lab purge monitoring --yes` | Erase the disabled module’s history. |
 | `cloud serve` | Starts the management API and externalgrpc service; `--data-dir`, `--api` (loopback), `--grpc` |
 | `cloud machine-types list` | Displays the catalog |
 | `cloud clusters create NAME` | `--machine-type lab-small`, `--min-nodes 1`, `--max-nodes 3`, `--async` |

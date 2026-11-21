@@ -31,6 +31,6 @@ class CourseVMAcceptanceTest(unittest.TestCase):
         self.assertEqual([cmd[-1] for cmd in commands if "tests/instance-cloud-init.sh" in cmd],
                          ["ubuntu-26.04", "debian-12"])
         self.assertIn(["bash", "tests/managed-services.sh"], commands)
-        self.assertIn(["bash", "tests/capstone.sh"], commands)
+        self.assertLess(commands.index(["bash", "tests/monitoring.sh"]), commands.index(["bash", "tests/capstone.sh"]))
         self.assertIn("scripts/verify-lab.py", commands[-1])
         self.assertTrue(any("scripts/verify-lecture03.py" in cmd for cmd in commands))
