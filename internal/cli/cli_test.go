@@ -507,8 +507,12 @@ func TestInstanceCommandsPropagateProviderErrors(t *testing.T) {
 	}))
 	defer server.Close()
 	for _, args := range [][]string{
-		{"images", "list"}, {"instances", "list"}, {"instances", "describe", "vm"},
-		{"instances", "start", "vm"}, {"instances", "ssh", "vm"}, {"disks", "list"},
+		{"images", "list"},
+		{"instances", "list"},
+		{"instances", "describe", "vm"},
+		{"instances", "start", "vm"},
+		{"instances", "ssh", "vm"},
+		{"disks", "list"},
 	} {
 		out, err := execute(t, server.URL, args...)
 		if err == nil || !strings.Contains(err.Error(), "provider offline") || out != "" {
