@@ -50,6 +50,7 @@ jobs:
           path: |
             coverage.out
             vuln-report.json
+            tools/instance-autoscaler/vuln-report.json
           if-no-files-found: ignore
   frontend:
     runs-on: ubuntu-24.04

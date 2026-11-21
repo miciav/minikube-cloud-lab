@@ -29,8 +29,10 @@ tidy-check:
 	go mod verify
 
 vuln:
-	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -json ./... > vuln-report.json
-	go run ./tools/vulncheck < vuln-report.json
+	for module in . tools/instance-autoscaler; do \
+		go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -C "$$module" -json ./... > "$$module/vuln-report.json"; \
+		go run ./tools/vulncheck < "$$module/vuln-report.json"; \
+	done
 
 race:
 	go test -race ./...
