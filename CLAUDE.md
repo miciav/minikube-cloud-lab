@@ -1,6 +1,6 @@
 # Istruzioni di sviluppo
 
-Leggere `README.md` per architettura, percorso studente e limiti operativi.
+Il [README](README.md) raccoglie i percorsi del corso. Consultare la [guida di sviluppo](docs/development.md) per architettura e test e la [guida operativa](docs/operations.md) per stato e limiti.
 
 ## Comandi
 

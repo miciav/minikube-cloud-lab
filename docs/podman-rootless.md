@@ -1,17 +1,44 @@
 # Podman rootless
 
-Verified on Fedora CoreOS 44 ARM64 with Podman 6.1.4 rootless, Kubernetes 1.35.6 and containerd 2.3.4, in a VM with 4 CPUs and 6 GiB RAM. The full autoscaling cycle 1 → 2 → 1 passed, with four load pods Running across two nodes. Physical CPU/RAM limits, HTTP from the host, the oversized-PVC warning and persistence after recreating a pod on its original node were also verified. Cross-node persistence is not an acceptance requirement.
+Use this guide to prepare a Linux VM for the class. For a rehearsal on a fresh Ubuntu guest, use Multipass. To configure an existing course image, follow the host preparation below. Students use the same shell commands for the exercises on either VM.
 
-All lab containers in this configuration run under Podman rootless. New Minikube nodes receive an explicit limit of 4096 processes/threads, preserved when CPU/RAM limits are updated. This avoids relying on implicit zero/unlimited PID handling in the Docker-compatible API. A node with `pids.max=1` cannot fork during entrypoint startup; verify the effective cgroup value, not only `podman inspect`.
+## Reproducible Multipass VM
 
-This configuration uses real persistent directories shared by every node and a simulated allocation budget. It does not impose physical write quotas. Keep enough free disk space in the VM. Use dedicated rootless state; existing Docker/NFS volumes are not migrated.
+From a checkout containing the changes to test, run:
+
+```sh
+bash scripts/multipass-rootless.sh
+```
+
+The host needs Git and Multipass. The script creates a dedicated Ubuntu 26.04
+VM named `mcl-rootless-test` with 4 CPUs, 8 GiB of RAM and a 48 GiB virtual
+disk. It provisions Podman, Compose, kernel modules and cgroup delegation,
+then builds the cloud image from the indicated Git commit inside the VM.
+Commit local edits before running. The VM needs internet access to Ubuntu
+package mirrors, container registries and Go modules on its first run.
+
+The short test creates two standalone instances and a blank disk, formats it
+in an emulated Linux console, checks that detachment is refused while the
+console is open and reads the file from the second instance. It also checks
+SSH and ordinary instance persistence across stop/start. Use `--full` to also build the lab image and run
+`verify-lab.py --runtime podman --no-pull` with its Kubernetes and storage
+checks. A nonzero exit indicates a failed or incomplete verification.
+
+Rerunning the command reuses the marked VM and its image cache. Specify
+`--vm NAME` for a separate environment. The script leaves the VM available
+for inspection. Stop it with `multipass stop mcl-rootless-test`.
+For an isolated run use `--full --ephemeral --vm NAME` with an unused name.
+The script connects with a one-time SSH key and purges its guest on exit,
+including after a failed check.
+
+## Prepare an existing Linux VM
 
 The Linux VM needs systemd, cgroups v2 with CPU and memory controllers delegated to the student's user, subordinate UID/GID ranges, Podman and a Compose provider. Prepare these as the instructor; students run the lab without sudo. Load kernel modules during VM preparation and persist them across reboots:
 
 ```sh
-sudo modprobe br_netfilter
-sudo modprobe vxlan
-printf 'br_netfilter\nvxlan\n' | sudo tee /etc/modules-load.d/cloud-lab.conf
+modules=(br_netfilter vxlan iptable_nat iptable_filter iptable_mangle iptable_raw)
+sudo modprobe -a "${modules[@]}"
+printf '%s\n' "${modules[@]}" | sudo tee /etc/modules-load.d/cloud-lab.conf
 ```
 
 Enable the user's API socket with `systemctl --user enable --now podman.socket`. For recovery after a guest reboot, enable `podman-restart.service` with `systemctl --user enable podman-restart.service` and enable lingering for the lab user. Verify `podman info` reports rootless and cgroups v2.
@@ -60,7 +87,7 @@ Ubuntu 26.04 instances (`ubuntu-26.04`, the default) were verified the same way.
 
 The optional instance autoscaling profile uses the same `lab install` and
 `lab uninstall` commands on Podman rootless. See the
-[standalone HTTP exercise](student-tutorial.md#autoscale-a-standalone-http-service)
+[standalone HTTP exercise](instance-autoscaling.md)
 for the workflow.
 
 With the cloud service running on a disposable Podman lab, run the smoke test
@@ -85,103 +112,7 @@ Source `scripts/configure.sh` in each terminal; it adds `~/.local/bin` to PATH a
 
 ## Automated live verification
 
-For the complete automatic lifecycle, run on the VM from the repository:
-
-```sh
-python3 scripts/verify-lab.py
-```
-
-Runtime selection is automatic: working Docker takes precedence over rootless
-Podman. Use `--runtime podman` to select Podman when both are available.
-`source scripts/configure.sh` detects Docker or rootless Podman in Bash or zsh;
-set `CLOUD_RUNTIME=podman` before sourcing to force Podman. Detection checks the runtime's
-reported rootless mode and rejects unsupported Podman rootful or Docker rootless
-configurations before changing state.
-
-No cluster needs to be created manually. The script starts the user Podman
-socket, runs the configuration preflight, pulls the published images (`--no-pull`
-keeps locally built images set in `.env`), starts
-Compose and checks service/API readiness. It creates a temporary lab-small
-cluster (min 1, max 2), installs the autoscaler, runs all checks, deletes the
-cluster and its nodes/relays, then runs Compose down and verifies that no
-project containers remain. It does not stop unrelated containers or remove
-persistent volumes with `down -v`. Only Python 3 and a working runtime/Compose
-provider are required. Kernel modules, UID/GID mappings and cgroup delegation
-must already be configured. Use `--runtime docker` for Docker; this also starts
-and checks the portal HTTP endpoint and NFS container.
-
-Full lifecycle mode requires an empty platform. If a cluster already exists,
-it refuses to delete it or shut its services down. For an existing cluster use
-the optional non-destructive mode instead:
-
-```sh
-python3 scripts/verify-lab.py --runtime podman --cluster demo
-```
-
-This mode requires the platform to be running already and does not start or
-stop it. Both modes preserve host kubeconfig and the configured storage budget.
-If cluster deletion fails in full mode, management services are kept available
-for recovery and the shutdown check fails; inspect the report before retrying.
-
-On an existing cluster, resources are placed in a unique temporary namespace.
-Autoscaling is a real load test: allow capacity for two nodes and run outside
-other resource-intensive exercises. For a complete 1 → 2 → 1 check, start with
-one lab-small node, min=1, max>=2, and an installed autoscaler. Otherwise that
-check is reported SKIP. Full lifecycle mode configures these prerequisites
-automatically on its temporary cluster. Existing workloads can prevent scale-down, causing a
-FAIL; the script never deletes those workloads to force a pass.
-
-Checks cover physical cgroup v2 CPU/RAM limits, deployment readiness, DNS and
-ClusterIP HTTP, autoscaling and cross-node networking, PVC persistence on the
-original node, oversized-PVC rejection, Delete reclamation, static publishing
-and Retain/republication, NodePort/LoadBalancer HTTP, the shell port-forward
-wrapper and shutdown, monitoring metrics and the dashboard API. Rootless
-storage uses a simulated allocation budget: physical write quotas and
-cross-node storage persistence are not claimed. Portal browser interactions,
-platform restarts and crash recovery are not tested by this script, to avoid
-interrupting an existing deployment.
-
-Allow roughly 20–40 minutes, depending on image downloads and autoscaling.
-Polling checks default to 600 seconds each (`--timeout` changes that limit).
-Each command also has a bounded timeout. Logs and `report.json` are written to a
-private `cloud-lab-verification-*` temporary directory, whose path is printed at
-startup. Failed runs collect cloud/node runtime logs even if provisioning fails before
-Kubernetes starts, and Kubernetes diagnostics when available, before cleaning
-their own resources. Runtime stderr is included in `commands.log`. Keep the report if cleanup fails; the cluster and namespace names
-are printed so remaining test resources can be inspected. Ctrl+C also attempts
-cleanup; forcibly killing the script or shutting down the VM can leave resources.
-
-Exit codes: **0** all checks passed, **1** failures (including cleanup), **2** no
-failures but some checks skipped. A SKIP is not full certification of the VM.
-
-## Reproducible Multipass VM
-
-From a checkout containing the changes to test, run:
-
-```sh
-bash scripts/multipass-rootless.sh
-```
-
-The host needs Git and Multipass. The script creates a dedicated Ubuntu 26.04
-VM named `mcl-rootless-test` with 4 CPUs, 8 GiB of RAM and a 48 GiB virtual
-disk. It provisions Podman, Compose, kernel modules and cgroup delegation,
-then builds the cloud image from the indicated Git commit inside the VM.
-Commit local edits before running. The VM needs internet access to Ubuntu
-package mirrors, container registries and Go modules on its first run.
-
-The short test creates two standalone instances and a blank disk, formats it
-in an emulated Linux console, checks that detachment is refused while the
-console is open and reads the file from the second instance. It also checks
-SSH and ordinary instance persistence across stop/start. Use `--full` to also build the lab image and run
-`verify-lab.py --runtime podman --no-pull` with its Kubernetes and storage
-checks. A nonzero exit indicates a failed or incomplete verification.
-
-Rerunning the command reuses the marked VM and its image cache. Specify
-`--vm NAME` for a separate environment. The script leaves the VM available
-for inspection. Stop it with `multipass stop mcl-rootless-test`.
-For an isolated run use `--full --ephemeral --vm NAME` with an unused name.
-The script connects with a one-time SSH key and purges its guest on exit,
-including after a failed check.
+Run the [course verification](course-verification.md) before distributing the VM.
 
 ### Block-device feasibility on the test VM
 
@@ -240,3 +171,11 @@ console before stopping the instance, detaching the disk or deleting the owner.
 Only one console can open a disk at a time. The host-side shell command is
 provided by `scripts/configure.sh`; it runs QEMU with TCG, without KVM, sudo
 or a privileged device helper.
+
+## Reference environment
+
+Verified on Fedora CoreOS 44 ARM64 with Podman 6.1.4 rootless, Kubernetes 1.35.6 and containerd 2.3.4, in a VM with 4 CPUs and 6 GiB RAM. The full autoscaling cycle 1 → 2 → 1 passed, with four load pods Running across two nodes. Physical CPU/RAM limits, HTTP from the host, the oversized-PVC warning and persistence after recreating a pod on its original node were also verified. Cross-node persistence is not an acceptance requirement.
+
+All lab containers in this configuration run under Podman rootless. New Minikube nodes receive an explicit limit of 4096 processes/threads, preserved when CPU/RAM limits are updated. This avoids relying on implicit zero/unlimited PID handling in the Docker-compatible API. A node with `pids.max=1` cannot fork during entrypoint startup; verify the effective cgroup value, not only `podman inspect`.
+
+This configuration uses real persistent directories shared by every node and a simulated allocation budget. It does not impose physical write quotas. Keep enough free disk space in the VM. Use dedicated rootless state; existing Docker/NFS volumes are not migrated.

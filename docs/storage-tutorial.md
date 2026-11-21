@@ -1,12 +1,6 @@
 # Student tutorial: persistent storage and the cloud
 
-For the Podman rootless VM variant, use [these setup instructions](podman-rootless.md). Its storage allocation budget is simulated and does not impose physical write quotas.
-
-Use the runtime already started in the [autoscaling tutorial](student-tutorial.md):
-`source scripts/configure.sh` (it detects Docker or the Podman VM). The helpers provide containerized `kubectl`;
-no host installation is required. Pull images published by the CI before starting
-an updated lab. The optional portal is available only in the Docker configuration.
-Allocated capacity is a reservation, not measured disk usage.
+Start the cloud on a dedicated [course environment](../README.md#prepare-the-environment) and source `scripts/configure.sh` in the checkout. The recovery exercise deletes the first cluster and creates a second one. Start with no existing cluster for this exercise.
 
 ```sh
 cloud clusters create demo

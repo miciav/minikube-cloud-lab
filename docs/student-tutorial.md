@@ -2,7 +2,7 @@
 
 For the Podman rootless VM variant, use [these setup instructions](podman-rootless.md). Its storage allocation budget is simulated and does not impose physical write quotas.
 
-[Project overview and command reference](../README.md)
+[Course overview](../README.md) · [Command reference](commands.md)
 
 In this lab you will ask a simulated cloud for a Kubernetes cluster, install
 Cluster Autoscaler, and watch Kubernetes request an additional machine when a
@@ -28,7 +28,7 @@ Use the Linux VM or Mac approved by your instructor. The reference rootless VM
 has 4 vCPUs and 6 GiB RAM. Node CPU limits share the host's processors; they do
 not reserve exclusive physical cores. Leave memory for the VM and cloud services.
 You need Git, internet access to GitHub/GHCR and one of the runtimes below.
-The tools image includes `cloud`, `lab` and `kubectl` v1.35.10: students do not
+The lab provides containerized `cloud`, `lab` and `kubectl` v1.35.10: students do not
 need Go or a native kubectl installation. An existing host installation is kept;
 after sourcing the helper, use `command kubectl` to bypass the container wrapper
 and use the host binary with an exported host kubeconfig.
@@ -243,57 +243,12 @@ It requests 128 MiB of the scheduling budget. The cloud also installs Metrics Se
 in new clusters, enabling live Pod CPU/memory usage in YAKD and cluster/node usage in
 the portal. Allow a short interval for the first readings. Existing clusters need
 to be recreated to receive Metrics Server. Minikube's kubelet certificates require
-an internal lab-only TLS exception; see the [portal notes](../README.md#cloud-portal).
+an internal lab-only TLS exception; see the [portal notes](operations.md#cloud-portal).
 Use the localhost Service endpoint shown by `lab services` with containerized kubectl.
 
 ### Try NodePort and LoadBalancer
 
-Create a dedicated namespace and one Nginx replica for this exercise. **Predict:** can two LoadBalancer Services both use port 80? Which port
-will you use from your computer?
-
-```sh
-kubectl create namespace service-demo
-kubectl -n service-demo create deployment web --image=nginx:1.28-alpine --port=80
-kubectl -n service-demo rollout status deployment/web
-kubectl -n service-demo expose deployment web --name=web-node --type=NodePort --port=80 --target-port=80
-kubectl -n service-demo expose deployment web --name=web-lb-one --type=LoadBalancer --port=80 --target-port=80
-kubectl -n service-demo expose deployment web --name=web-lb-two --type=LoadBalancer --port=80 --target-port=80
-kubectl -n service-demo get services
-lab services
-```
-
-Wait a few seconds if LOCAL_ENDPOINT is empty, then repeat `lab services`. Copy
-each displayed endpoint into `curl http://127.0.0.1:PORT` (replace PORT) and confirm
-that all three return the Nginx welcome page. NodePort uses its Kubernetes NodePort on
-localhost. Each LoadBalancer uses a different Docker IP and a free mapped host
-port, even though both Services use port 80.
-
-**Explain:** `EXTERNAL-IP` is the relay's private Docker IP. It is reachable at
-Service port 80 inside Docker, but is not directly reachable from a Mac shell.
-From the Docker host, use the localhost endpoint shown by `lab services`. This
-lab intentionally exposes nothing to the LAN. The read-only helper is equivalent
-to `kubectl get services -A -o json`: inspect the
-`minikube-cloud-lab.io/host-endpoints` and `minikube-cloud-lab.io/exposure-error`
-annotations to find the same information without the helper.
-
-A NodePort occupied by a host process gives an ERROR rather than an alternative
-port. Free it or choose another NodePort. This release supports TCP (including
-TLS passthrough) with `externalTrafficPolicy: Cluster`. UDP/SCTP, `Local`, custom
-LoadBalancer classes and disabled LoadBalancer NodePorts produce an explicit
-error. A Service with unsupported ports is not partially published.
-
-Unchanged Services keep their endpoints across a cloud restart. Changing ports
-or type may interrupt connections and assign a new LoadBalancer host port.
-Delete the exercise Services and check that their relay containers disappear:
-
-```sh
-kubectl delete namespace service-demo
-lab services
-```
-
-Cluster deletion cleans up every owned relay.
-The relay address pool needs the current /23 network; for a lab created with the
-old /24 configuration, follow the [README migration](../README.md) before starting.
+For a separate networking exercise, [publish Nginx through three Services](networking.md). Return here to install Cluster Autoscaler.
 
 ## 3. Install Cluster Autoscaler before generating load
 
@@ -527,62 +482,13 @@ The `demo` kubeconfig context can remain after deletion. Other contexts are
 preserved; deleting all of `~/.kube` is unnecessary.
 
 For an optional full reset of the operation history, see
-[State and reset](../README.md#state-and-reset). Delete the state directory only
+[State and reset](operations.md#state-and-reset). Delete the state directory only
 after cluster deletion has succeeded, so the cloud retains the information
 needed to clean up its resources.
 
 ## Autoscale a standalone HTTP service
 
-Use a lab with room for three standalone instances. Install the autoscaling
-module and launch a group. The bootstrap script starts a small HTTP service
-that returns the name of the instance handling the request.
-
-```bash
-lab install instance-autoscaling
-cloud groups create web --min 1 --desired 2 --max 3 --target-rps 10 \
-  --bootstrap - < lab/instance-autoscaling/web.sh
-cloud groups describe web
-curl -fsS http://127.0.0.1:8084/groups/web/
-```
-
-Wait for two ready members. Generate traffic in one terminal and inspect the
-group and operation history in another. The policy can take several scrape
-intervals to see changes in traffic.
-
-```bash
-while true; do curl -fsS http://127.0.0.1:8084/groups/web/ >/dev/null; done
-```
-
-```bash
-cloud groups describe web
-cloud instances list
-cloud operations list
-```
-
-Identify the scale-out in the operation history. Stop the load with Ctrl+C and
-watch the group return to its minimum after the cooldown. In Prometheus at
-`http://127.0.0.1:9091`, query `traefik_service_server_up` for backend health
-and `rate(traefik_service_requests_total[30s])` for traffic.
-
-Send a request to get a member's name, then stop its application. The health
-checks remove it from traffic. The group replaces the instance after the
-failure persists through its grace period, bringing the service back at the
-same desired capacity.
-
-```bash
-member=$(curl -fsS http://127.0.0.1:8084/groups/web/)
-cloud instances ssh "$member" -- sudo systemctl stop lab-group-http
-cloud groups describe web
-cloud operations list
-```
-
-When finished, uninstall the module. This deletes all group instances and
-their local filesystems, removes the policies, and stops all three services.
-
-```bash
-lab uninstall instance-autoscaling
-cloud groups list
-```
+The [instance autoscaling exercise](instance-autoscaling.md) uses its own instance group and can be assigned independently of this cluster lab.
 
 ## Troubleshooting
 
@@ -590,7 +496,7 @@ cloud groups list
 | --- | --- |
 | An image pull fails | Check the image name/tag and network access to `ghcr.io`; the default images are public and need no login |
 | Docker socket permission is denied | Check `docker info`, the socket's group, and `.env`; ask your instructor to correct access |
-| The cloud CLI cannot connect | Run `docker compose ps` and `docker compose logs cloud`; check the service has started |
+| The cloud CLI cannot connect | Run `labcompose ps` and `labcompose logs cloud`; check the service has started |
 | `kubectl` uses the wrong cluster | Check `kubectl config current-context` and the managed cluster shown by `cloud clusters list`; the container wrapper uses the cloud private kubeconfig |
 | Another cluster already exists | List it and finish or clean up that earlier exercise before creating another |
 | Pods are Pending and no machine is added | Check the Pod's scheduling event, Autoscaler rollout/logs, size limits, and cloud operations |
