@@ -20,6 +20,7 @@ images:
 	docker build --target cloud -t minikube-cloud-lab/cloud:dev .
 	docker build --target lab -t minikube-cloud-lab/lab:dev .
 	docker build --target portal -t minikube-cloud-lab/portal:dev .
+	docker build --target instance-debian -t minikube-cloud-lab/instance-debian:dev .
 	docker build --target instance-ubuntu -t minikube-cloud-lab/instance-ubuntu:dev .
 
 verify: lint tidy-check vuln cover race

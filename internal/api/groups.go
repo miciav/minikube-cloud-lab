@@ -38,7 +38,7 @@ func registerGroups(mux *http.ServeMux, svc *cloud.Service) {
 	})
 	mux.HandleFunc("POST /v1/groups", func(w http.ResponseWriter, r *http.Request) {
 		var spec cloud.GroupSpec
-		if err := decodeJSONLimit(w, r, &spec, 128*1024); err != nil {
+		if err := decodeLimitedJSON(w, r, &spec, 128*1024); err != nil {
 			respond(w, http.StatusBadRequest, nil, cloud.ErrInvalid)
 			return
 		}

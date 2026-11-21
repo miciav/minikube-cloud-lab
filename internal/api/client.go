@@ -183,6 +183,7 @@ func (c *Client) UnpublishVolume(ctx context.Context, id string) error {
 }
 
 type instanceRequest struct {
+	UserData    string `json:"userData,omitempty"`
 	Name        string `json:"name"`
 	Image       string `json:"image"`
 	MachineType string `json:"machineType"`
@@ -198,9 +199,9 @@ func (c *Client) Images(ctx context.Context) ([]cloud.Image, error) {
 }
 
 // CreateInstance requests a standalone instance asynchronously.
-func (c *Client) CreateInstance(ctx context.Context, name, image, kind string) (cloud.Operation, error) {
+func (c *Client) CreateInstance(ctx context.Context, name, image, kind, userData string) (cloud.Operation, error) {
 	var result cloud.Operation
-	_, err := c.request(ctx, http.MethodPost, "/v1/instances", instanceRequest{Name: name, Image: image, MachineType: kind}, &result)
+	_, err := c.request(ctx, http.MethodPost, "/v1/instances", instanceRequest{UserData: userData, Name: name, Image: image, MachineType: kind}, &result)
 	return result, err
 }
 

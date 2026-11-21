@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"os"
+	"maps"
 	"slices"
 	"time"
 )
@@ -99,7 +99,7 @@ func (s *Service) reconcileGroup(ctx context.Context, group Group) error {
 	var id [8]byte
 	rand.Read(id[:])
 	name := group.ID + "-" + hex.EncodeToString(id[:])
-	if _, err := s.createInstanceLocked(ctx, name, group.Image, group.MachineType, "cloud", group.ID, group.Bootstrap); err != nil {
+	if _, err := s.createInstanceLocked(ctx, name, group.Image, group.MachineType, "cloud", group.ID, group.Bootstrap, ""); err != nil {
 		next := s.state.clone()
 		recordGroupError(&next, group.ID, err)
 		return s.store(next)
@@ -144,10 +144,11 @@ func (s *Service) deleteGroupMember(ctx context.Context, instance Instance) erro
 		if err := s.instances.DeleteOwnedInstance(ctx, instance.Name, instance.GroupID); err != nil {
 			return fmt.Errorf("remove group member %s: %w", instance.Name, err)
 		}
-		return os.RemoveAll(s.instanceDir(instance.Name))
+		return s.removeInstanceFiles(instance.Name)
 	}, func(st *snapshot, err error) {
 		recordGroupError(st, instance.GroupID, err)
 		if err == nil {
+			maps.DeleteFunc(st.DiskOwners, func(_ string, owner string) bool { return owner == instance.Name })
 			st.Instances = slices.DeleteFunc(st.Instances, func(i Instance) bool { return i.Name == instance.Name && i.GroupID == instance.GroupID })
 		}
 	})

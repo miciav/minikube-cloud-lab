@@ -1,0 +1,20 @@
+#!/bin/busybox sh
+export PATH=/sbin:/usr/sbin:/bin:/usr/bin
+/bin/busybox --install -s /bin
+set -e
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t devtmpfs dev /dev
+modprobe virtio_mmio || true
+modprobe virtio_pci || true
+modprobe virtio_blk
+modprobe ext4
+test -b /dev/vda
+mkdir -p /mnt
+echo 'Disk console ready. Use /dev/vda. Exit the shell to shut down.'
+export PS1="disk:/ # "
+serial=$(cat /sys/class/tty/console/active)
+setsid /bin/sh -c 'exec /bin/sh -i <"/dev/$1" >"/dev/$1" 2>&1' sh "$serial" || true
+sync
+umount -a -t ext4 || true
+poweroff -f

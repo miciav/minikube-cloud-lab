@@ -85,7 +85,7 @@ func TestInstanceClient(t *testing.T) {
 	if images, err := c.Images(ctx); err != nil || len(images) != 2 || images[0].Name != "ubuntu-26.04" {
 		t.Fatalf("images: %+v %v", images, err)
 	}
-	op, err := c.CreateInstance(ctx, "vm1", "debian-12", "lab-small")
+	op, err := c.CreateInstance(ctx, "vm1", "debian-12", "lab-small", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,4 +117,34 @@ func TestEmptyInstanceListIsArray(t *testing.T) {
 	if resp, data := call(t, "GET", url+"/v1/instances", ""); resp.StatusCode != http.StatusOK || string(data) != "[]" {
 		t.Fatalf("empty list: %d %s", resp.StatusCode, data)
 	}
+}
+
+func TestInstanceDiskHTTPContract(t *testing.T) {
+	t.Setenv("CLOUD_DISK_VOLUME", "test")
+	c, _, _, url := setup(t)
+	_, err := c.ChangeDisk(t.Context(), "create", "data", "64Mi", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.ChangeDisk(t.Context(), "create", "data", "1Gi", "")
+	assertStatus(t, err, http.StatusConflict)
+	if disks, err := c.InstanceDisks(t.Context()); err != nil || len(disks) != 1 || disks[0].Bytes != 64<<20 {
+		t.Fatalf("inventory: %v %v", disks, err)
+	}
+	for _, action := range []string{"attach", "detach"} {
+		_, err = c.ChangeDisk(t.Context(), action, "data", "", "missing")
+		assertStatus(t, err, http.StatusNotFound)
+	}
+	if resp, _ := call(t, "POST", url+"/v1/disks/data/attach", `{"unexpected":true}`); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unexpected JSON: %v", resp.Status)
+	}
+	if _, err = c.ChangeDisk(t.Context(), "delete", "data", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = c.ChangeDisk(t.Context(), "typo", "data", "64Mi", ""); err == nil {
+		t.Fatal("unknown action accepted")
+	}
+	t.Setenv("CLOUD_DISK_VOLUME", "")
+	_, err = c.InstanceDisks(t.Context())
+	assertStatus(t, err, http.StatusServiceUnavailable)
 }

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4-bookworm AS build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
@@ -13,7 +13,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/portal ./cmd/portal
 
 # Build the upstream CLI with patched dependencies isolated from the cloud module.
-FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm AS kubectl-cli
+FROM --platform=$BUILDPLATFORM golang:1.27.4-bookworm AS kubectl-cli
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
@@ -64,7 +64,7 @@ COPY storage/supervisord.conf /etc/supervisor/conf.d/nfs.conf
 LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-lab"
 ENTRYPOINT ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/nfs.conf"]
 
-FROM --platform=$BUILDPLATFORM node:26.12.1-bookworm-slim AS web-build
+FROM --platform=$BUILDPLATFORM node:26.13.1-bookworm-slim AS web-build
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -77,6 +77,15 @@ COPY --from=web-build /src/web/dist /app/web
 USER 65532:65532
 ENTRYPOINT ["portal"]
 
+# Keep the Docker-enabled Debian environment used by the instance catalog.
+FROM gcr.io/k8s-minikube/kicbase:v0.0.51 AS instance-debian
+# hadolint ignore=DL3008
+RUN apt-get update -o Dir::Etc::sourcelist=sources.list.d/debian.sources -o Dir::Etc::sourceparts=- && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cloud-init && \
+    rm -rf /var/lib/apt/lists/* /usr/sbin/policy-rc.d && \
+    mkdir -p /etc/cloud/mcl-seed && \
+    printf 'locale: C.UTF-8\nsystem_info:\n  default_user:\n    name: docker\n' > /etc/cloud/cloud.cfg.d/90-lab-user.cfg
+
 # A clean Ubuntu LTS for standalone instances: students install Docker themselves.
 FROM ubuntu:26.04 AS instance-ubuntu
 ENV DEBIAN_FRONTEND=noninteractive
@@ -87,10 +96,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 # happens in a container), and sshd starts at boot instead of on first connection.
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends systemd systemd-sysv libpam-systemd dbus openssh-server sudo ca-certificates \
+    apt-get install -y --no-install-recommends cloud-init systemd systemd-sysv libpam-systemd dbus openssh-server sudo ca-certificates \
         curl wget nano vim-tiny less iputils-ping iproute2 git gnupg lsb-release && \
     rm -rf /var/lib/apt/lists/* /usr/sbin/policy-rc.d /etc/ssh/ssh_host_* && \
     echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-ubuntu && chmod 0440 /etc/sudoers.d/90-ubuntu && \
+    mkdir -p /etc/cloud/mcl-seed && echo "policy: disabled" > /etc/cloud/ds-identify.cfg && \
     : > /etc/machine-id && \
     systemctl mask systemd-binfmt.service && systemctl disable ssh.socket && systemctl enable ssh.service && \
     mkdir -p /etc/systemd/system/ssh.service.d && \
