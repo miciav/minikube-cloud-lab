@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -18,24 +17,31 @@ const MaxGroupBootstrapBytes = 16 * 1024
 
 // GroupSpec configures an HTTP service and the instances that serve it.
 type GroupSpec struct {
-	Name        string  `json:"name"`
-	Image       string  `json:"image"`
-	MachineType string  `json:"machineType"`
-	Bootstrap   string  `json:"bootstrap"`
-	Min         int     `json:"min"`
-	Desired     int     `json:"desired"`
-	Max         int     `json:"max"`
-	Port        int     `json:"port"`
-	HealthPath  string  `json:"healthPath"`
-	TargetRPS   float64 `json:"targetRPS"`
+	Name         string  `json:"name"`
+	Image        string  `json:"image"`
+	MachineType  string  `json:"machineType"`
+	Bootstrap    string  `json:"bootstrap"`
+	Min          int     `json:"min"`
+	Desired      int     `json:"desired"`
+	Max          int     `json:"max"`
+	Port         int     `json:"port"`
+	HealthPath   string  `json:"healthPath"`
+	TargetRPS    float64 `json:"targetRPS"`
+	DrainSeconds int     `json:"drainSeconds,omitempty"`
 }
 
 // Group stores a versioned template and its desired capacity.
 type Group struct {
 	GroupSpec
-	ID              string `json:"id"`
-	TemplateVersion int    `json:"templateVersion"`
-	Deleting        bool   `json:"deleting,omitempty"`
+	ID              string    `json:"id"`
+	Ready           int       `json:"ready"`
+	Pending         int       `json:"pending"`
+	ScalingReady    bool      `json:"scalingReady"`
+	TemplateVersion int       `json:"templateVersion"`
+	Deleting        bool      `json:"deleting,omitempty"`
+	LastError       string    `json:"lastError,omitempty"`
+	LastScaleAt     time.Time `json:"lastScaleAt,omitzero"`
+	RetryAt         time.Time `json:"retryAt,omitzero"`
 }
 
 func (st *snapshot) group(key string) (*Group, error) {
@@ -66,6 +72,11 @@ func (s *Service) ActivateInstanceAutoscaling() error {
 	case "active":
 		return nil
 	case "":
+		if s.groupProxy != "" {
+			return fmt.Errorf("%w: prepare instance autoscaling before activation", ErrFailedPrecondition)
+		}
+		fallthrough
+	case "installing":
 		next := s.state.clone()
 		next.Autoscaling = "active"
 		return s.store(next)
@@ -93,6 +104,9 @@ func (spec GroupSpec) validate() error {
 	}
 	if spec.Port < 1 || spec.Port > 65535 || spec.TargetRPS <= 0 || math.IsNaN(spec.TargetRPS) || math.IsInf(spec.TargetRPS, 0) {
 		return fmt.Errorf("%w: require a valid port and a positive requests-per-second target", ErrInvalid)
+	}
+	if spec.DrainSeconds < 0 || spec.DrainSeconds > 120 {
+		return fmt.Errorf("%w: drain timeout must be between 0 and 120 seconds", ErrInvalid)
 	}
 	if strings.TrimSpace(spec.Bootstrap) == "" || len(spec.Bootstrap) > MaxGroupBootstrapBytes || strings.ContainsRune(spec.Bootstrap, 0) {
 		return fmt.Errorf("%w: bootstrap must contain 1–%d bytes of script", ErrInvalid, MaxGroupBootstrapBytes)
@@ -125,7 +139,11 @@ func (s *Service) CreateGroup(spec GroupSpec) (Group, error) {
 func (s *Service) Groups() []Group {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]Group{}, s.state.Groups...)
+	groups := make([]Group, 0, len(s.state.Groups))
+	for _, group := range s.state.Groups {
+		groups = append(groups, s.groupStatus(group))
+	}
+	return groups
 }
 
 // Group looks up a group by user-visible name or immutable ID.
@@ -136,11 +154,40 @@ func (s *Service) Group(key string) (Group, error) {
 	if err != nil {
 		return Group{}, err
 	}
-	return *g, nil
+	return s.groupStatus(*g), nil
+}
+
+func (s *Service) groupStatus(g Group) Group {
+	now := time.Now()
+	for _, member := range s.state.Instances {
+		if member.GroupID != g.ID || member.Draining {
+			continue
+		}
+		if member.Status == "RUNNING" && !member.ReadyAt.IsZero() && member.FailedHealthAt.IsZero() && now.Sub(member.ReadyAt) >= groupWarmup {
+			g.Ready++
+		} else {
+			g.Pending++
+		}
+	}
+	g.ScalingReady = s.state.Autoscaling == "active" && !g.Deleting && g.Pending == 0 && g.Ready == g.Desired
+	return g
 }
 
 // ResizeGroup sets absolute capacity and records changes in operation history.
 func (s *Service) ResizeGroup(key string, desired int, requester, reason string) (Group, error) {
+	return s.resizeGroup(key, desired, requester, reason, nil)
+}
+
+// ApplyGroupPolicy updates the group's capacity only while the policy's observation is current.
+func (s *Service) ApplyGroupPolicy(id string, expected, desired int, reason string) error {
+	if !strings.HasPrefix(id, "asg-") {
+		return ErrNotFound
+	}
+	_, err := s.resizeGroup(id, desired, "instance-autoscaler", reason, &expected)
+	return err
+}
+
+func (s *Service) resizeGroup(key string, desired int, requester, reason string, expected *int) (Group, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.state.requireAutoscaling(); err != nil {
@@ -158,12 +205,16 @@ func (s *Service) ResizeGroup(key string, desired int, requester, reason string)
 		return Group{}, fmt.Errorf("%w: desired capacity must be between %d and %d", ErrInvalid, g.Min, g.Max)
 	}
 	if desired == g.Desired {
-		return *g, nil
+		return s.groupStatus(*g), nil
+	}
+	if expected != nil && (*expected != g.Desired || !s.groupStatus(*g).ScalingReady) {
+		return Group{}, fmt.Errorf("%w: group capacity changed or is still converging", ErrFailedPrecondition)
 	}
 	g.Desired = desired
 	op := next.newOperation("RESIZE_GROUP", g.Name, requester)
 	entry := next.operation(op.ID)
 	now := time.Now().UTC()
+	g.LastScaleAt = now
 	entry.Status, entry.EndedAt, entry.Reason = "DONE", &now, reason
 	return *g, s.store(next)
 }
@@ -183,11 +234,7 @@ func (s *Service) DeleteGroup(key string) error {
 	if g.Deleting {
 		return nil
 	}
-	if len(next.Instances) == 0 {
-		id := g.ID
-		next.Groups = slices.DeleteFunc(next.Groups, func(g Group) bool { return g.ID == id })
-	} else {
-		g.Deleting = true
-	}
+	g.Deleting = true
+	g.RetryAt = time.Time{}
 	return s.store(next)
 }

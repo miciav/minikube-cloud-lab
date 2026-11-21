@@ -46,6 +46,10 @@ func restoreRootlessMAC(ctx context.Context, name, network string) error {
 
 // execRoot runs script as root inside a container through the API and waits for success.
 func execRoot(ctx context.Context, client *dockerclient.Client, name string, env []string, script string) error {
+	return execRootWithin(ctx, client, name, env, script, 10*time.Second)
+}
+
+func execRootWithin(ctx context.Context, client *dockerclient.Client, name string, env []string, script string, timeout time.Duration) error {
 	task, err := client.ContainerExecCreate(ctx, name, container.ExecOptions{User: "0", Env: env, Cmd: []string{"sh", "-c", script}})
 	if err != nil {
 		return err
@@ -53,7 +57,7 @@ func execRoot(ctx context.Context, client *dockerclient.Client, name string, env
 	if err := client.ContainerExecStart(ctx, task.ID, container.ExecStartOptions{Detach: true}); err != nil {
 		return err
 	}
-	return wait.PollUntilContextTimeout(ctx, 20*time.Millisecond, 10*time.Second, true, func(ctx context.Context) (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, timeout, true, func(ctx context.Context) (bool, error) {
 		status, err := client.ContainerExecInspect(ctx, task.ID)
 		if err != nil {
 			return false, err

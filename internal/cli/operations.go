@@ -12,13 +12,13 @@ import (
 
 func operationTable(cmd *cobra.Command, ops []cloud.Operation) error {
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tTYPE\tTARGET\tREQUESTER\tSTATUS\tDURATION\tSTARTED\tERROR")
+	_, _ = fmt.Fprintln(w, "ID\tTYPE\tTARGET\tREQUESTER\tSTATUS\tDURATION\tSTARTED\tERROR\tREASON")
 	for _, op := range ops {
 		end := time.Now()
 		if op.EndedAt != nil {
 			end = *op.EndedAt
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", op.ID, op.Type, op.Target, op.Requester, op.Status, end.Sub(op.StartedAt).Round(time.Second), op.StartedAt.Local().Format(time.RFC3339), op.Error)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", op.ID, op.Type, op.Target, op.Requester, op.Status, end.Sub(op.StartedAt).Round(time.Second), op.StartedAt.Local().Format(time.RFC3339), op.Error, op.Reason)
 	}
 	return w.Flush()
 }

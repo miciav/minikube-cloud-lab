@@ -13,13 +13,13 @@ import (
 
 func groupTable(cmd *cobra.Command, groups []cloud.Group) error {
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "NAME\tID\tMIN\tDESIRED\tMAX\tTEMPLATE\tSTATUS")
+	_, _ = fmt.Fprintln(w, "NAME\tID\tMIN\tDESIRED\tMAX\tTEMPLATE\tREADY\tPENDING\tSTATUS\tERROR")
 	for _, g := range groups {
 		status := "ACTIVE"
 		if g.Deleting {
 			status = "DELETING"
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%d\t%d\t%s\n", g.Name, g.ID, g.Min, g.Desired, g.Max, g.TemplateVersion, status)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\n", g.Name, g.ID, g.Min, g.Desired, g.Max, g.TemplateVersion, g.Ready, g.Pending, status, g.LastError)
 	}
 	return w.Flush()
 }
@@ -57,6 +57,7 @@ func addGroupCommands(root *cobra.Command) {
 	create.Flags().IntVar(&spec.Min, "min", 1, "Minimum capacity")
 	create.Flags().IntVar(&spec.Desired, "desired", 1, "Initial desired capacity")
 	create.Flags().IntVar(&spec.Max, "max", 3, "Maximum capacity")
+	create.Flags().IntVar(&spec.DrainSeconds, "drain-seconds", 10, "Seconds allowed for in-flight HTTP requests after deregistration")
 	create.Flags().IntVar(&spec.Port, "port", 8080, "Application HTTP port")
 	create.Flags().StringVar(&spec.HealthPath, "health-path", "/health", "HTTP health check path")
 	create.Flags().Float64Var(&spec.TargetRPS, "target-rps", 40, "Target requests per second per healthy instance")

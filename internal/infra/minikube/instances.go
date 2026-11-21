@@ -29,11 +29,12 @@ import (
 )
 
 const (
-	instancePrefix   = "mcl-vm-"
-	instanceLabel    = "minikube-cloud-lab.instance"
-	instanceNetLabel = "minikube-cloud-lab.network"
-	instanceIPLabel  = "minikube-cloud-lab.ip"
-	instancePIDs     = 4096
+	instancePrefix     = "mcl-vm-"
+	instanceGroupLabel = "minikube-cloud-lab.instance-group"
+	instanceLabel      = "minikube-cloud-lab.instance"
+	instanceNetLabel   = "minikube-cloud-lab.network"
+	instanceIPLabel    = "minikube-cloud-lab.ip"
+	instancePIDs       = 4096
 )
 
 // instanceAddress picks a host .200–.252 of the node half: below NFS (.253) and the cloud (.254),
@@ -89,6 +90,9 @@ func instanceContainer(spec infra.InstanceSpec, image, networkName string, ip ne
 	cfg := &container.Config{
 		Image: image, Hostname: spec.Name, Tty: true, Env: []string{"container=" + runtime}, StopSignal: "SIGRTMIN+3",
 		Labels: map[string]string{instanceLabel: spec.Name, instanceNetLabel: networkName, instanceIPLabel: ip.String()},
+	}
+	if spec.GroupID != "" {
+		cfg.Labels[instanceGroupLabel] = spec.GroupID
 	}
 	host := &container.HostConfig{
 		Privileged: true, SecurityOpt: security, Tmpfs: map[string]string{"/tmp": "", "/run": ""},
@@ -207,8 +211,16 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 		return infra.Instance{}, fmt.Errorf("prepare image: %w", err)
 	}
 	name := instancePrefix + spec.Name
-	if _, err := client.VolumeCreate(ctx, volume.CreateOptions{Name: name, Labels: map[string]string{instanceLabel: spec.Name, instanceNetLabel: i.network}}); err != nil {
+	labels := map[string]string{instanceLabel: spec.Name, instanceNetLabel: i.network}
+	if spec.GroupID != "" {
+		labels[instanceGroupLabel] = spec.GroupID
+	}
+	disk, err := client.VolumeCreate(ctx, volume.CreateOptions{Name: name, Labels: labels})
+	if err != nil {
 		return infra.Instance{}, fmt.Errorf("create volume: %w", err)
+	}
+	if spec.GroupID != "" && disk.Labels[instanceGroupLabel] != spec.GroupID {
+		return infra.Instance{}, fmt.Errorf("volume %s ownership mismatch", name)
 	}
 	cfg, host, endpoints := instanceContainer(spec, image, i.network, ip, instanceRootless())
 	created, err := client.ContainerCreate(ctx, cfg, host, endpoints, nil, name)
@@ -222,7 +234,12 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 	if err != nil {
 		return infra.Instance{}, err
 	}
-	return infra.Instance{Name: spec.Name, IP: ip.String(), HostKey: key, Running: true}, nil
+	if spec.Bootstrap != "" {
+		if err := execRootWithin(ctx, client, name, nil, spec.Bootstrap, 2*time.Minute); err != nil {
+			return infra.Instance{}, fmt.Errorf("application bootstrap: %w", err)
+		}
+	}
+	return infra.Instance{Name: spec.Name, IP: ip.String(), HostKey: key, GroupID: spec.GroupID, Running: true}, nil
 }
 
 // instanceSlot runs the cheap host checks before any image download and returns a free address.
@@ -402,6 +419,47 @@ func (i *Infra) DeleteInstance(ctx context.Context, name string) error {
 	return nil
 }
 
+// DeleteOwnedInstance verifies both resources before deleting either one.
+func (i *Infra) DeleteOwnedInstance(ctx context.Context, name, groupID string) error {
+	if groupID == "" {
+		return errors.New("group ID required for owned instance deletion")
+	}
+	client, err := dockerClient()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Close() }()
+	key := instancePrefix + name
+	current, containerErr := client.ContainerInspect(ctx, key)
+	if containerErr != nil && !cerrdefs.IsNotFound(containerErr) {
+		return containerErr
+	}
+	disk, volumeErr := client.VolumeInspect(ctx, key)
+	if volumeErr != nil && !cerrdefs.IsNotFound(volumeErr) {
+		return volumeErr
+	}
+	matches := func(labels map[string]string) bool {
+		return labels[instanceGroupLabel] == groupID && labels[instanceLabel] == name && labels[instanceNetLabel] == i.network
+	}
+	if containerErr == nil && (current.Config == nil || !matches(current.Config.Labels)) {
+		return fmt.Errorf("container %s ownership mismatch", key)
+	}
+	if volumeErr == nil && !matches(disk.Labels) {
+		return fmt.Errorf("volume %s ownership mismatch", key)
+	}
+	if containerErr == nil {
+		if err := client.ContainerRemove(ctx, current.ID, container.RemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+			return err
+		}
+	}
+	if volumeErr == nil {
+		if err := client.VolumeRemove(ctx, key, true); err != nil && !cerrdefs.IsNotFound(err) {
+			return err
+		}
+	}
+	return nil
+}
+
 // Instances lists the instance containers on the lab network.
 func (i *Infra) Instances(ctx context.Context) ([]infra.Instance, error) {
 	client, err := dockerClient()
@@ -415,7 +473,7 @@ func (i *Infra) Instances(ctx context.Context) ([]infra.Instance, error) {
 	}
 	out := make([]infra.Instance, 0, len(rows))
 	for _, c := range rows {
-		out = append(out, infra.Instance{Name: c.Labels[instanceLabel], IP: c.Labels[instanceIPLabel], Running: c.State == "running"})
+		out = append(out, infra.Instance{Name: c.Labels[instanceLabel], GroupID: c.Labels[instanceGroupLabel], IP: c.Labels[instanceIPLabel], Running: c.State == "running"})
 	}
 	return out, nil
 }

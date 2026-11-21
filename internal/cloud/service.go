@@ -20,18 +20,22 @@ import (
 
 // Service serializes infrastructure mutations and owns the durable cloud state.
 type Service struct {
-	storage       storage.Backend
-	storageTotal  int64
-	storageServer string
-	volumeMu      sync.Mutex
-	mu            sync.Mutex
-	workMu        sync.Mutex
-	state         snapshot
-	inf           infra.Infra
-	instances     infra.Instances
-	dir           string
-	logger        *slog.Logger
-	changed       chan struct{}
+	storage         storage.Backend
+	storageTotal    int64
+	storageServer   string
+	volumeMu        sync.Mutex
+	mu              sync.Mutex
+	workMu          sync.Mutex
+	state           snapshot
+	inf             infra.Infra
+	instances       infra.Instances
+	dir             string
+	logger          *slog.Logger
+	changed         chan struct{}
+	groupProxy      string
+	groupMetrics    string
+	groupAutoscaler string
+	publishedPolicy string
 }
 
 // NewService loads state and reconciles requests interrupted by a previous process.

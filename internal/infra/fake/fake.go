@@ -161,7 +161,7 @@ func (f *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	i := infra.Instance{Name: spec.Name, IP: fmt.Sprintf("172.30.0.%d", 200+f.created), HostKey: "ssh-ed25519 FAKE-" + spec.Name, Running: true}
+	i := infra.Instance{Name: spec.Name, IP: fmt.Sprintf("172.30.0.%d", 200+f.created), HostKey: "ssh-ed25519 FAKE-" + spec.Name, Running: true, GroupID: spec.GroupID}
 	f.created++
 	f.instances[spec.Name] = i
 	return i, nil
@@ -206,6 +206,20 @@ func (f *Infra) DeleteInstance(ctx context.Context, name string) error {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	delete(f.instances, name)
+	return nil
+}
+
+// DeleteOwnedInstance removes only the requested group's instance.
+func (f *Infra) DeleteOwnedInstance(ctx context.Context, name, groupID string) error {
+	if err := f.record(ctx, Call{Method: "DeleteInstance", Instance: infra.InstanceSpec{Name: name, GroupID: groupID}}); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if current, ok := f.instances[name]; ok && current.GroupID != groupID {
+		return fmt.Errorf("instance %s ownership mismatch", name)
+	}
 	delete(f.instances, name)
 	return nil
 }

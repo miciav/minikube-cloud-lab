@@ -6,6 +6,9 @@ services:
     security_opt: [label=disable]
     ports: ['127.0.0.1:8080:8080']
     environment:
+      CLOUD_INSTANCE_LB_URL: http://instance-lb:8082
+      CLOUD_INSTANCE_METRICS_URL: http://instance-metrics:9090
+      CLOUD_INSTANCE_AUTOSCALER_URL: http://127.0.0.1:8085
       CLOUD_ROOTLESS: 'true'
       CLOUD_STORAGE_VOLUME: minikube-cloud-lab-rootless-storage
       CLOUD_STORAGE_CAPACITY: ${CLOUD_STORAGE_CAPACITY:-20Gi}
@@ -38,6 +41,37 @@ services:
     environment:
       KUBECONFIG: /data/minikube/kubeconfig
     volumes: [state:/data:ro]
+  instance-lb:
+    security_opt: [label=disable]
+    image: traefik:v3.6@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d
+    profiles: [instance-autoscaling]
+    ports: ["127.0.0.1:8084:8080"]
+    networks: [lab]
+    volumes: [state:/state:ro]
+    command:
+      - --providers.file.directory=/state/autoscaling/traefik
+      - --entrypoints.web.address=:8080
+      - --entrypoints.metrics.address=:8081
+      - --metrics.prometheus.entrypoint=metrics
+      - --api.insecure=true
+      - --entrypoints.traefik.address=:8082
+  instance-metrics:
+    security_opt: [label=disable]
+    image: prom/prometheus:v3.11.3@sha256:e4254400b85610324913f0dc4acf92603d9984e7519414c5a12811aa6146acc3
+    profiles: [instance-autoscaling]
+    ports: ["127.0.0.1:9091:9090"]
+    networks: [lab]
+    volumes: [./tools/instance-autoscaler/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=1d"]
+  instance-autoscaler:
+    security_opt: [label=disable]
+    image: minikube-cloud-lab/instance-autoscaler:local
+    build: ./tools/instance-autoscaler
+    profiles: [instance-autoscaling]
+    network_mode: service:cloud
+    volumes: [state:/state:ro]
+    command: [agent, '-config=/etc/autoscaler.hcl', '-policy-dir=/state/autoscaling/policies']
+
 networks:
   lab:
     name: minikube-cloud-lab-rootless

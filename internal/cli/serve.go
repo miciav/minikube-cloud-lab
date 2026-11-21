@@ -53,6 +53,8 @@ func serveCommand(factory func(string) (infra.Infra, error)) *cobra.Command {
 			return err
 		}
 
+		svc.ConfigureInstanceGroupRouting(os.Getenv("CLOUD_INSTANCE_LB_URL"), os.Getenv("CLOUD_INSTANCE_METRICS_URL"), os.Getenv("CLOUD_INSTANCE_AUTOSCALER_URL"))
+
 		workerCtx, stopWorker := context.WithCancel(cmd.Context())
 		workerDone := make(chan struct{})
 		go func() {
@@ -72,7 +74,12 @@ func serveCommand(factory func(string) (infra.Infra, error)) *cobra.Command {
 				}
 			}()
 		}
-		defer func() { stopWorker(); <-workerDone; <-storageDone }()
+		groupDone := make(chan struct{})
+		go func() {
+			defer close(groupDone)
+			svc.RunInstanceGroups(workerCtx)
+		}()
+		defer func() { stopWorker(); <-workerDone; <-storageDone; <-groupDone }()
 		management := &http.Server{Handler: api.NewServer(svc), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute}
 		rpc := grpc.NewServer()
 		protos.RegisterCloudProviderServer(rpc, externalgrpc.New(svc, logger))

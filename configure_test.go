@@ -600,3 +600,47 @@ result=$?
 		t.Fatalf("unsupported mode: %s (%v)", out, err)
 	}
 }
+
+func TestInstanceAutoscalingWrappersRunOnlyOptionalServices(t *testing.T) {
+	for _, runtime := range []string{"docker", "podman"} {
+		t.Run(runtime, func(t *testing.T) {
+			f := newConfigurationFixture(t)
+			setup := "source \"$CONFIG_TEST_SCRIPT\"\n"
+			prefix := []string{"compose", "--project-directory", f.root, "--env-file", filepath.Join(f.root, ".env"), "-f", filepath.Join(f.root, "compose.yaml")}
+			if runtime == "podman" {
+				setup = podmanWrappers(t)
+				prefix = []string{"compose", "-f", filepath.Join(f.root, "compose.rootless.yaml")}
+			}
+			out, err := f.run(t, setup+`
+lab install instance-autoscaling || exit
+cloud groups create web --bootstrap - </dev/null || exit
+lab uninstall instance-autoscaling
+`, "CONFIG_TEST_ROOT="+f.root)
+			if err != nil {
+				t.Fatalf("wrappers: %s (%v)", out, err)
+			}
+			data, err := os.ReadFile(f.dockerLog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []string
+			for _, args := range [][]string{
+				{"exec", "cloud", "cloud", "instance-autoscaling", "prepare"},
+				{"--profile", "instance-autoscaling", "up", "-d", "--no-deps", "--build", "instance-lb", "instance-metrics", "instance-autoscaler"},
+				{"exec", "cloud", "cloud", "instance-autoscaling", "activate"},
+				{"exec", "-T", "cloud", "cloud", "groups", "create", "web", "--bootstrap", "-"},
+				{"exec", "cloud", "cloud", "instance-autoscaling", "begin-removal"},
+				{"--profile", "instance-autoscaling", "stop", "instance-lb", "instance-metrics", "instance-autoscaler"},
+				{"--profile", "instance-autoscaling", "rm", "-f", "-v", "instance-lb", "instance-metrics", "instance-autoscaler"},
+				{"exec", "cloud", "cloud", "instance-autoscaling", "finish-removal"},
+			} {
+				want = append(want, prefix...)
+				want = append(want, args...)
+			}
+			got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("argv: %q want %q", got, want)
+			}
+		})
+	}
+}

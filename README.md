@@ -467,6 +467,49 @@ instances generate their own SSH host keys at first boot; `debian-12` instances 
 the host keys baked into kicbase. Each connection is checked against the key recorded
 for that instance. Use instances only on a trusted lab host.
 
+## On-demand instance autoscaling
+
+Start the lab and source `scripts/configure.sh` before installing the optional
+module. Install builds the Nomad Autoscaler target plugin locally and starts
+Traefik, Prometheus and Nomad Autoscaler for all instance groups.
+
+```bash
+lab install instance-autoscaling
+cloud groups create web --min 1 --desired 2 --max 3 --target-rps 10 \
+  --bootstrap - < lab/instance-autoscaling/web.sh
+cloud groups describe web
+curl -fsS http://127.0.0.1:8084/groups/web/
+```
+
+Each group stores a versioned launch template with the instance image, machine
+type and a bootstrap script. The script runs as root **inside each instance**
+and must start the HTTP application. The default backend port is 8080 and the
+default health path is `/health`. Traefik admits healthy members and routes
+requests from `/groups/NAME/` to their application path.
+
+Prometheus is available at `http://127.0.0.1:9091`. Nomad Autoscaler uses
+requests per second per healthy backend to set the desired capacity within the
+group limits. It waits for the current capacity to finish warming up and for a
+cooldown between changes. Missing metric samples suspend automatic scaling.
+The group controller also replaces a member that remains unhealthy. Use
+`cloud operations list` to see capacity changes and instance operations.
+
+```bash
+cloud groups resize web --desired 3
+cloud groups list
+lab uninstall instance-autoscaling
+```
+
+**Uninstall deletes every group, its machines and their local filesystems.**
+Traefik retires each registered backend before removal and allows up to
+`--drain-seconds` for outstanding requests. Standalone machines created outside
+groups and independently created persistent volumes are preserved. If cleanup
+is interrupted, re-run the uninstall command. A new installation starts with
+an empty inventory of groups.
+
+See the [student exercise](docs/student-tutorial.md#autoscale-a-standalone-http-service)
+for a traffic and health-check walkthrough.
+
 ## Development
 
 You need Go 1.27.3, Bash and zsh for the configuration tests, `uv` for pre-commit,

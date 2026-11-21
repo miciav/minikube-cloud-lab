@@ -24,14 +24,16 @@ type Machine struct {
 type InstanceSpec struct {
 	Name, Image   string // Image is a catalog name such as "debian-12".
 	Shape         MachineShape
+	GroupID       string
+	Bootstrap     string
 	SSHUser       string
 	AuthorizedKey string // One authorized_keys line.
 }
 
 // Instance is the observed state of a standalone instance.
 type Instance struct {
-	Name, IP, HostKey string
-	Running           bool
+	Name, IP, HostKey, GroupID string
+	Running                    bool
 }
 
 // Instances manages standalone instances, separately from clusters.
@@ -41,6 +43,7 @@ type Instances interface {
 	StopInstance(context.Context, string) error
 	DeleteInstance(context.Context, string) error // An absent instance is success.
 	Instances(context.Context) ([]Instance, error)
+	DeleteOwnedInstance(context.Context, string, string) error
 }
 
 // Infra manages cluster and machine lifecycles.

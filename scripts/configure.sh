@@ -119,8 +119,39 @@ _cloud_lab_configure() {
             labcompose --profile tools run "$@"
         fi
     }
-    function cloud { labcompose exec cloud cloud "$@"; }
-    function lab { _cloud_lab_run --rm lab "$@"; }
+    function cloud {
+        if [[ $# -ge 2 && $1 == groups && $2 == create && ! -t 0 ]]; then
+            labcompose exec -T cloud cloud "$@"
+        else
+            labcompose exec cloud cloud "$@"
+        fi
+    }
+    function lab {
+        if [[ $# -ge 2 && $2 == instance-autoscaling ]]; then
+            case "$1" in
+                install|uninstall)
+                    if [[ $# -eq 3 && ( $3 == --help || $3 == -h ) ]]; then
+                        printf '%s\n' "lab install instance-autoscaling" \
+                            "lab uninstall instance-autoscaling removes every group instance and its local filesystem."
+                        return
+                    fi
+                    [[ $# -eq 2 ]] || return 2
+                    if [[ $1 == install ]]; then
+                        cloud instance-autoscaling prepare || return
+                        labcompose --profile instance-autoscaling up -d --no-deps --build instance-lb instance-metrics instance-autoscaler || return
+                        cloud instance-autoscaling activate
+                    else
+                        cloud instance-autoscaling begin-removal || return
+                        labcompose --profile instance-autoscaling stop instance-lb instance-metrics instance-autoscaler || return
+                        labcompose --profile instance-autoscaling rm -f -v instance-lb instance-metrics instance-autoscaler || return
+                        cloud instance-autoscaling finish-removal
+                    fi
+                    return
+                    ;;
+            esac
+        fi
+        _cloud_lab_run --rm lab "$@"
+    }
     function kubectl {
         local -a _cloud_forward_ports _cloud_forward_args
         local forward_status

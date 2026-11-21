@@ -31,15 +31,21 @@ type Image struct {
 
 // Instance is a standalone Linux machine outside the cluster.
 type Instance struct {
-	Name        string         `json:"name"`
-	Image       string         `json:"image"`
-	MachineType string         `json:"machineType"`
-	Status      InstanceStatus `json:"status"`
-	IP          string         `json:"ip,omitempty"`
-	SSHUser     string         `json:"sshUser"`
-	HostKey     string         `json:"hostKey,omitempty"`
-	CreatedBy   string         `json:"createdBy"`
-	CreatedAt   time.Time      `json:"createdAt"`
+	Name           string         `json:"name"`
+	GroupID        string         `json:"groupID,omitempty"`
+	BootedAt       time.Time      `json:"bootedAt,omitzero"`
+	ReadyAt        time.Time      `json:"readyAt,omitzero"`
+	FailedHealthAt time.Time      `json:"failedHealthAt,omitzero"`
+	Draining       bool           `json:"draining,omitempty"`
+	DrainUntil     time.Time      `json:"drainUntil,omitzero"`
+	Image          string         `json:"image"`
+	MachineType    string         `json:"machineType"`
+	Status         InstanceStatus `json:"status"`
+	IP             string         `json:"ip,omitempty"`
+	SSHUser        string         `json:"sshUser"`
+	HostKey        string         `json:"hostKey,omitempty"`
+	CreatedBy      string         `json:"createdBy"`
+	CreatedAt      time.Time      `json:"createdAt"`
 }
 
 // MaxInstances bounds standalone instances on the lab network.
@@ -110,6 +116,10 @@ func newInstanceKey() (private []byte, authorized string, err error) {
 func (s *Service) CreateInstance(name, image, kind, requester string) (Operation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.createInstanceLocked(name, image, kind, requester, "", "")
+}
+
+func (s *Service) createInstanceLocked(name, image, kind, requester, groupID, bootstrap string) (Operation, error) {
 	if s.instances == nil {
 		return Operation{}, errNoInstances
 	}
@@ -142,13 +152,13 @@ func (s *Service) CreateInstance(name, image, kind, requester string) (Operation
 		return Operation{}, err
 	}
 	next := s.state.clone()
-	next.Instances = append(next.Instances, Instance{Name: name, Image: image, MachineType: kind, Status: "CREATING", SSHUser: img.SSHUser, CreatedBy: requester, CreatedAt: time.Now().UTC()})
+	next.Instances = append(next.Instances, Instance{Name: name, GroupID: groupID, Image: image, MachineType: kind, Status: "CREATING", SSHUser: img.SSHUser, CreatedBy: requester, CreatedAt: time.Now().UTC()})
 	op := next.newOperation("CREATE_INSTANCE", name, requester)
 	if err := s.store(next); err != nil {
 		_ = os.RemoveAll(dir)
 		return Operation{}, err
 	}
-	spec := infra.InstanceSpec{Name: name, Image: image, Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, SSHUser: img.SSHUser, AuthorizedKey: authorized}
+	spec := infra.InstanceSpec{Name: name, GroupID: groupID, Bootstrap: bootstrap, Image: image, Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, SSHUser: img.SSHUser, AuthorizedKey: authorized}
 	var observed infra.Instance
 	s.launch(op.ID, func() error {
 		var err error
@@ -166,9 +176,15 @@ func (s *Service) finishInstance(st *snapshot, name string, observed infra.Insta
 	if lookup != nil {
 		return
 	}
+	if i.GroupID != "" {
+		recordGroupError(st, i.GroupID, err)
+	}
 	i.Status = "ERROR"
 	if err == nil {
 		i.Status, i.IP, i.HostKey = "RUNNING", observed.IP, observed.HostKey
+		if i.GroupID != "" {
+			i.BootedAt = time.Now().UTC()
+		}
 	}
 }
 
@@ -205,6 +221,12 @@ func (s *Service) instanceOperation(name, kind, requester string, check func(Ins
 	}
 	if s.state.instanceBusy(name) {
 		return Operation{}, fmt.Errorf("%w: an operation is running on instance %s", ErrFailedPrecondition, name)
+	}
+	if current.GroupID != "" {
+		g, err := s.state.group(current.GroupID)
+		if err != nil || kind != "STOP_INSTANCE" || s.state.Autoscaling != "active" || g.Deleting {
+			return Operation{}, fmt.Errorf("%w: instance %s is managed by a group", ErrFailedPrecondition, name)
+		}
 	}
 	if err := check(*current); err != nil {
 		return Operation{}, err
@@ -299,6 +321,8 @@ func (s *Service) reconcileInstances(now time.Time) {
 		actual, found := byName[i.Name]
 		delete(byName, i.Name)
 		switch {
+		case i.GroupID != "" && (!found || actual.GroupID != i.GroupID):
+			i.Status = "ERROR"
 		case !found && i.Status == "DELETING":
 			_ = os.RemoveAll(s.instanceDir(i.Name))
 			continue

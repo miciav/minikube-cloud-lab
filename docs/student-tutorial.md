@@ -529,6 +529,59 @@ For an optional full reset of the operation history, see
 after cluster deletion has succeeded, so the cloud retains the information
 needed to clean up its resources.
 
+## Autoscale a standalone HTTP service
+
+Use a lab with room for three standalone instances. Install the autoscaling
+module and launch a group. The bootstrap script starts a small HTTP service
+that returns the name of the instance handling the request.
+
+```bash
+lab install instance-autoscaling
+cloud groups create web --min 1 --desired 2 --max 3 --target-rps 10 \
+  --bootstrap - < lab/instance-autoscaling/web.sh
+cloud groups describe web
+curl -fsS http://127.0.0.1:8084/groups/web/
+```
+
+Wait for two ready members. Generate traffic in one terminal and inspect the
+group and operation history in another. The policy can take several scrape
+intervals to see changes in traffic.
+
+```bash
+while true; do curl -fsS http://127.0.0.1:8084/groups/web/ >/dev/null; done
+```
+
+```bash
+cloud groups describe web
+cloud instances list
+cloud operations list
+```
+
+Identify the scale-out in the operation history. Stop the load with Ctrl+C and
+watch the group return to its minimum after the cooldown. In Prometheus at
+`http://127.0.0.1:9091`, query `traefik_service_server_up` for backend health
+and `rate(traefik_service_requests_total[30s])` for traffic.
+
+Send a request to get a member's name, then stop its application. The health
+checks remove it from traffic. The group replaces the instance after the
+failure persists through its grace period, bringing the service back at the
+same desired capacity.
+
+```bash
+member=$(curl -fsS http://127.0.0.1:8084/groups/web/)
+cloud instances ssh "$member" -- sudo systemctl stop lab-group-http
+cloud groups describe web
+cloud operations list
+```
+
+When finished, uninstall the module. This deletes all group instances and
+their local filesystems, removes the policies, and stops all three services.
+
+```bash
+lab uninstall instance-autoscaling
+cloud groups list
+```
+
 ## Troubleshooting
 
 | Observation | What to inspect |
