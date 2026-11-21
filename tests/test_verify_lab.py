@@ -28,6 +28,23 @@ def instance_outputs(*args, **_):
     return "persisted"
 
 
+class InstanceAutoscalingSmokeTest(unittest.TestCase):
+    def test_name_conflict_leaves_preexisting_instance_alone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "cloud.log"
+            shell = r"""lab() { return 99; }
+curl() { echo '{"state":"disabled","remaining":[]}'; }
+cloud() { echo "$*" >> "$CLOUD_TEST_LOG"; return 23; }
+source "$1"
+"""
+            result = subprocess.run(
+                ["bash", "-c", shell, "test", str(verify.ROOT / "tests/instance-autoscaling.sh")],
+                env={**os.environ, "CLOUD_TEST_LOG": str(log)}, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 23, result.stderr)
+            self.assertRegex(log.read_text(), r"\Ainstances create smoke-manual-\d+ --async\n\Z")
+
+
 class RuntimeDetectionTest(unittest.TestCase):
     def test_runtime_detection(self):
         cases = [

@@ -387,7 +387,12 @@ CLOUD_NFS_IP=172.29.240.253
 ```
 
 Use an aligned private `/23`: gateway `.1` and cloud `.254` in its first `/24`,
-with the second `/24` reserved for Service relays. Update all four values together; the NFS address must be unused in the same subnet. The explicit gateway is
+and Service relays on hosts 1–254 of the second `/24`. Update all four values
+together and use an available NFS address. The instance autoscaling installer
+derives two addresses from the cloud IP.
+It uses the middle two hosts of the /23, outside both the node and relay pools.
+For direct Compose profile commands on the example subnet, set
+`CLOUD_INSTANCE_LB_IP=172.29.240.255` and `CLOUD_INSTANCE_METRICS_IP=172.29.241.0`. The explicit gateway is
 required for the minikube network API on Linux as well as Docker Desktop. Start
 Compose again and create a new cluster. Before upgrading an older host-network
 installation, delete its cluster with the old cloud, run `docker compose down`,
@@ -476,14 +481,15 @@ Traefik, Prometheus and Nomad Autoscaler for all instance groups.
 ```bash
 lab install instance-autoscaling
 cloud groups create web --min 1 --desired 2 --max 3 --target-rps 10 \
-  --bootstrap - < lab/instance-autoscaling/web.sh
+  --bootstrap lab/instance-autoscaling/web.sh
 cloud groups describe web
 curl -fsS http://127.0.0.1:8084/groups/web/
 ```
 
 Each group stores a versioned launch template with the instance image, machine
 type and a bootstrap script. The script runs as root **inside each instance**
-and must start the HTTP application. The default backend port is 8080 and the
+and must start the HTTP application. Its shebang selects the interpreter.
+Scripts without a shebang run under `sh`. The default backend port is 8080 and the
 default health path is `/health`. Traefik admits healthy members and routes
 requests from `/groups/NAME/` to their application path.
 

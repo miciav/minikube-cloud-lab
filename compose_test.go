@@ -135,3 +135,39 @@ func TestComposeConfiguration(t *testing.T) {
 		t.Fatalf("lab volumes: %+v", lab.Volumes)
 	}
 }
+
+func TestComposeConfigurationAutoscaling(t *testing.T) {
+	for _, file := range []string{"compose.yaml", "compose.rootless.yaml"} {
+		for _, enabled := range []bool{false, true} {
+			args := []string{"compose", "-f", file}
+			if enabled {
+				args = append(args, "--profile", "instance-autoscaling")
+			}
+			args = append(args, "config", "--format", "json")
+			cmd := exec.CommandContext(t.Context(), "docker", args...) // #nosec G204 -- test-owned arguments.
+			cmd.Env = append(os.Environ(), "UID=1001", "GID=1001", "DOCKER_GID=998", "XDG_RUNTIME_DIR=/run/user/1001",
+				"CLOUD_DOCKER_SUBNET=172.29.240.0/23", "CLOUD_DOCKER_GATEWAY=172.29.240.1", "CLOUD_DOCKER_IP=172.29.240.254", "CLOUD_NFS_IP=172.29.240.253", "CLOUD_INSTANCE_LB_IP=172.29.240.255", "CLOUD_INSTANCE_METRICS_IP=172.29.241.0")
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var config struct {
+				Services map[string]struct {
+					Restart  string
+					Networks map[string]struct {
+						Address string `json:"ipv4_address"`
+					}
+				}
+			}
+			if err := json.Unmarshal(out, &config); err != nil {
+				t.Fatal(err)
+			}
+			for svc, ip := range map[string]string{"instance-lb": "172.29.240.255", "instance-metrics": "172.29.241.0", "instance-autoscaler": ""} {
+				service, exists := config.Services[svc]
+				if exists != enabled || (enabled && (service.Restart != "unless-stopped" || service.Networks["lab"].Address != ip)) {
+					t.Errorf("%s profile enabled=%v: %s = %+v", file, enabled, svc, service)
+				}
+			}
+		}
+	}
+}

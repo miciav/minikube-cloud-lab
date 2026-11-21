@@ -235,11 +235,20 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 		return infra.Instance{}, err
 	}
 	if spec.Bootstrap != "" {
-		if err := execRootWithin(ctx, client, name, nil, spec.Bootstrap, 2*time.Minute); err != nil {
+		if err := execRootWithin(ctx, client, name, nil, bootstrapCommand(spec.Bootstrap), 2*time.Minute); err != nil {
 			return infra.Instance{}, fmt.Errorf("application bootstrap: %w", err)
 		}
 	}
 	return infra.Instance{Name: spec.Name, IP: ip.String(), HostKey: key, GroupID: spec.GroupID, Running: true}, nil
+}
+
+// Execute a file so the kernel selects its shebang interpreter. Plain scripts retain sh semantics.
+func bootstrapCommand(script string) []string {
+	return []string{"sh", "-ec", `file=$(mktemp ./.lab-bootstrap.XXXXXX)
+trap 'rm -f "$file"' EXIT
+printf '%s' "$1" > "$file"
+chmod 700 "$file"
+"$file"`, "bootstrap", script}
 }
 
 // instanceSlot runs the cheap host checks before any image download and returns a free address.

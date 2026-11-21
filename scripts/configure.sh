@@ -120,10 +120,38 @@ _cloud_lab_configure() {
         fi
     }
     function cloud {
-        if [[ ! -t 0 || ! -t 1 ]]; then
-            labcompose exec -T cloud cloud "$@"
+        local -a args=(cloud cloud)
+        local word bootstrap=-
+        # Keep global flags in place when matching the groups create command.
+        for word in groups create; do
+            while [[ $# -gt 0 ]]; do
+                case $1 in
+                    --api-url) [[ $# -ge 2 ]] || break; args+=("$1" "$2"); shift 2 ;;
+                    --api-url=*) args+=("$1"); shift ;;
+                    *) break ;;
+                esac
+            done
+            [[ ${1:-} == "$word" ]] || break
+            args+=("$1"); shift
+            if [[ $word == create ]]; then
+                while [[ $# -gt 0 ]]; do
+                    case $1 in
+                        --) break ;;
+                        --bootstrap) [[ $# -ge 2 ]] || break; bootstrap=$2; shift; args+=(--bootstrap -) ;;
+                        --bootstrap=*) bootstrap=${1#*=}; args+=(--bootstrap -) ;;
+                        *) args+=("$1") ;;
+                    esac
+                    shift
+                done
+            fi
+        done
+        set -- "${args[@]}" "$@"
+        if [[ $bootstrap != - ]]; then
+            labcompose exec -T "$@" < "$bootstrap"
+        elif [[ ! -t 0 || ! -t 1 ]]; then
+            labcompose exec -T "$@"
         else
-            labcompose exec cloud cloud "$@"
+            labcompose exec "$@"
         fi
     }
     function _cloud_lab_remove_instance_autoscaling {
@@ -165,7 +193,14 @@ _cloud_lab_configure() {
                     [[ $# -eq 2 ]] || return 2
                     if [[ $1 == install ]]; then
                         cloud instance-autoscaling prepare || return
-                        labcompose --profile instance-autoscaling up -d --no-deps --build instance-lb instance-metrics instance-autoscaler || return
+                        local cloud_ip node_prefix relay_octet
+                        cloud_ip=$(labcompose exec -T cloud printenv CLOUD_DOCKER_IP) || return
+                        node_prefix=${cloud_ip%.*}
+                        relay_octet=${node_prefix##*.}
+                        [[ -n $relay_octet && $relay_octet != *[!0-9]* ]] || return 1
+                        # The middle two hosts of the /23 belong to neither the node pool nor the relay pool.
+                        CLOUD_INSTANCE_LB_IP=$node_prefix.255 CLOUD_INSTANCE_METRICS_IP=${node_prefix%.*}.$((10#$relay_octet + 1)).0 \
+                            labcompose --profile instance-autoscaling up -d --no-deps --build instance-lb instance-metrics instance-autoscaler || return
                         cloud instance-autoscaling activate
                     else
                         cloud instance-autoscaling begin-removal || return

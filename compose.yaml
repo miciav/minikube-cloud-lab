@@ -70,8 +70,11 @@ services:
   instance-lb:
     image: docker.io/library/traefik:v3.6@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d
     profiles: [instance-autoscaling]
+    restart: unless-stopped
     ports: ["127.0.0.1:8084:8080"]
-    networks: [lab]
+    networks:
+      lab:
+        ipv4_address: ${CLOUD_INSTANCE_LB_IP:-172.30.0.255}
     volumes: ["${HOME}/.minikube-cloud-lab/autoscaling:/autoscaling:ro"]
     command:
       - --providers.file.directory=/autoscaling/traefik
@@ -83,14 +86,18 @@ services:
   instance-metrics:
     image: docker.io/prom/prometheus:v3.11.3@sha256:e4254400b85610324913f0dc4acf92603d9984e7519414c5a12811aa6146acc3
     profiles: [instance-autoscaling]
+    restart: unless-stopped
     ports: ["127.0.0.1:9091:9090"]
-    networks: [lab]
+    networks:
+      lab:
+        ipv4_address: ${CLOUD_INSTANCE_METRICS_IP:-172.30.1.0}
     volumes: [./tools/instance-autoscaler/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=1d"]
   instance-autoscaler:
     image: localhost/minikube-cloud-lab/instance-autoscaler:local
     build: ./tools/instance-autoscaler
     profiles: [instance-autoscaling]
+    restart: unless-stopped
     network_mode: service:cloud
     volumes: ["${HOME}/.minikube-cloud-lab/autoscaling:/autoscaling:ro"]
 

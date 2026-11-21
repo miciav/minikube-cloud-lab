@@ -39,7 +39,7 @@ func newConfigurationFixture(t *testing.T) configurationFixture {
 		"id":      "case \"$1\" in -u) printf '1001\\n';; -g) printf '1002\\n';; *) exit 1;; esac",
 		"stat":    "if [ \"${CONFIG_TEST_SOCKET_FAIL:-}\" = 1 ]; then exit 1; fi; case \"${CONFIG_TEST_OS:-Linux}\" in Linux) test \"$1\" = -c || exit 1;; Darwin) test \"$1\" = -f || exit 1;; esac; printf '999\\n'",
 		"kubectl": "exit 98",
-		"docker":  "if [ \"$1\" = info ]; then case \"$*\" in *Host.Security.Rootless*) exit 1;; esac; echo seccomp; exit; fi; printf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"; if [ -n \"${CONFIG_TEST_STDIN_LOG:-}\" ]; then cat > \"$CONFIG_TEST_STDIN_LOG\"; fi",
+		"docker":  "if [ \"$1\" = info ]; then case \"$*\" in *Host.Security.Rootless*) exit 1;; esac; echo seccomp; exit; fi; printf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"; case \"$*\" in *'exec -T cloud printenv CLOUD_DOCKER_IP') echo 172.29.240.254;; esac; if [ -n \"${CONFIG_TEST_STDIN_LOG:-}\" ]; then cat > \"$CONFIG_TEST_STDIN_LOG\"; fi",
 		"podman":  "printf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"",
 	} {
 		if err := os.WriteFile(filepath.Join(f.bin, name), []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
@@ -612,6 +612,7 @@ func TestInstanceAutoscalingWrappersRunOnlyOptionalServices(t *testing.T) {
 				prefix = []string{"compose", "-f", filepath.Join(f.root, "compose.rootless.yaml")}
 				stub := `#!/bin/sh
 printf '%s\000' "$@" >> "$CONFIG_TEST_DOCKER_LOG"
+if [ "$*" = "compose -f $CONFIG_TEST_ROOT/compose.rootless.yaml exec -T cloud printenv CLOUD_DOCKER_IP" ]; then echo 172.29.240.254; fi
 if [ "$1" = ps ]; then
     if [ "$2" = -a ]; then
         printf '%s\n' 'cloud-id cloud' 'lb-id instance-lb' 'metrics-id instance-metrics' 'policy-id instance-autoscaler' 'other-id portal'
@@ -643,6 +644,7 @@ lab uninstall instance-autoscaling
 				want = append(want, args...)
 			}
 			compose("exec", "-T", "cloud", "cloud", "instance-autoscaling", "prepare")
+			compose("exec", "-T", "cloud", "printenv", "CLOUD_DOCKER_IP")
 			compose("--profile", "instance-autoscaling", "up", "-d", "--no-deps", "--build", "instance-lb", "instance-metrics", "instance-autoscaler")
 			compose("exec", "-T", "cloud", "cloud", "instance-autoscaling", "activate")
 			compose("exec", "-T", "cloud", "cloud", "groups", "create", "web", "--bootstrap", "-")
@@ -660,6 +662,41 @@ lab uninstall instance-autoscaling
 			got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("argv: %q want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestGroupBootstrapFromStudentFilesystem(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh"} {
+		t.Run(shell, func(t *testing.T) {
+			f := newConfigurationFixture(t)
+			out, err := f.runShell(t, shell, `source "$CONFIG_TEST_SCRIPT" || exit
+set -u
+cloud instances list || exit
+printf 'sample\n' > 'local bootstrap'
+for form in separate equals stdin; do
+    case $form in
+      separate) cloud groups create web --bootstrap 'local bootstrap' --desired 2 ;;
+      equals) cloud --api-url http://cloud groups create web '--bootstrap=local bootstrap' ;;
+      stdin) cloud groups create web --bootstrap - < 'local bootstrap' ;;
+    esac || exit 7
+    cmp 'local bootstrap' "$CONFIG_TEST_STDIN_LOG" || exit 8
+done
+if cloud groups create web --bootstrap missing-file; then exit 9; fi
+`, "CONFIG_TEST_STDIN_LOG="+filepath.Join(f.taskHome, "input"))
+			if err != nil {
+				t.Fatalf("bootstrap forwarding: %s (%v)", out, err)
+			}
+			data, err := os.ReadFile(f.dockerLog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			args := strings.ReplaceAll(string(data), "\x00", " ")
+			for _, want := range []string{"groups create web --bootstrap - --desired 2", "--api-url http://cloud groups create web --bootstrap -"} {
+				if !strings.Contains(args, want) {
+					t.Fatalf("missing %q in %s", want, args)
+				}
 			}
 		})
 	}

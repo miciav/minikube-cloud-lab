@@ -9,6 +9,7 @@ base=${CLOUD_TEST_API_URL:-http://127.0.0.1:8080}
 web=${CLOUD_TEST_LB_URL:-http://127.0.0.1:8084}/groups/web-smoke/
 runtime=${CLOUD_LAB_RUNTIME:-docker}
 manual=smoke-manual-$$
+manual_created=
 volume=
 installed=
 load_pid=
@@ -25,7 +26,7 @@ wait_for() {
 cleanup() {
     if [ -n "$load_pid" ]; then kill "$load_pid" 2>/dev/null || true; fi
     if [ -n "$installed" ]; then lab uninstall instance-autoscaling || true; fi
-    cloud instances delete "$manual" >/dev/null 2>&1 || true
+    if [ -n "$manual_created" ]; then cloud instances delete "$manual" >/dev/null 2>&1 || true; fi
     if [ -n "$volume" ]; then cloud volumes delete "$volume" >/dev/null 2>&1 || true; fi
 }
 group() {
@@ -33,12 +34,22 @@ group() {
 }
 capacity() { [ "$(group desired)" = "$1" ] && [ "$(group ready)" = "$1" ]; }
 member() { curl -fsS --max-time 2 "$web" | tr -d '\r\n'; }
+inventory_empty() {
+    local rows
+    rows=$("$runtime" "$@") && [ -z "$rows" ]
+}
 old_target_gone() {
-    ! "$runtime" container inspect "mcl-vm-$1" >/dev/null 2>&1 && member >/dev/null
+    inventory_empty ps -aq --filter "label=minikube-cloud-lab.instance=$1" && member >/dev/null
 }
 all_removed() {
-    [ -z "$("$runtime" ps -aq --filter "label=minikube-cloud-lab.instance-group=$1")" ] &&
-        [ -z "$("$runtime" volume ls -q --filter "label=minikube-cloud-lab.instance-group=$1")" ]
+    inventory_empty ps -aq --filter "label=minikube-cloud-lab.instance-group=$1" &&
+        inventory_empty volume ls -q --filter "label=minikube-cloud-lab.instance-group=$1"
+}
+operation_done() {
+    local state
+    state=$(curl -fsS "$base/v1/operations/$1" | python3 -c 'import json, sys; print(json.load(sys.stdin)["status"])') || return 1
+    if [ "$state" = ERROR ]; then cloud operations describe "$1" >&2; exit 1; fi
+    [ "$state" = DONE ]
 }
 module_disabled() {
     curl -fsS "$base/v1/instance-autoscaling" | python3 -c 'import json, sys; assert json.load(sys.stdin) == {"state":"disabled","remaining":[]}'
@@ -46,12 +57,14 @@ module_disabled() {
 
 module_disabled
 trap cleanup EXIT
-cloud instances create "$manual"
+manual_op=$(cloud instances create "$manual" --async)
+manual_created=yes
+wait_for operation_done "$manual_op"
 volume=$(cloud volumes create --capacity 16Mi | awk '/^pvc-/ {print $1}')
 test -n "$volume"
 installed=yes
 lab install instance-autoscaling
-cloud groups create web-smoke --desired 2 --max 3 --target-rps 3 --bootstrap - < "$repo/lab/instance-autoscaling/web.sh"
+cloud groups create web-smoke --desired 2 --max 3 --target-rps 3 --bootstrap "$repo/lab/instance-autoscaling/web.sh"
 wait_for capacity 2
 id=$(group id)
 member >/dev/null
@@ -83,7 +96,7 @@ module_disabled
 all_removed "$id"
 all_removed "$cleanup_id"
 for service in instance-lb instance-metrics instance-autoscaler; do
-    test -z "$("$runtime" ps -aq --filter "label=com.docker.compose.service=$service")"
+    inventory_empty ps -aq --filter "label=com.docker.compose.service=$service"
 done
 cloud instances describe "$manual"
 cloud volumes list | grep -F "$volume"

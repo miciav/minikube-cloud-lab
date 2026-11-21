@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -267,5 +268,19 @@ func TestEnsureImageLogsThePull(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "pulling instance image") || !strings.Contains(logs.String(), "example/ubuntu:test") {
 		t.Fatalf("logs: %s", logs.String())
+	}
+}
+
+func TestBootstrapUsesItsInterpreter(t *testing.T) {
+	for _, tc := range []struct{ script, want string }{
+		{"#!/usr/bin/env bash\nitems=('two words' three)\nprintf '%s' \"${items[0]}\"", "two words"},
+		{"printf '%s' plain", "plain"},
+	} {
+		argv := bootstrapCommand(tc.script)
+		cmd := exec.CommandContext(t.Context(), argv[0], argv[1:]...) // #nosec G204 -- test scripts are literals.
+		cmd.Dir = t.TempDir()
+		if out, err := cmd.CombinedOutput(); err != nil || string(out) != tc.want {
+			t.Fatalf("bootstrap output %q, error %v", out, err)
+		}
 	}
 }
