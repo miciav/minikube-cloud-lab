@@ -119,6 +119,16 @@ _cloud_lab_configure() {
             labcompose --profile tools run "$@"
         fi
     }
+    function labtool {
+        case ${1:-} in tofu|ansible|ansible-playbook|ssh-keygen|python3) ;; *) echo "Usage: labtool {tofu|ansible|ansible-playbook|ssh-keygen|python3} [args...]" >&2; return 2 ;; esac
+        local -a tty_args=()
+        [[ -t 0 && -t 1 ]] || tty_args=(-T)
+        _cloud_lab_run "${tty_args[@]}" --rm --no-deps --entrypoint lab-tool \
+            --volume "$PWD:/workspace" --workdir /workspace lab "$@"
+    }
+    function tofu { labtool tofu "$@"; }
+    function ansible { labtool ansible "$@"; }
+    function ansible-playbook { labtool ansible-playbook "$@"; }
     function cloud {
         if [[ $CLOUD_LAB_RUNTIME == podman && ${1:-} == disks && ${2:-} == shell ]]; then
             shift 2
@@ -244,7 +254,7 @@ _cloud_lab_configure() {
         _cloud_lab_run "${_cloud_tty[@]}" --rm --entrypoint kubectl \
             --volume "$PWD:/workspace" --workdir /workspace lab "$@"
     }
-    unalias labcompose cloud lab kubectl 2>/dev/null || true
+    unalias labcompose cloud lab kubectl labtool tofu ansible ansible-playbook 2>/dev/null || true
     if [[ $runtime == docker ]]; then
         printf 'Lab configuration ready. Existing .env values were preserved.\n'
         printf 'Start the cloud and portal yourself with: labcompose up -d\n'

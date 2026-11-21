@@ -716,3 +716,36 @@ cloud instances create vm --user-data 'user data.yaml'
 		}
 	}
 }
+
+func TestInfrastructureToolsUseLabImage(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh"} {
+		for _, runtime := range []string{"docker", "podman"} {
+			t.Run(shell+"/"+runtime, func(t *testing.T) {
+				f := newConfigurationFixture(t)
+				setup := `source "$CONFIG_TEST_SCRIPT" || exit`
+				if runtime == "podman" {
+					setup = podmanWrappers(t)
+					if err := os.WriteFile(filepath.Join(f.bin, "podman-compose"), []byte("#!/bin/sh\nprintf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"\n"), 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				out, err := f.runShell(t, shell, setup+`
+tofu -chdir='with spaces' init || exit
+ansible-playbook -i inventory site.yml`, "CONFIG_TEST_ROOT="+f.root)
+				if err != nil {
+					t.Fatalf("%s: %v", out, err)
+				}
+				data, err := os.ReadFile(f.dockerLog)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, tail := range [][]string{{"tofu", "-chdir=with spaces", "init"}, {"ansible-playbook", "-i", "inventory", "site.yml"}} {
+					argv := append([]string{"--entrypoint", "lab-tool", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab"}, tail...)
+					if !bytes.Contains(data, []byte(strings.Join(argv, "\x00")+"\x00")) {
+						t.Fatalf("missing arguments %q in %q", argv, data)
+					}
+				}
+			})
+		}
+	}
+}

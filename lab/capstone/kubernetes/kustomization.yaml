@@ -1,0 +1,6 @@
+resources:
+  - worker.yaml
+configMapGenerator:
+  - name: csv-worker-code
+    files:
+      - worker.py

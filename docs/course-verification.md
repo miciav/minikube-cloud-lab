@@ -20,6 +20,7 @@ The command starts the user socket and cloud, checks the inventory, then runs th
 | Managed services | Install Garage, ElasticMQ and PostgreSQL individually, check persistence and isolation, run the CSV exercise, then remove the test installations. Existing service data stops this stage. |
 | Standalone compute and storage | Test cloud-init and SSH on both Ubuntu and Debian. Write a disk on one instance and read it on another through the QEMU console. |
 | Instance autoscaling | Generate HTTP load, check scale-out and scale-in, simulate a metrics outage, replace a failed member and uninstall the module. |
+| Mixed VM and Kubernetes capstone | Run the bundled OpenTofu and Ansible tools as the student. Verify a no-change plan, idempotent playbook, worker rollout, CSV total and cleanup. |
 | Lecture 03 | Exercise HPA, VPA, Cluster Autoscaler, KEDA, custom resources and the MySQL Operator on disposable clusters. |
 | General platform | Verify real Kubernetes node scaling, networking, monitoring, storage, standalone instances and clean shutdown. |
 

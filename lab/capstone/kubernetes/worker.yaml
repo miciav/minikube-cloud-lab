@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csv-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: csv-worker}
+  template:
+    metadata:
+      labels: {app: csv-worker}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: worker
+          image: python:3.13-alpine
+          command: [python3, -B, /app/worker.py]
+          envFrom:
+            - secretRef: {name: csv-worker-access}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 96Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: code, mountPath: /app, readOnly: true}
+      volumes:
+        - name: code
+          configMap: {name: csv-worker-code}

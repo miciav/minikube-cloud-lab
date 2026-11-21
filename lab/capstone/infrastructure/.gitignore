@@ -1,0 +1,5 @@
+.providers/
+.terraform/
+.terraform.lock.hcl
+*.tfstate*
+*.tfplan

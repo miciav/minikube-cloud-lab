@@ -45,11 +45,29 @@ USER 65532:65532
 ENTRYPOINT ["cloud"]
 CMD ["serve","--data-dir","/data"]
 
-FROM base AS lab
+FROM --platform=$BUILDPLATFORM golang:1.27.4-bookworm AS tofu-provider
+ARG TARGETARCH
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY internal ./internal
+COPY tools/tofu-provider ./tools/tofu-provider
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go -C tools/tofu-provider build -mod=readonly -trimpath \
+    -ldflags="-s -w" -o /mirror/registry.opentofu.org/course/lab/0.1.0/linux_${TARGETARCH}/terraform-provider-lab_v0.1.0 .
+
+FROM ghcr.io/opentofu/opentofu:1.13.9-minimal@sha256:84af0049634b7a7c455ab79c485818a8ef7f775cad3b2d42ce1c98ade720b5d1 AS tofu-cli
+
+FROM python:3.13-slim-bookworm AS lab
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends nano && \
-    rm -rf /var/lib/apt/lists/*
-ENV KUBE_EDITOR=nano
+RUN apt-get update && apt-get install -y --no-install-recommends nano openssh-client libnss-wrapper && \
+    rm -rf /var/lib/apt/lists/* && pip install --no-cache-dir ansible-core==2.21.6 && \
+    ln -s /usr/lib/*/libnss_wrapper.so /opt/libnss_wrapper.so
+ENV KUBE_EDITOR=nano KUBECONFIG=/kube/config HOME=/tmp USER=student TF_CLI_CONFIG_FILE=/etc/course-tofurc
+LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-lab"
+COPY --from=tofu-provider /mirror /opt/course-providers
+COPY --from=tofu-cli /usr/local/bin/tofu /usr/local/bin/tofu
+COPY tools/tofu-provider/tofurc /etc/course-tofurc
+COPY --chmod=755 scripts/lab-tool.sh /usr/local/bin/lab-tool
 COPY --from=kubectl-cli /out/kubectl /usr/local/bin/kubectl
 COPY --from=build /out/lab /usr/local/bin/lab
 USER 65532:65532

@@ -45,6 +45,8 @@ def verify(run):
     run("Persistent disk across instances", [sys.executable, "tests/rootless-disk-console.py"])
     run("Traffic scaling, replacement and module removal", ["bash", "tests/instance-autoscaling.sh"])
     check_empty()
+    run("Mixed VM and Kubernetes capstone", ["bash", "tests/capstone.sh"])
+    check_empty()
     run("Lecture 03 live exercises", [sys.executable, "scripts/verify-lecture03.py", "--runtime", "podman",
                                       "--recreate-empty-cluster"])
     check_empty()

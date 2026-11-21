@@ -51,6 +51,7 @@ jobs:
             vuln-report.json
             tools/instance-autoscaler/vuln-report.json
             tools/kubectl/vuln-report.json
+            tools/tofu-provider/vuln-report.json
           if-no-files-found: ignore
   frontend:
     runs-on: ubuntu-24.04
@@ -89,6 +90,10 @@ jobs:
         run: |
           docker run --rm minikube-cloud-lab/cloud:dev --help
           docker run --rm minikube-cloud-lab/lab:dev --help
+          docker run --rm --entrypoint lab-tool minikube-cloud-lab/lab:dev tofu version
+          docker run --rm --entrypoint lab-tool minikube-cloud-lab/lab:dev ansible-playbook --version
+          docker run --rm --network none --user "$(id -u):$(id -g)" --entrypoint lab-tool \
+            -v "$PWD/lab/capstone:/workspace" -w /workspace minikube-cloud-lab/lab:dev tofu -chdir=infrastructure init -backend=false
           docker run --rm --entrypoint kubectl minikube-cloud-lab/lab:dev version --client | grep -Fx 'Client Version: v1.35.10'
           docker run --rm --entrypoint docker minikube-cloud-lab/cloud:dev --version
           docker run --rm --entrypoint sh minikube-cloud-lab/instance-ubuntu:dev -c 'test ! -e /usr/sbin/policy-rc.d && ! ls /etc/ssh/ssh_host_* 2>/dev/null && id ubuntu && sudo -l -U ubuntu | grep -q NOPASSWD'

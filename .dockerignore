@@ -9,3 +9,8 @@ web/dist
 web/test-results
 web/playwright-report
 web/test-results-real/
+**/.terraform
+**/.providers
+**/.local
+**/*.tfstate*
+**/*.tfplan

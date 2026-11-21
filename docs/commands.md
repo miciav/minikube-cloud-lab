@@ -83,3 +83,7 @@ in the service.
 Use `lab install NAME`, `lab status NAME`, `lab client NAME ...` and `lab uninstall NAME` after sourcing the shell helper. Each module uses its own Compose project, network and named data volume. Each install prints its connection settings directory. Temporary clients join the service project’s private network; use the published loopback endpoint from host applications. Override the host port before installation with `OBJECT_STORAGE_PORT`, `QUEUE_PORT` or `DATABASE_PORT`. Keep the same project name and runtime when returning to your data.
 
 To permanently remove **all** retained data and credentials for one module, uninstall it first, then run `lab purge NAME --yes`. A fresh install generates new credentials. The local account controls the runtime and its private configuration directory. The queue endpoint is for a trusted single-team host; loopback is accessible to other accounts on that host.
+
+## Infrastructure and configuration tools
+
+After sourcing the helper, `tofu`, `ansible` and `ansible-playbook` use the course lab image on the cloud network. The current directory is mounted read/write at `/workspace` for state, playbooks and inventory. `labtool ssh-keygen` and `labtool python3` use the same environment. Start cloud first. The bundled OpenTofu provider installs from a filesystem mirror inside the image. Follow the [mixed deployment exercise](../lab/capstone/README.md).

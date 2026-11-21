@@ -123,3 +123,8 @@ use the separate [lecture03 runner](../kubernetes/lecture03/README.md#run-the-de
 It requires a running platform and an empty, disposable `lecture03` cluster
 (or no cluster). Unlike the general acceptance suite, it recreates that dedicated
 cluster between machine sizes and deletes it after successful cleanup, leaving cloud services running.
+
+
+## Course tooling image
+
+The `lab` target supplies kubectl, OpenTofu, the local provider, ansible-core and OpenSSH. CI publishes the same amd64/arm64 lab image used by the shell wrappers. The provider lives in `tools/tofu-provider`, a separate Go module using the existing cloud API client. The Docker build places the Linux binary for the target architecture in OpenTofu's filesystem mirror. Rebuild the course image when changing the provider, and keep the source address and version aligned with the capstone handout. Run `go -C tools/tofu-provider test -race ./...` for provider tests and `bash tests/capstone.sh` for the complete disposable deployment.

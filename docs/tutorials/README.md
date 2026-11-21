@@ -43,3 +43,7 @@ Start with the [course environment](../../README.md#prepare-the-environment). Ea
 - [Database](databases/postgresql.md) — persist relational data and reconnect after reinstall.
 
 For the combined exercise install all three modules and run `bash lab/services/examples/csv-worker.sh` from the checkout. Inspect the reported job in the course-files bucket and the csv_results table. The worker processes the same message twice after a simulated interruption. A unique job key keeps a single committed result.
+
+## Infrastructure as code
+
+[Deploy a CSV application across a VM and Kubernetes](../../lab/capstone/README.md). Use OpenTofu and cloud-init to provision the VM and cluster, Ansible to configure the VM, and kubectl to deploy the supplied worker.

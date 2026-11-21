@@ -1,0 +1,61 @@
+- name: Deploy the CSV API
+  hosts: all
+  become: true
+  tasks:
+    - name: Install the packaged AWS and PostgreSQL clients
+      ansible.builtin.apt:
+        name: [python3-boto3, python3-psycopg2]
+        state: present
+        update_cache: true
+        cache_valid_time: 86400
+    - name: Install the API
+      ansible.builtin.copy:
+        src: ../app/api.py
+        dest: /usr/local/lib/csv-api.py
+        mode: '0644'
+      notify: Restart CSV API
+    - name: Install private service credentials
+      ansible.builtin.copy:
+        src: ../.local/api.env
+        dest: /etc/csv-api.env
+        mode: '0600'
+      no_log: true
+      notify: Restart CSV API
+    - name: Install the systemd unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/csv-api.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Course CSV submission API
+          After=network-online.target
+          [Service]
+          DynamicUser=yes
+          EnvironmentFile=/etc/csv-api.env
+          ExecStart=/usr/bin/python3 /usr/local/lib/csv-api.py
+          Restart=on-failure
+          RestartSec=3
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart CSV API
+    - name: Apply any changed artifacts
+      ansible.builtin.meta: flush_handlers
+    - name: Enable the API
+      ansible.builtin.systemd_service:
+        name: csv-api
+        enabled: true
+        state: started
+    - name: Check application readiness
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:8090/health"
+        use_proxy: false
+      register: health
+      retries: 20
+      delay: 3
+      until: health.status == 200
+  handlers:
+    - name: Restart CSV API
+      ansible.builtin.systemd_service:
+        name: csv-api
+        daemon_reload: true
+        state: restarted

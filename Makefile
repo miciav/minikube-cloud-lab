@@ -6,6 +6,7 @@ SHELL := /bin/bash
 test:
 	go test ./...
 	go -C tools/instance-autoscaler test ./...
+	go -C tools/tofu-provider test ./...
 
 lint:
 	uvx pre-commit run --all-files
@@ -27,10 +28,10 @@ images:
 verify: lint tidy-check vuln cover race
 
 tidy-check:
-	for module in . tools/instance-autoscaler tools/kubectl; do go -C "$$module" mod tidy -diff && go -C "$$module" mod verify || exit 1; done
+	for module in . tools/instance-autoscaler tools/kubectl tools/tofu-provider; do go -C "$$module" mod tidy -diff && go -C "$$module" mod verify || exit 1; done
 
 vuln:
-	for module in . tools/instance-autoscaler tools/kubectl; do \
+	for module in . tools/instance-autoscaler tools/kubectl tools/tofu-provider; do \
 		go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -C "$$module" -json ./... > "$$module/vuln-report.json"; \
 		go run ./tools/vulncheck < "$$module/vuln-report.json"; \
 	done
@@ -38,6 +39,7 @@ vuln:
 race:
 	go test -race ./...
 	go -C tools/instance-autoscaler test -race ./...
+	go -C tools/tofu-provider test -race ./...
 
 cover:
 	# Generated protocol bindings follow the reference project coverage scope.
