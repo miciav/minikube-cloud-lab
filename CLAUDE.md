@@ -1,70 +1,52 @@
-# Istruzioni di sviluppo
+# Development instructions
 
-Il [README](README.md) raccoglie i percorsi del corso. Consultare la [guida di sviluppo](docs/development.md) per architettura e test e la [guida operativa](docs/operations.md) per stato e limiti.
+The [README](README.md) lists the course materials. See the [development guide](docs/development.md) for architecture and tests and the [operations guide](docs/operations.md) for state and limits.
 
-## Comandi
+## Commands
 
-- `make test`: suite Go.
-- `make verify`: pre-commit, moduli, vulnerabilità con triage esatta, coverage ≥90%, race.
-- `make integration`: lifecycle reale minikube senza binario minikube nel PATH.
-- `make build`: compila entrambi i comandi.
-- `make images`: immagini locali `minikube-cloud-lab/{cloud,lab}:dev`.
-- `go test -tags docker . -run TestComposeConfiguration -v`: configurazione Compose.
+- `make test` runs the Go suite.
+- `make verify` checks pre-commit hooks, modules, vulnerabilities against exact triage entries, coverage (≥90%) and races.
+- `make integration` exercises the real minikube lifecycle without a minikube executable on PATH.
+- `make build` builds both commands.
+- `make images` builds local `minikube-cloud-lab/{cloud,lab}:dev` images.
+- `go test -tags docker . -run TestComposeConfiguration -v` checks the Compose configuration.
 
-Le prove reali richiedono Docker attivo, almeno 6 CPU e 6 GiB disponibili.
-Su macOS e Linux usare Compose con rete bridge dedicata e porte localhost;
-non richiedere host networking o binari cloud/lab nativi agli studenti.
+Live tests require Docker with at least 6 CPUs and 6 GiB available. On macOS and Linux, use Compose with a dedicated bridge and localhost ports. Students run the cloud and lab commands through Compose.
 
-## Mappa dei pacchetti
+## Package map
 
-| Percorso | Responsabilità |
+| Path | Responsibility |
 | --- | --- |
-| `cmd/cloud`, `cmd/lab` | Entry point e segnali |
-| `internal/cloud` | Modello, snapshot persistente, operazioni asincrone serializzate |
-| `internal/api` | API HTTP/JSON e client |
-| `internal/cli` | CLI cloud e server HTTP/gRPC |
-| `internal/externalgrpc` | Provider Cluster Autoscaler sullo stesso servizio cloud |
-| `internal/infra` | Confine infrastruttura |
-| `internal/infra/minikube` | Libreria minikube, home isolata, quote Docker Linux |
-| `internal/infra/fake` | Backend per test del servizio |
-| `internal/labcmd` | Applicazione manifest via API Kubernetes |
-| `internal/atomicfile` | Sostituzione durevole di file (stato, kubeconfig, export NFS) |
-| `lab/manifests` | YAML visibili, incorporati nel binario lab |
-| `proto` | Protocollo externalgrpc e bindings generati |
-| `tools/vulncheck` | Gate JSON govulncheck con triage ID/modulo/versione |
+| `cmd/cloud`, `cmd/lab` | Entry points and signal handling |
+| `internal/cloud` | Domain model, persistent snapshot and serialized asynchronous operations |
+| `internal/api` | HTTP/JSON API and client |
+| `internal/cli` | Cloud CLI and HTTP/gRPC server |
+| `internal/externalgrpc` | Cluster Autoscaler provider on the cloud service |
+| `internal/infra` | Infrastructure interface |
+| `internal/infra/minikube` | Minikube library, isolated home and Linux Docker quotas |
+| `internal/infra/fake` | Infrastructure backend for service tests |
+| `internal/labcmd` | Manifest application through the Kubernetes API |
+| `internal/atomicfile` | Durable replacement of state files, kubeconfig and NFS exports |
+| `lab/manifests` | YAML sources embedded in the lab binary |
+| `proto` | External gRPC protocol and generated bindings |
+| `tools/vulncheck` | govulncheck JSON gate with triage by ID, module and version |
 
-## Vincoli
+## Constraints
 
-- Nessun `os/exec`, shell, comando minikube o kubectl nel codice Go non di test.
-  Sono autorizzati i processi interni della libreria upstream minikube; Docker CLI
-  e curl nell'immagine servono a quella dipendenza. Usare client-go per Kubernetes.
-- Non usare gli helper minikube CLI `node.Provision/Start/Add/Delete` o
-  `machine.StartHost`: hanno percorsi `os.Exit`. Comporre le primitive Go verificate
-  in `bootstrap.go` e mantenere gli errori al confine Infra. Driver Docker e indirizzi
-  automatici soltanto; il caso fatal del driver KIC con StaticIP deve restare escluso.
-- `lab-small`: 2 CPU / 2048 MiB; `lab-medium`: 4 CPU / 8192 MiB.
-- Creazione cluster installa YAKD dagli asset minikube via client-go, senza helper addon fatal; il rollout resta osservabile via Kubernetes.
-- `source scripts/configure.sh` prepara soltanto directory/.env/comandi di sessione; non deve eseguire Docker o operazioni sul cluster.
-- Configurazione unica `scripts/configure.sh` (Docker rootful o Podman rootless), Bash/zsh su Linux/macOS; socket Docker Desktop GID0, GNUstat su Linux/BSDstat su Mac.
-- Compose usa rete condivisa con cloud .254, distinta dagli IP2..253 assegnati da minikube. Kubeconfig privato per cloud/lab, endpoint localhost pubblicato per kubectl host; gRPC non pubblicato.
-- Un solo cluster per servizio, un tipo per cluster, control plane incluso nei
-  limiti min/max e protetto dalla cancellazione. Non introdurre supporto multi-cluster.
-- Requester: `student` per la CLI/API, `cluster-autoscaler` per externalgrpc,
-  `cloud` per eventi di riconciliazione. Entrambi i trasporti usano lo stesso Service.
-- Mutazioni infrastrutturali serializzate; persistire l'operazione prima di avviarla.
-  Ctrl-C del client non cancella il lavoro server. Non avviare servizi concorrenti
-  sulla stessa directory di stato.
-- Kubeconfig con certificati incorporati; conservare gli altri contesti.
-- I manifest visibili sono la fonte usata da `lab` tramite embed. Mantenere Kubernetes
-  v1.35.x, CA v1.35.0 e protocollo della stessa minor.
-- `proto/externalgrpc.proto` proviene dal tag upstream `cluster-autoscaler-1.35.0`,
-  copiato dal riferimento. Non modificare i bindings a mano: `proto/generate.sh`
-  verifica le versioni esatte di protoc e plugin prima della rigenerazione.
-- Il progetto `~/Documents/minikube-cluster-autoscaler` è soltanto un riferimento
-  da leggere: non modificarlo.
-- `docs/superpowers/` e `.superpowers/` restano ignorati. Non committare spec, piani,
-  log, credenziali, `.env` o report locali.
-- Repository e package GHCR pubblici: clonazione HTTPS e pull anonimo per gli studenti.
-  CI amd64; build multiarch tramite QEMU.
-- TDD per funzionalità e bugfix; commit piccoli con prefisso convenzionale e trailer
-  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` previsto dal piano.
+- Keep `os/exec`, shell, minikube and kubectl invocations out of production Go code. The upstream minikube library may start internal processes and requires the Docker CLI and curl in the image. Use client-go for Kubernetes.
+- Avoid minikube CLI helpers `node.Provision/Start/Add/Delete` and `machine.StartHost`, which can call `os.Exit`. Compose the verified Go primitives in `bootstrap.go` and return errors at the Infra boundary. Use the Docker driver with automatic addresses to avoid the KIC driver's fatal StaticIP path.
+- `lab-small` has 2 CPUs and 2048 MiB. `lab-medium` has 4 CPUs and 8192 MiB.
+- Cluster creation installs YAKD from minikube assets through client-go. Avoid addon helpers with fatal paths. The rollout must be observable through Kubernetes.
+- Sourcing `scripts/configure.sh` prepares directories, .env and session commands. It must leave Docker and the cluster untouched.
+- Use one `scripts/configure.sh` for rootful Docker and rootless Podman in Bash and zsh on Linux and macOS. Account for Docker Desktop socket GID 0, GNU stat on Linux and BSD stat on macOS.
+- Compose shares a network with minikube. Reserve the cloud address (.254) separately from node addresses. Use a private kubeconfig for cloud/lab and publish a localhost endpoint for host kubectl. Keep gRPC internal.
+- Each service manages one cluster with one machine type. The control plane counts toward the minimum and maximum and is protected from deletion.
+- Record the requester as `student` for CLI/API calls, `cluster-autoscaler` for externalgrpc and `cloud` for reconciliation events. Both transports share the same Service.
+- Serialize infrastructure mutations and persist each operation before starting it. Client Ctrl-C leaves server work running. Only one service may use a state directory at a time.
+- Embed certificates in kubeconfig and preserve other contexts.
+- The visible manifests are the sources embedded by `lab`. Keep Kubernetes at v1.35.x, Cluster Autoscaler at v1.35.0 and the protocol on the same minor version.
+- `proto/externalgrpc.proto` comes from upstream tag `cluster-autoscaler-1.35.0` via the reference project. Regenerate bindings with `proto/generate.sh`, which checks exact protoc and plugin versions first.
+- Treat `~/Documents/minikube-cluster-autoscaler` as a read-only reference.
+- Keep `docs/superpowers/` and `.superpowers/` ignored. Exclude local specifications, plans, logs, credentials, .env and reports from commits.
+- Keep the repository and GHCR packages public for HTTPS cloning and anonymous image pulls. CI runs on amd64 and uses QEMU for multiarch builds.
+- Use TDD for features and fixes. Make small commits with conventional prefixes and the trailer specified by the plan, `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.

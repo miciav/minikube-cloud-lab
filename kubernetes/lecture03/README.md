@@ -1,36 +1,16 @@
 # Kubernetes_5 — lecture03
 
-Esperimenti di autoscaling e Operator pattern da eseguire con minikube-cloud-lab.
-La procedura di accesso al provider riprende `Kubernetes_4.pptx`.
-Per HPA, VPA, CRD e MySQL è stata verificata con l'operatore una configurazione dedicata:
-**due nodi `lab-medium`, un control plane e un worker**, con i workload in
-`default`. Eseguire un esercizio alla volta e rimuoverne gli oggetti prima
-che inizi il successivo.
+Autoscaling and Operator pattern exercises for minikube-cloud-lab. Provider access follows `Kubernetes_4.pptx`. For HPA, VPA, CRD and MySQL, the instructor verified **two lab-medium nodes, one control plane and one worker**, with workloads in `default`. Run one exercise at a time and remove its objects before starting the next.
 
-**Verificato l’11 novembre 2026:** HPA 1 → 6 → 1, CRD creata e rimossa,
-MySQL con tre membri ONLINE e connessione SQL riuscita; successivamente
-Cluster Autoscaler 1 → 3 → 1 nodi e KEDA 0 → 2 → 0 repliche. Cleanup completo
-tra gli esercizi; risultati e limiti in [SESSION.md](SESSION.md).
+**Verified November 11, 2026.** HPA scaled 1 → 6 → 1. The CRD was created and removed. Three MySQL members reached ONLINE and the SQL connection succeeded. Later, Cluster Autoscaler scaled 1 → 3 → 1 nodes and KEDA scaled 0 → 2 → 0 replicas. Cleanup was verified between exercises. [Results and limitations](SESSION.md).
 
-Il nuovo esercizio **Cluster Autoscaler**, usa invece un cluster
-`lab-small` con minimo 1 / massimo 3 nodi. Seguire
-[CLUSTER_AUTOSCALING.md](CLUSTER_AUTOSCALING.md): i manifest sono in `lecture03/autoscaler/` e `lecture03/load.yaml`.
-Gli studenti creano le risorse con `kubectl apply` e impostano le repliche
-0 → 4 → 0 con `kubectl scale`; i nodi vengono scalati automaticamente.
-**Stato della prova manuale CA:** un nodo lab-small Ready, workload e
-autoscaler rimossi; intervallo cloud 1–3. Prima di MySQL ripristinare il setup
-lab-medium come indicato nella guida, dopo il cleanup.
-**Stato attuale dopo la verifica automatica:** cluster e volumi eliminati,
-come richiesto dall’operatore; dettagli nella sezione finale di [SESSION.md](SESSION.md).
+The [Cluster Autoscaler exercise](CLUSTER_AUTOSCALING.md) uses a lab-small cluster with one to three nodes and manifests in `lecture03/autoscaler/` and `lecture03/load.yaml`. Students apply resources with `kubectl apply` and set replicas to 0 → 4 → 0 with `kubectl scale`. Nodes scale automatically. The manual run left one Ready lab-small node, a cloud range of 1–3 and no workload or autoscaler. After cleanup, restore the lab-medium setup before MySQL. The later automated verification removed the cluster and volumes as requested. [Session log](SESSION.md).
 
-Subito dopo Cluster Autoscaler, l’esercizio [KEDA Cron scaler](keda/README.md)
-riusa il nodo pulito per una finestra temporale con **0 → 2 → 0 repliche**.
-Include i due manifest didattici e la release ufficiale KEDA 2.21.0 importata
-in `keda/upstream/`. Aggiornare gli orari UTC prima di ogni esecuzione.
+The [KEDA Cron scaler exercise](keda/README.md) follows Cluster Autoscaler and reuses the cleaned node for a time window with **0 → 2 → 0 replicas**. It includes two teaching manifests and the official KEDA 2.21.0 release under `keda/upstream/`. Update the UTC times before each run.
 
 ## Setup HPA / VPA / CRD / MySQL
 
-Dalla radice del progetto, in ogni terminale:
+Run these commands from the repository root in each terminal.
 
 ```sh
 source scripts/configure.sh
@@ -39,7 +19,7 @@ cloud clusters list
 cloud machine-types list
 ```
 
-Se non esiste un cluster, creare il laboratorio dimensionato per questi esperimenti:
+If no cluster exists, create one sized for these experiments.
 
 ```sh
 cloud clusters create lecture03 --machine-type lab-medium --min-nodes 2 --max-nodes 2
@@ -49,23 +29,11 @@ kubectl get nodes -o wide
 cloud machines list --cluster lecture03
 ```
 
-Se esiste già un cluster del corso adatto, riutilizzarlo sostituendo il nome.
-Il provider gestisce un solo cluster: non eliminare dati o cluster esistenti
-per eseguire questa lezione. Non è possibile cambiare il tipo macchina con
-`resize`: quel comando modifica il numero di nodi.
+If a suitable course cluster already exists, substitute its name. The provider manages one cluster. Preserve existing data and clusters. The `resize` command changes the node count and retains the machine type.
 
-Ogni `lab-medium` ha un limite di 4 CPU / 8 GiB; i due nodi arrivano quindi
-a 8 CPU / 16 GiB complessivi, oltre ai servizi di supporto. I limiti non
-prenotano memoria fisica: verificare capacità e consumo reale con
-`docker stats --no-stream`, soprattutto su un host da circa 16 GiB.
-Due nodi sullo stesso host non forniscono tolleranza al guasto dell'host.
+Each lab-medium node has a limit of 4 CPUs and 8 GiB. Allow for 8 CPUs and 16 GiB across both nodes plus the supporting services. Limits do not reserve physical memory. Check capacity and actual usage with `docker stats --no-stream`, especially on a host with about 16 GiB. Both nodes share the same host failure domain.
 
-Le slide 4 partono invece da un `lab-small` e lo espandono a tre nodi.
-Nella prima prova, tre `lab-small` con HPA e MySQL sovrapposti hanno raggiunto
-il limite di memoria del control plane da 2 GiB, con timeout dell'API.
-La scelta dei due nodi più capienti e l'esecuzione sequenziale sono
-adattamenti autorizzati per questa lezione; i dettagli sono in `SESSION.md`.
-Non è stata verificata la variante MySQL isolata su tre `lab-small`.
+The Kubernetes_4 slides start with one lab-small node and grow to three. In the first run, HPA and MySQL overlapped on three lab-small nodes, the control plane hit its 2 GiB memory limit and the API timed out. The instructor approved larger nodes and sequential exercises. See `SESSION.md` for details. MySQL alone on three lab-small nodes was not verified.
 
 ```sh
 kubectl config current-context
@@ -77,173 +45,85 @@ cloud storage status
 cd kubernetes/lecture03
 ```
 
-Verificare contesto, namespace `default` (anche un valore vuoto lo indica),
-capacità e assenza di collisioni con i nomi degli esercizi. Non applicare
-l'intera cartella con `kubectl apply -f .`: CRD e operatori hanno un ordine
-di installazione. `commands.txt` è una traccia manuale con checkpoint,
-non uno script da eseguire senza supervisione.
+Check the context, namespace (`default` or empty), capacity and exercise object names. Install CRDs and operators in the indicated order. Applying the whole folder with `kubectl apply -f .` bypasses that order. Follow `commands.txt` manually and stop at its checkpoints.
 
-## Esercizi
+## Exercises
 
-| Esercizio | File | Obiettivo e criterio di riuscita |
+| Exercise | Files | Success criterion |
 | --- | --- | --- |
-| HPA | `php-apache.yml`, `hpa.yml` | Aumento delle repliche sotto carico e ritorno a 1 |
-| VPA | `vpa/` | Off: solo raccomandazione; Recreate: nuovi Pod con request CPU maggiori, due repliche |
-| Cluster Autoscaler | `CLUSTER_AUTOSCALING.md`, `autoscaler/`, `load.yaml` | Pending per CPU, aggiunta nodi, quattro repliche disponibili e ritorno a un nodo |
-| KEDA Cron scaler | `keda/` | Finestra UTC, repliche 0 → 2 → 0; HPA creato da KEDA |
-| CRD | `crontab-crd.yml`, `crontab-example.yml` | Registrare un tipo e creare/leggere/eliminare un oggetto |
-| MySQL Operator | `mysql-operator-26.10.0-2.3.1/`, `mycluster.yml` | Tre membri ONLINE e connessione SQL attraverso Router |
+| HPA | `php-apache.yml`, `hpa.yml` | Replicas increase under load and return to one |
+| VPA | `vpa/` | Off produces recommendations. Recreate replaces Pods with higher CPU requests and retains two replicas. |
+| Cluster Autoscaler | `CLUSTER_AUTOSCALING.md`, `autoscaler/`, `load.yaml` | CPU shortage leaves Pods Pending, nodes join, four replicas become available, then the cluster returns to one node |
+| KEDA Cron scaler | `keda/` | Replicas follow a UTC window, 0 → 2 → 0, with an HPA created by KEDA |
+| CRD | `crontab-crd.yml`, `crontab-example.yml` | Register a type, then create, read and delete an object |
+| MySQL Operator | `mysql-operator-26.10.0-2.3.1/`, `mycluster.yml` | Three ONLINE members and a SQL connection through Router |
 
-VPA segue HPA; Cluster Autoscaler e KEDA precedono le estensioni Kubernetes.
-Le slide nascoste su PostgreSQL non sono incluse. I riferimenti usano i titoli
-per rimanere validi quando il docente inserisce altre slide.
+VPA follows HPA. Cluster Autoscaler and KEDA precede the Kubernetes extension exercises. The hidden PostgreSQL slides are outside this lesson. References use slide titles so they still work when instructors insert slides.
 
 ### VPA
 
-Seguire [vpa/README.md](vpa/README.md). L'esercizio riusa i due lab-medium dopo
-il cleanup HPA. VPA 1.7.1 osserva due Pod che consumano CPU: prima raccomanda
-in modalità `Off`, poi li sostituisce in `Recreate`. Controlla soltanto le
-request CPU, mantenendo limiti, memoria, repliche e nodi.
-**Prova riuscita:** request 50m → 500m su entrambi i nuovi Pod; cleanup completo
-e cluster eliminato. Manifest upstream e generatore TLS sono inclusi.
+Follow the [VPA guide](vpa/README.md) on the two lab-medium nodes after HPA cleanup. VPA 1.7.1 observes two CPU-consuming Pods, recommends resources in `Off` mode and replaces the Pods in `Recreate` mode. It controls CPU requests only. **Observed result:** both replacement Pods went from 50m to 500m with the same limits, memory, replica count and node count. Cleanup and cluster deletion succeeded. The upstream manifests and TLS generator are included.
 
 ### HPA
 
-Il provider installa già Metrics Server: verificare Deployment, API e
-`kubectl top nodes`. Non eseguire `minikube addons enable metrics-server`
-sul profilo personale dell'host. Il carico HTTP delle slide viene generato
-da `busybox:1.28` e interrotto con Ctrl+C nel terminale che lo ha avviato.
+The provider installs Metrics Server. Check its Deployment, API and `kubectl top nodes`. Leave the host's personal minikube profile alone. Generate the slide's HTTP load with `busybox:1.28` and stop it with Ctrl+C in the same terminal.
 
-La CPU target è il 50% della richiesta di 200m, cioè circa 100m per Pod;
-il limite di 500m non è il denominatore. Le repliche consentite vanno da
-1 a 10. I valori iniziali `<unknown>` possono precedere la prima raccolta
-delle metriche. Attendere `ScalingActive=True` prima di avviare il carico.
+The CPU target is 50% of the 200m request, about 100m per Pod. The CPU limit is 500m. The HPA allows 1–10 replicas. Initial metrics can show `<unknown>` before the first collection. Wait for `ScalingActive=True` before applying load.
 
-Lo scale-down non è necessariamente immediato: il manifest imposta una finestra
-di stabilizzazione di 60 secondi. Attendere il ritorno a una replica senza
-modificare manualmente il Deployment; il tempo effettivo dipende anche dalle metriche.
-Vedere il [funzionamento HPA](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/).
+The manifest sets a 60-second scale-down stabilization window. Wait for one replica without editing the Deployment. Timing also depends on metrics. [How HPA works](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/).
 
 ### CRD
 
-La CRD aggiunge `CronTab` all'API; il custom object contiene `cronSpec`
-e `image`. Non è il `CronJob` integrato di Kubernetes e non avvia processi:
-in questo esercizio non è presente un controller che interpreti tali campi.
-Prima si attende `Established`, poi si crea l'istanza. Eliminare la CRD
-rimuove anche eventuali istanze: procedere solo se è stata creata per questa
-prova e non contiene oggetti altrui.
-Fonte: [esempio Kubernetes](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/).
+The CRD adds `CronTab` to the API. Its objects store `cronSpec` and `image`. Unlike the built-in CronJob, this exercise has no controller to act on those fields or start processes. Wait for `Established` before creating the instance. Deleting the CRD deletes its instances. Only delete a CRD created for this run after checking that nobody else owns an instance. [Kubernetes example](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/).
 
 ### MySQL Operator
 
-I manifest upstream sono conservati localmente al tag
-`26.10.0-2.3.1`, aggiornato su richiesta dell’operatore; il relativo
-default server/router è MySQL `26.10.0`.
-Anche il client MySQL Shell usa quel tag, invece di `latest`.
+The local upstream manifests use tag `26.10.0-2.3.1`, updated at the instructor's request. The default Server and Router version is `26.10.0`. MySQL Shell also uses the pinned tag.
 
-L'operatore crea e riconcilia StatefulSet, Pod, Service e PVC a partire
-dall'oggetto InnoDBCluster. Il manifest originale richiede tre istanze
-MySQL e un Router. Con due nodi, due istanze possono condividere lo stesso
-nodo: la replica del database non garantisce isolamento dai guasti di nodo.
-Nel laboratorio vengono creati tre PVC da 2 GiB sulla
-StorageClass predefinita `cloud-standard` (6 GiB complessivi).
-Verificare questa classe e il budget prima di applicarlo.
+The operator reconciles StatefulSets, Pods, Services and PVCs from the InnoDBCluster object. The original manifest requests three MySQL instances and one Router. With two nodes, two instances can share a node, so replication alone does not isolate node failures. Check the default `cloud-standard` StorageClass and allow 6 GiB for three 2 GiB PVCs before applying the manifest.
 
-La password `cloud` è il valore pubblico delle slide, destinato solo al
-laboratorio isolato. È creata con `kubectl create secret`; non sono
-inclusi kubeconfig o credenziali private. I certificati MySQL sono
-autofirmati come nell'esempio originale.
+The password `cloud` is the public example from the slides, for the isolated lab only. Use `kubectl create secret`. The materials contain no private credentials or kubeconfig. MySQL certificates are self-signed as in the original example.
 
-Controllare il dominio reale in CoreDNS. Il tag dell'operatore rileva il
-dominio automaticamente; non assumere che ogni versione del provider usi
-lo stesso nome. Nella prova corrente CoreDNS usa `cluster.local`.
-La sola esistenza dei Pod non basta: attendere stato ONLINE con tre membri,
-poi verificare connessione e membership tramite le query in `verify-mysql.sql`.
+Check the actual domain in CoreDNS. This operator tag detects it automatically. The recorded run used `cluster.local`, but provider versions can differ. Wait for ONLINE with three members, then verify connectivity and membership with `verify-mysql.sql`.
 
-Fonti: [installazione](https://dev.mysql.com/doc/mysql-operator/en/mysql-operator-installation-kubectl.html),
-[InnoDB Cluster](https://dev.mysql.com/doc/mysql-operator/en/mysql-operator-innodbcluster-simple-kubectl.html),
-[rilevamento DNS nel tag usato](https://github.com/mysql/mysql-operator/blob/26.10.0-2.3.1/mysqloperator/controller/kubeutils.py).
+Sources include [installation](https://dev.mysql.com/doc/mysql-operator/en/mysql-operator-installation-kubectl.html), [InnoDB Cluster](https://dev.mysql.com/doc/mysql-operator/en/mysql-operator-innodbcluster-simple-kubectl.html) and [DNS detection in this tag](https://github.com/mysql/mysql-operator/blob/26.10.0-2.3.1/mysqloperator/controller/kubeutils.py).
 
-## Cleanup e risultati
+## Cleanup and results
 
-Prima di iniziare un nuovo esercizio verificare che il precedente non abbia
-lasciato Pod, Deployment, HPA, custom object o volumi.
-Eliminare solo gli oggetti creati dalla prova. Rimuovere il custom object
-MySQL mentre l'operatore è ancora attivo; verificare i PVC residui e i
-volumi cloud prima di disinstallare l'operatore. Le istruzioni puntuali
-sono in `commands.txt`. Non eliminare namespace `default`, volumi altrui
-o il cluster del corso.
+Before each exercise, check for leftover Pods, Deployments, HPAs, custom objects and volumes. Delete only objects created for the test. Remove the MySQL custom object while the operator is active, then check remaining PVCs and cloud volumes before uninstalling the operator. Follow `commands.txt`. Preserve the default namespace, other users' volumes and the course cluster.
 
-`SESSION.md` distingue risultati osservati, adattamenti e limiti.
-I log locali sono in `evidence/`, esclusa da Git.
-I manifest HPA/MySQL provengono dai materiali originali
-`Cloud 2025 lectures - see Drive/Esercitazioni/K8S-Lecture04`;
-`SHA256SUMS` registra i manifest consegnati.
+`SESSION.md` records observations, adaptations and limitations. Local logs are under the Git-ignored `evidence/` directory. HPA and MySQL manifests come from the original `Cloud 2025 lectures - see Drive/Esercitazioni/K8S-Lecture04` materials. `SHA256SUMS` records the distributed manifests.
 
 
-## Esecuzione automatica del deck
+## Run the deck automatically
 
-Dalla radice del repository, con i servizi cloud già avviati:
+From the repository root, with cloud services running:
 
 ```sh
 source scripts/configure.sh
 labcompose up -d
 python3 scripts/verify-lecture03.py --recreate-empty-cluster
-# Per scegliere esplicitamente il runtime: aggiungere --runtime docker oppure --runtime podman.
+# To select a runtime explicitly, add --runtime docker or --runtime podman.
 ```
 
-È un secondo script, distinto da `scripts/verify-lab.py`, e usa solo la libreria
-standard Python. Richiede il laboratorio **dedicato e sacrificabile `lecture03`**:
-`--recreate-empty-cluster` autorizza la cancellazione e ricreazione del cluster
-vuoto tra i diversi dimensionamenti. Non eseguirlo sul cluster di altri studenti
-o mentre qualcuno sta modificando il laboratorio. Il provider deve essere già
-attivo; il test non arresta i servizi Compose.
+This runner is separate from `scripts/verify-lab.py` and uses the Python standard library. It requires the **dedicated, disposable lecture03 cluster**. The flag `--recreate-empty-cluster` authorizes deleting and recreating the empty cluster between node configurations. Run it while you have exclusive use of the lab. The provider must already be running and the runner leaves Compose services active.
 
-Prima di modificare il cluster controlla checksum dei manifest, namespace,
-workload/risorse in default, controller negli altri namespace, CRD, PV,
-volumi cloud e installazioni autoscaler/adapter preesistenti. Se trova collisioni,
-risorse estranee o operazioni cloud in corso, si ferma. Non elimina dati
-preesistenti per preparare il test.
+Before modifying the cluster, the runner checks manifest checksums, namespaces, default workloads and resources, controllers in other namespaces, CRDs, PVs, cloud volumes and existing autoscaler or adapter installations. It stops on name collisions, unrelated resources or active cloud operations and preserves existing data.
 
-La sequenza segue il deck:
+The runner follows the deck order.
 
-1. **HPA**, due lab-medium: da una a più repliche disponibili e ritorno a una,
-   attendendo la stabilizzazione configurata a 60 secondi dopo la rimozione del generatore.
-2. **VPA**, stessi due lab-medium: raccomandazione Off senza modifiche, poi
-   Recreate con due nuovi UID e request CPU maggiori; memoria e limiti invariati.
-3. **Cluster Autoscaler**, lab-small min 1 / max 3: apply dei file locali,
-   scale 0 → 4 → 0, Pod Pending per CPU, almeno due nodi Ready, operazioni
-   cloud ADD_MACHINE e DELETE_MACHINE della prova terminate in DONE.
-4. **KEDA**, stesso nodo pulito: installazione, finestra UTC 0 → 2 → 0,
-   HPA posseduto dallo ScaledObject e risposta HTTP `Hello, KEDA!`.
-   Gli orari vengono aggiornati in una copia temporanea; il file nel repository
-   e il suo checksum restano invariati, anche attraversando la mezzanotte UTC.
-5. **CRD**, stesso nodo: registrazione di CronTab, verifica dello spec e cleanup.
-6. **MySQL Operator**, due lab-medium: tre membri ONLINE, Router disponibile,
-   query SQL attraverso Router e rilascio di PVC, PV e volumi cloud.
+1. **HPA**, two lab-medium nodes. Observe scale-up from one available replica and a return to one after removing the generator and waiting for the configured 60-second stabilization.
+2. **VPA**, same nodes. Off recommends changes without modifying Pods. Recreate yields two new UIDs and higher CPU requests with the same memory and limits.
+3. **Cluster Autoscaler**, lab-small min 1 / max 3. Apply the local files, scale 0 → 4 → 0, observe Pods Pending for CPU and at least two Ready nodes. Confirm the run's ADD_MACHINE and DELETE_MACHINE operations reach DONE.
+4. **KEDA**, same cleaned node. Observe the UTC window, 0 → 2 → 0 replicas, an HPA owned by the ScaledObject and the HTTP response `Hello, KEDA!`. The runner updates times in a temporary copy, including across UTC midnight, preserving the repository file and checksum.
+5. **CRD**, same node. Register CronTab, verify the spec and clean up.
+6. **MySQL Operator**, two lab-medium nodes. Verify three ONLINE members, Router availability, SQL through Router and release of PVCs, PVs and cloud volumes.
 
-Ogni esercizio viene ripulito prima del successivo. Per InnoDBCluster si usa
-la propagazione `background`: l’operatore deve poter leggere i propri Secret
-fino al completamento dei finalizer. La propagazione `foreground` resta usata
-per gli altri manifest, incluso il Deployment del Cluster Autoscaler.
-Alla fine lo script **elimina il cluster lecture03** e verifica che il provider
-non contenga cluster o volumi residui. I servizi cloud Compose restano attivi.
-Prevedere 40–75 minuti, immagini scaricabili e risorse host per due nodi da
-4 CPU / 8 GiB; i limiti sono per nodo, il consumo effettivo può essere inferiore.
-`--timeout SECONDI` cambia il limite delle attese di convergenza (default 900);
-le singole chiamate e i rollout hanno limiti propri.
+The runner cleans up each exercise before starting the next. InnoDBCluster uses `background` deletion so the operator can read its Secrets until finalizers finish. Other manifests, including the Cluster Autoscaler Deployment, use `foreground`. At the end the runner **deletes the lecture03 cluster** and checks for remaining clusters and volumes. Cloud Compose services stay up. Allow 40–75 minutes, image registry access and host capacity for two nodes limited to 4 CPUs / 8 GiB each. Actual usage may be lower. `--timeout SECONDS` changes the convergence wait (default 900). Individual calls and rollouts have their own limits.
 
-Il percorso dei log è stampato all’avvio: `commands.log`, snapshot JSON,
-manifest KEDA temporaneo, risultato SQL e `report.json` con PASS/FAIL.
-Exit code 0 significa che tutte le verifiche e il cleanup sono riusciti;
-1 indica errore/interruzione, 2 argomenti CLI non validi.
-In caso di fallimento raccoglie diagnostica, tenta il cleanup dell’esercizio
-attivo e **non passa al successivo né ricrea il cluster per nascondere residui**.
-Consultare l’operatore con report e log; non forzare finalizer o cancellare volumi
-per far passare una prova. SIGINT/SIGTERM durante un esercizio seguono il cleanup;
-un’interruzione durante il provisioning può lasciare un’operazione cloud in corso.
+The runner prints the log directory at startup. It contains `commands.log`, JSON snapshots, a temporary KEDA manifest, SQL output and `report.json` with PASS/FAIL. Exit 0 means all checks and cleanup passed, 1 means failure or interruption, and 2 means invalid CLI arguments. On failure it collects diagnostics, attempts cleanup of the active exercise and stops with the remaining state available for inspection. Consult the instructor with the report and logs. Do not force finalizers or delete volumes to make a test pass. SIGINT/SIGTERM during an exercise triggers cleanup. Interrupting provisioning can leave a cloud operation running.
 
-Test senza Docker/Kubernetes, eseguiti anche dalla CI:
+Run the same runtime-independent tests as CI with:
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_verify*.py'

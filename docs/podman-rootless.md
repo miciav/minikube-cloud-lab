@@ -87,7 +87,7 @@ Ubuntu 26.04 instances (`ubuntu-26.04`, the default) were verified the same way.
 
 The optional instance autoscaling profile uses the same `lab install` and
 `lab uninstall` commands on Podman rootless. See the
-[standalone HTTP exercise](instance-autoscaling.md)
+[standalone HTTP exercise](tutorials/autoscaling/instance-groups.md)
 for the workflow.
 
 With the cloud service running on a disposable Podman lab, run the smoke test
@@ -138,9 +138,9 @@ In the VM, source `scripts/configure.sh` and start the rootless cloud. With two
 running instances named `vm1` and `vm2`, run:
 
 ```sh
-cloud disks create dati --size 64Mi
-cloud disks attach dati --instance vm1
-cloud disks shell vm1 dati
+cloud disks create data --size 64Mi
+cloud disks attach data --instance vm1
+cloud disks shell vm1 data
 ```
 
 The shell opens a minimal Linux guest with one virtio data disk. On first use
@@ -158,9 +158,9 @@ exit
 Back on the VM, move the disk to the second instance:
 
 ```sh
-cloud disks detach dati --instance vm1
-cloud disks attach dati --instance vm2
-cloud disks shell vm2 dati
+cloud disks detach data --instance vm1
+cloud disks attach data --instance vm2
+cloud disks shell vm2 data
 ```
 
 Run `mount /dev/vda /mnt` and `cat /mnt/message`. The guest root filesystem is

@@ -2,7 +2,7 @@ GUIDED COMMAND TRANSCRIPT — not an unattended script.
 All exercise workloads use namespace default. Run from kubernetes/lecture02 after setup.
 Commands can block, initialize MongoDB once or delete named exercise resources.
 
-SLIDE 1: PARTE 1: Container e Kubernetes
+SLIDE 1: PART 1: Containers and Kubernetes
 
 SLIDE 2: Lab setup: start with one node
 source scripts/configure.sh

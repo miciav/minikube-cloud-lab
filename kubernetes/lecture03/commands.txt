@@ -1,19 +1,19 @@
-# TRACCIA MANUALE — non lanciare l'intero file come script.
-# Fermarsi ai checkpoint. In caso di errore chiedere all'operatore.
-# Cluster Autoscaler : seguire CLUSTER_AUTOSCALING.md.
-# Richiede lab-small MIN 1 / MAX 3, diverso dal setup qui sotto.
-# Eseguire dal repository minikube-cloud-lab; risultati e limiti in SESSION.md.
+# Manual walkthrough. Run one section at a time.
+# Stop at each checkpoint. Ask the instructor if a command fails.
+# For Cluster Autoscaler follow CLUSTER_AUTOSCALING.md.
+# It requires lab-small, minimum 1 / maximum 3, and a separate setup.
+# Start in the minikube-cloud-lab checkout. See SESSION.md for results and limitations.
 
 source scripts/configure.sh
 docker compose up -d
 cloud clusters list
 cloud machine-types list
-# Solo se non esiste un cluster: dimensionamento scelto per lecture03.
-# Accesso al provider come in Kubernetes_4; due nodi più capienti per MySQL.
+# Create a cluster of this size for lecture03 only if no cluster exists.
+# Use the provider as in Kubernetes_4. MySQL needs two larger nodes.
 cloud clusters create lecture03 --machine-type lab-medium --min-nodes 2 --max-nodes 2
 cloud clusters get-credentials lecture03
 kubectl wait --for=condition=Ready nodes --all --timeout=5m
-# Per un cluster del corso già esistente usare il suo nome; non eliminarlo.
+# To reuse a course cluster, use its existing name and preserve it.
 cloud machines list
 cloud storage status
 kubectl config current-context
@@ -27,116 +27,116 @@ kubectl -n kube-system get deployment metrics-server
 kubectl get apiservice v1beta1.metrics.k8s.io
 kubectl top nodes
 
-# Checkpoint: cluster corretto; metriche disponibili; nessuna collisione con
-# php-apache, load-generator, mycluster, mypwds, myshell o le CRD previste.
-# Registrare risorse preesistenti. Non sovrascrivere operatori già installati.
+# Check the cluster, metrics availability and possible name conflicts with
+# php-apache, load-generator, mycluster, mypwds, myshell and the required CRDs.
+# Record existing resources and preserve any operators already installed.
 cd kubernetes/lecture03
 
-# ESERCIZIO 1 — HPA
+# Exercise 1 — HPA
 kubectl -n default apply -f php-apache.yml
 kubectl -n default rollout status deployment/php-apache --timeout=5m
 kubectl -n default apply -f hpa.yml
 kubectl -n default wait --for=condition=ScalingActive hpa/php-apache --timeout=120s
 kubectl -n default get hpa
 
-# Terminale A: lasciare attivo il carico durante l'osservazione.
+# Terminal A: keep the load running while observing scaling.
 kubectl -n default run -i --tty load-generator --rm --image=busybox:1.28 --restart=Never -- /bin/sh -c 'while sleep 0.01; do wget -q -O- http://php-apache; done'
 
-# Terminale B configurato nello stesso modo:
+# Terminal B: configure the shell the same way.
 kubectl -n default get hpa php-apache --watch
-# Registrare CPU e repliche prima e durante il carico; Ctrl+C termina il watch.
+# Record CPU and replica counts before and during load. Press Ctrl-C to stop watching.
 kubectl -n default get deployment php-apache
 kubectl -n default top pods -l run=php-apache
 kubectl -n default describe hpa php-apache
-# Ctrl+C nel terminale A, poi verificare che load-generator sia stato rimosso.
+# Press Ctrl-C in terminal A, then check that load-generator has been removed.
 kubectl -n default get pods
 kubectl -n default get hpa php-apache --watch
-# Checkpoint: repliche tornate a 1. Registrare il tempo effettivo, poi Ctrl+C.
-# La finestra di stabilizzazione è di 60 secondi; il tempo effettivo dipende anche dalle metriche.
+# Wait for one replica. Record elapsed time and press Ctrl-C.
+# The stabilization window is 60 seconds. Actual timing also depends on metrics.
 kubectl -n default delete -f hpa.yml -f php-apache.yml
 kubectl -n default wait --for=delete pod -l run=php-apache --timeout=120s
 kubectl -n default get pods,deployments,services,hpa
-# Checkpoint obbligatorio: nessun php-apache o load-generator prima di VPA.
+# Before VPA, confirm that php-apache and load-generator are gone.
 
-# ESERCIZIO — VPA (prima raccomandazioni Off, poi Recreate)
-# Seguire vpa/README.md, riusando i due lab-medium dopo il cleanup HPA.
-# Tutte le risorse vengono create con kubectl apply; il helper Python genera
-# soltanto il Secret TLS. Annotare UID e request CPU prima e dopo Recreate.
-# Checkpoint: due nuovi Pod Ready, CPU maggiore di 50m, limiti e memoria invariati.
-# Rimuovere workload, VPA, controller, CRD, webhook, Secret e Lease come nella guida.
-# Tornare in kubernetes/lecture03 prima dell'esercizio successivo.
+# VPA exercise — start with Off recommendations, then use Recreate
+# Follow vpa/README.md using the two lab-medium nodes after HPA cleanup.
+# Create all resources with kubectl apply. The Python helper generates
+# only the TLS Secret. Record Pod UIDs and CPU requests before and after Recreate.
+# Expect two new Ready Pods, CPU requests above 50m and unchanged limits and memory.
+# Remove the workload, VPA, controllers, CRDs, webhook, Secret and Lease as documented.
+# Return to kubernetes/lecture03 before the next exercise.
 
-# INTERMEZZO — CLUSTER AUTOSCALER
-# Seguire CLUSTER_AUTOSCALING.md: setup dalla radice, poi cd kubernetes/lecture03.
-# Creazione: kubectl apply -f autoscaler/; attendere rollout del controller.
-# Creazione: kubectl apply -f load.yaml (zero repliche).
-# Carico: kubectl -n default scale deployment/lab-load --replicas=4.
-# Attendere quattro repliche disponibili e ADD_MACHINE DONE dal provider.
-# Stop: kubectl -n default scale deployment/lab-load --replicas=0.
-# Attendere un nodo Ready e DELETE_MACHINE DONE prima del cleanup.
-# Cleanup: kubectl delete -f load.yaml; kubectl delete -f autoscaler/ --cascade=foreground.
-# Poi eliminare ConfigMap cluster-autoscaler-status e Lease cluster-autoscaler
-# come indicato nella guida: sono generati dal controller, non dai manifest.
-# Dopo CA: esercizio KEDA — guida keda/README.md.
-# Riusa il nodo pulito; aggiornare gli orari UTC e osservare 0 → 2 → 0.
-# Rimuovere prima ScaledObject e workload, poi l’installazione KEDA.
-# Per continuare il percorso MySQL qui sotto, ripristinare i due lab-medium
-# con i comandi della sezione 5 della guida; poi tornare in kubernetes/lecture03.
+# Cluster Autoscaler
+# Follow CLUSTER_AUTOSCALING.md. Set up from the repository root, then cd kubernetes/lecture03.
+# Apply the controller with kubectl apply -f autoscaler/ and wait for rollout.
+# Apply the workload at zero replicas with kubectl apply -f load.yaml.
+# Generate load with kubectl -n default scale deployment/lab-load --replicas=4.
+# Wait for four available replicas and a completed ADD_MACHINE provider operation.
+# Stop load with kubectl -n default scale deployment/lab-load --replicas=0.
+# Wait for one Ready node and a completed DELETE_MACHINE before cleanup.
+# Delete load.yaml and then autoscaler/ with kubectl delete -f autoscaler/ --cascade=foreground.
+# Then delete the cluster-autoscaler-status ConfigMap and cluster-autoscaler Lease
+# as described in the guide. The controller creates these at runtime.
+# After Cluster Autoscaler, follow the KEDA exercise in keda/README.md.
+# Reuse the clean node. Update the UTC schedule and observe 0 → 2 → 0.
+# Remove the ScaledObject and workload first, then uninstall KEDA.
+# To continue with MySQL below, restore the two lab-medium nodes
+# following section 5 of the guide and return to kubernetes/lecture03.
 
-# ESERCIZIO 3 — CRD e custom object
-# Procedere solo se la CRD non esisteva prima del laboratorio.
+# Exercise 3 — CRD and custom object
+# Proceed only if the CRD was absent before the lab.
 kubectl apply -f crontab-crd.yml
 kubectl wait --for=condition=Established crd/crontabs.stable.example.com --timeout=60s
 kubectl describe crd crontabs.stable.example.com
 kubectl -n default apply -f crontab-example.yml
 kubectl -n default get crontabs my-new-cron-object
 kubectl -n default describe crontabs my-new-cron-object
-# Checkpoint: spec presente, nessun controller installato per eseguirla.
+# Check that the object has a spec. This exercise installs no controller for it.
 kubectl -n default delete -f crontab-example.yml
 kubectl get crontabs -A
-# Eliminare la CRD solo se non contiene oggetti altrui ed è stata creata qui.
+# Delete the CRD only if this exercise created it and it contains no other users' objects.
 kubectl delete -f crontab-crd.yml
 kubectl get crd
-# Checkpoint obbligatorio: crontabs.stable.example.com assente prima di MySQL.
+# Before MySQL, confirm that crontabs.stable.example.com is absent.
 
-# ESERCIZIO 2 — MySQL Operator
-# Prima: verificare con l'operatore umano eventuali dubbi su DNS, storage,
-# architettura, capacità o versione. Non applicare su un'installazione esistente.
+# Exercise 2 — MySQL Operator
+# Ask the instructor about any DNS, storage, architecture, capacity or version issues
+# before proceeding. Use a fresh installation.
 kubectl apply -f mysql-operator-26.10.0-2.3.1/deploy-crds.yaml
 kubectl wait --for=condition=Established crd/innodbclusters.mysql.oracle.com crd/mysqlbackups.mysql.oracle.com crd/mysqlclustersetfailovers.mysql.oracle.com crd/clusterkopfpeerings.zalando.org crd/kopfpeerings.zalando.org --timeout=60s
 kubectl apply -f mysql-operator-26.10.0-2.3.1/deploy-operator.yaml
 kubectl -n mysql-operator get deployment mysql-operator
 kubectl -n mysql-operator rollout status deployment/mysql-operator --timeout=5m
 
-# Password pubblica delle slide, solo per il laboratorio isolato.
+# The public slide password is for this isolated lab only.
 kubectl -n default create secret generic mypwds --from-literal=rootUser=root --from-literal=rootHost=% --from-literal=rootPassword=cloud
 kubectl -n default apply -f mycluster.yml
 kubectl -n default get innodbcluster --watch
-# Checkpoint: ONLINE con 3 membri. Ctrl+C chiude il watch.
-# ONLINE da solo non basta: controllare anche ONLINE=3 nella tabella.
+# Wait for ONLINE with three members. Press Ctrl-C to stop watching.
+# Check the ONLINE column for a count of 3 as well as the cluster status.
 kubectl -n default wait --for=jsonpath='{.status.cluster.onlineInstances}'=3 innodbcluster/mycluster --timeout=10m
 kubectl -n default wait --for=jsonpath='{.status.cluster.status}'=ONLINE innodbcluster/mycluster --timeout=2m
 kubectl -n default wait --for=jsonpath='{.status.availableReplicas}'=1 deployment/mycluster-router --timeout=5m
 kubectl -n default rollout status deployment/mycluster-router --timeout=5m
 kubectl -n default get deployment mycluster-router
-# Checkpoint: Router 1/1.
+# Check that the Router shows 1/1.
 kubectl -n default get pods,services,pvc
 kubectl -n default describe innodbcluster mycluster
 
-# Stesso tag dell'operatore per evitare il client latest non versionato.
+# Match the operator tag to pin the client version.
 kubectl -n default run --rm -it myshell --restart=Never --image=container-registry.oracle.com/mysql/community-operator:26.10.0-2.3.1 -- mysqlsh
-# Dentro MySQL Shell:
+# Inside MySQL Shell:
 \connect root@mycluster
-# Inserire cloud quando richiesta la password; rispondere N al salvataggio.
+# Enter cloud at the password prompt and answer N when asked to save it.
 \sql
 SELECT @@hostname, @@version;
 SELECT MEMBER_HOST, MEMBER_STATE, MEMBER_ROLE FROM performance_schema.replication_group_members;
 \disconnect
-# Ctrl+D chiude la shell.
+# Press Ctrl-D to exit the shell.
 
-# Cleanup MySQL (aggiunta operativa rispetto alle slide):
-# registrare PVC/PV/volumi creati; confermare che i dati del test siano eliminabili.
-# Lasciare l'operatore attivo durante la cancellazione del custom object.
+# MySQL cleanup (supplement to the slides):
+# Record the PVCs, PVs and volumes created. Confirm that the test data can be deleted.
+# Keep the operator running while deleting the custom object.
 kubectl -n default get pvc datadir-mycluster-0 datadir-mycluster-1 datadir-mycluster-2 -o wide
 cloud volumes list
 kubectl -n default delete -f mycluster.yml
@@ -144,21 +144,21 @@ kubectl -n default wait --for=delete pod/mycluster-0 pod/mycluster-1 pod/myclust
 kubectl -n default delete secret mypwds
 kubectl -n default get pods,pvc
 cloud volumes list
-# Non cancellare PVC, PV o volumi preesistenti. La pulizia dei volumi residui
-# richiede i nomi effettivamente registrati; non usare delete --all.
-# Disinstallare operatore/CRD soltanto se creati in questa prova e non usati
-# da altri cluster MySQL. Non cancellare il cluster Kubernetes del corso.
+# Preserve pre-existing PVCs, PVs and volumes. Use the recorded names
+# when removing remaining volumes. Avoid delete --all.
+# Uninstall the operator and CRDs only if this run created them and no other
+# MySQL clusters use them. Keep the course Kubernetes cluster.
 
-# Se i tre PVC registrati sono rimasti e appartengono solo alla prova conclusa:
+# If the three recorded PVCs remain and belong only to this completed exercise:
 kubectl -n default delete pvc datadir-mycluster-0 datadir-mycluster-1 datadir-mycluster-2
-# cloud-standard ha reclaimPolicy Delete: attendere anche il rilascio cloud.
-# Ripetere le osservazioni finché i tre volumi/PV registrati sono assenti.
+# cloud-standard uses the Delete reclaim policy. Wait for the cloud to release the volumes.
+# Repeat these checks until the three recorded volumes and PVs are gone.
 cloud volumes list
 kubectl get pv
-# Solo per l'installazione creata da questa prova, senza altri custom object:
+# Only for an installation created by this run, with no other custom objects:
 kubectl get innodbclusters,mysqlbackups -A
 kubectl delete -f mysql-operator-26.10.0-2.3.1/deploy-operator.yaml
 kubectl delete -f mysql-operator-26.10.0-2.3.1/deploy-crds.yaml
 kubectl -n default get pods,deployments,statefulsets,services,hpa,pvc
 kubectl get crd
-# Mantenere il cluster del corso, come indicato nelle slide Kubernetes_4.
+# Preserve the course cluster as instructed in the Kubernetes_4 slides.

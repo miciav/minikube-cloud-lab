@@ -36,16 +36,18 @@ Use `--runtime podman` inside a prepared VM. To rehearse the committed checkout 
 
 ## Choose the lesson
 
+Use the [tutorials by topic](docs/tutorials/README.md) to select an exercise or share the catalog with students. The table below lists the environment to prepare for each lesson.
+
 | Learning objective | Assign to students | Starting point |
 | --- | --- | --- |
-| Explain why a Pending Pod causes a worker to be added | [From Pod to cloud machine](docs/student-tutorial.md) | Running cloud, room for two small nodes. The tutorial creates its own cluster. |
-| Compare NodePort and LoadBalancer endpoints | [Expose Nginx through three Services](docs/networking.md) | Running cluster. The exercise uses its own namespace and works with YAKD removed. |
-| Follow a PVC through allocation, release and recovery | [Persistent storage](docs/storage-tutorial.md) | Dedicated lab. The recovery exercise deletes and recreates a cluster. |
-| Bootstrap a Linux instance and move a persistent data disk | [Standalone instances and disks](docs/instances.md) | Running cloud. Choose the disk procedure for your runtime. |
-| Observe traffic-driven scaling, health checks and replacement | [Autoscale an HTTP service](docs/instance-autoscaling.md) | Running cloud, room for three instances. |
+| Explain why a Pending Pod causes a worker to be added | [From Pod to cloud machine](docs/tutorials/autoscaling/kubernetes-nodes.md) | Running cloud, room for two small nodes. The tutorial creates its own cluster. |
+| Compare NodePort and LoadBalancer endpoints | [Expose Nginx through three Services](docs/tutorials/networking/service-exposure.md) | Running cluster. The exercise uses its own namespace and works with YAKD removed. |
+| Follow a PVC through allocation, release and recovery | [Persistent storage](docs/tutorials/storage/persistent-volumes.md) | Dedicated lab. The recovery exercise deletes and recreates a cluster. |
+| Bootstrap a Linux instance and move a persistent data disk | [Standalone instances and disks](docs/tutorials/compute/instances-and-disks.md) | Running cloud. Choose the disk procedure for your runtime. |
+| Observe traffic-driven scaling, health checks and replacement | [Autoscale an HTTP service](docs/tutorials/autoscaling/instance-groups.md) | Running cloud, room for three instances. |
 | Teach the Kubernetes exercise decks | [Lecture 02](kubernetes/lecture02/README.md) · [Lecture 03](kubernetes/lecture03/README.md) | Use the node counts and machine sizes in the selected lesson. Lecture 03 includes HPA, VPA, Cluster Autoscaler, KEDA and operators. |
 
-For the handout, give students the checkout version, the host or VM to use, the assigned guide and the expected starting state. For the Pod-to-machine lesson, ask for the scheduling event and the cloud operation ID that explain why the worker appeared. The [tutorial report](docs/student-tutorial.md#lab-report) lists the evidence to collect before cleanup.
+For the handout, give students the checkout version, the host or VM to use, the assigned guide and the expected starting state. For the Pod-to-machine lesson, ask for the scheduling event and the cloud operation ID that explain why the worker appeared. The [tutorial report](docs/tutorials/autoscaling/kubernetes-nodes.md#lab-report) lists the evidence to collect before cleanup.
 
 ## Optional modules
 

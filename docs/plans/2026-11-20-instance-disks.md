@@ -7,17 +7,17 @@ disk. Formatting is always an explicit student operation.
 
 ## Proposed student workflow
 
-    cloud disks create dati --size 1Gi
-    cloud disks attach dati --instance vm1
+    cloud disks create data --size 1Gi
+    cloud disks attach data --instance vm1
     cloud instances ssh vm1
-    sudo mkfs.ext4 /dev/cloud-disks/dati
-    sudo mkdir -p /mnt/dati
-    sudo mount /dev/cloud-disks/dati /mnt/dati
-    echo hello | sudo tee /mnt/dati/message
-    sudo umount /mnt/dati
+    sudo mkfs.ext4 /dev/cloud-disks/data
+    sudo mkdir -p /mnt/data
+    sudo mount /dev/cloud-disks/data /mnt/data
+    echo hello | sudo tee /mnt/data/message
+    sudo umount /mnt/data
     exit
-    cloud disks detach dati --instance vm1
-    cloud disks attach dati --instance vm2
+    cloud disks detach data --instance vm1
+    cloud disks attach data --instance vm2
 
 On vm2 the student mounts the existing filesystem and reads message. The lab
 must reject concurrent ownership, detachment while busy, and deletion while

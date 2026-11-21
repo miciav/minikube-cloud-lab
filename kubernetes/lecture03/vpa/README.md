@@ -1,19 +1,12 @@
-# Vertical Pod Autoscaler: prima osservare, poi applicare
+# Vertical Pod Autoscaler — observe recommendations and apply them
 
-Obiettivo: aumentare la **richiesta CPU di ciascun Pod**, mantenendo due repliche.
-Il carico è un ciclo CPU in BusyBox, senza servizi esterni o traffico da generare.
-Si osservano prima le raccomandazioni (`Off`), poi la sostituzione dei Pod
-(`Recreate`). Durata indicativa: 10–15 minuti, esclusa la creazione del cluster.
+Increase the **CPU request per Pod** while keeping two replicas. A CPU loop in BusyBox provides load without external services or traffic. First observe recommendations in Off mode, then watch Pod replacement in Recreate mode. Allow 10–15 minutes plus cluster creation.
 
-## 1. Preparazione
+## 1. Prepare the cluster
 
-Usare il cluster dedicato `lecture03` con **due nodi lab-medium**, come nel
-[setup della lezione](../README.md#setup-hpa--vpa--crd--mysql).
-Rimuovere HPA, php-apache e load-generator dell'esercizio precedente.
-Non installare un secondo VPA su un cluster che ne ha già uno.
-Python 3 e OpenSSL devono essere disponibili sull'host.
+Use the dedicated lecture03 cluster with **two lab-medium nodes** from the [lecture setup](../README.md#setup-hpa--vpa--crd--mysql). Remove HPA, php-apache and load-generator from the previous exercise. Use a cluster without an existing VPA installation. The host needs Python 3 and OpenSSL.
 
-Dalla radice del progetto, in ogni terminale:
+From the repository root in each terminal:
 
 ```sh
 source scripts/configure.sh
@@ -25,14 +18,11 @@ kubectl get crd
 cd kubernetes/lecture03/vpa
 ```
 
-Checkpoint: due nodi Ready, metriche disponibili, nessun workload precedente,
-nessuna CRD `verticalpodautoscalers.autoscaling.k8s.io` già installata.
-Questo esercizio usa VPA 1.7.1; la prova è stata eseguita con Kubernetes 1.35.6.
+Check for two Ready nodes, available metrics, no previous workload and no installed `verticalpodautoscalers.autoscaling.k8s.io` CRD. This exercise uses VPA 1.7.1 and was tested on Kubernetes 1.35.6.
 
-## 2. Installare VPA
+## 2. Install VPA
 
-I sei manifest ufficiali sono inclusi in `upstream/`. Installare prima CRD e RBAC,
-poi generare il Secret TLS del webhook, infine applicare l'intera cartella:
+The six official manifests are in upstream/. Install CRDs and RBAC, generate the webhook TLS Secret, then apply the whole directory.
 
 ```sh
 kubectl apply -f upstream/vpa-v1-crd-gen.yaml -f upstream/vpa-rbac.yaml
@@ -45,17 +35,11 @@ kubectl -n kube-system rollout status deployment/vpa-admission-controller --time
 kubectl get mutatingwebhookconfiguration vpa-webhook-config
 ```
 
-Attendere che anche il webhook sia presente prima di continuare. Il piccolo helper
-usa OpenSSL e una directory temporanea privata; emette solo il manifest JSON del
-Secret da passare a `kubectl apply`. I certificati durano sette giorni e vanno
-rigenerati a ogni installazione. Non salvare il suo output in Git o nei log.
-L'admission controller registra il webhook con la CA corrispondente.
+Wait for the webhook before continuing. The helper uses OpenSSL and a private temporary directory. It emits only the Secret JSON manifest for kubectl apply. Certificates last seven days. Regenerate them for every installation and keep the output out of Git and logs. The admission controller registers the webhook with the matching CA.
 
-## 3. Osservare senza modificare i Pod
+## 3. Observe recommendations without changing Pods
 
-Leggere `deployment.yaml`: due repliche, ciascuna con request **50m CPU / 16Mi**
-e limit **500m CPU / 64Mi**. 50m equivale a 0,05 core; il limite CPU contiene
-il consumo del ciclo, mentre la request è usata per lo scheduling.
+Read deployment.yaml. Each of two replicas requests **50m CPU / 16Mi** with limits of **500m CPU / 64Mi**. 50m is 0.05 core. The CPU limit caps the loop's usage, while the scheduler uses the request.
 
 ```sh
 kubectl apply -f deployment.yaml
@@ -66,31 +50,23 @@ kubectl -n default top pods -l app=vpa-demo
 kubectl -n default describe vpa vpa-demo
 ```
 
-Annotare nomi e UID iniziali. Ripetere `describe` finché appare una raccomandazione
-CPU superiore a 100m; può richiedere alcuni minuti. La policy controlla soltanto
-la request CPU (`RequestsOnly`), con minimo 100m e massimo 500m. La request iniziale
-50m è volutamente sotto il minimo per rendere evidente l'aggiornamento successivo.
+Record the initial names and UIDs. Repeat describe until the recommended CPU exceeds 100m, which may take several minutes. The RequestsOnly policy controls the CPU request with a 100m minimum and 500m maximum. The initial 50m request is deliberately below the minimum to make the subsequent change visible.
 
 ```sh
 kubectl -n default get vpa vpa-demo -o 'jsonpath={.status.recommendation.containerRecommendations}'
 kubectl -n default get pods -l app=vpa-demo -o 'custom-columns=NAME:.metadata.name,UID:.metadata.uid,CPU:.spec.containers[0].resources.requests.cpu'
 ```
 
-**Checkpoint Off:** raccomandazione presente, stessi UID, request ancora 50m.
-Nella prova il target era 500m, limitato dalla policy; il valore esatto dipende
-dalle metriche raccolte. Una raccomandazione dopo pochi minuti serve alla demo,
-non è una misura sufficiente per dimensionare un'applicazione in produzione.
+**Off checkpoint.** A recommendation appears. UIDs and 50m requests stay the same. The recorded target was capped at 500m by policy. The exact value depends on collected metrics. A few minutes of observation demonstrate the mechanism but are insufficient for production sizing.
 
-## 4. Applicare con Recreate
+## 4. Apply recommendations with Recreate
 
 ```sh
 kubectl -n default patch vpa vpa-demo --type=merge -p '{"spec":{"updatePolicy":{"updateMode":"Recreate"}}}'
 kubectl -n default get pods -l app=vpa-demo -w
 ```
 
-Attendere la sostituzione di entrambi i Pod e due nuovi Pod Ready, poi Ctrl+C.
-Non cancellare o scalare manualmente i Pod: l'updater li espelle, il Deployment
-li ricrea e l'admission controller modifica le richieste alla creazione.
+Wait for both Pods to be replaced and both new Pods to be Ready, then press Ctrl+C. Leave deletion and scaling to the controllers. The updater evicts the Pods, the Deployment recreates them and the admission controller adjusts requests at creation.
 
 ```sh
 kubectl -n default get events --field-selector reason=EvictedByVPA
@@ -100,18 +76,13 @@ kubectl -n default get deployment vpa-demo -o 'jsonpath={.spec.replicas}{" repli
 kubectl get nodes
 ```
 
-**Checkpoint Recreate:** due nuovi UID, request CPU maggiore di 50m e non oltre
-500m; memory request 16Mi e limiti 500m/64Mi invariati. Il Deployment continua
-a dichiarare **due repliche e 50m nel template**; le nuove request sono sui Pod.
-Il numero di nodi non cambia. Nella prova entrambe le request sono passate a 500m.
+**Recreate checkpoint.** Two new UIDs, CPU requests above 50m and at most 500m, memory requests of 16Mi and unchanged 500m/64Mi limits. The Deployment template still specifies **two replicas and 50m CPU**. The new requests appear on Pods. The node count stays the same. Both requests reached 500m in the recorded run.
 
-Domande: perché cambia l'UID? Quale componente decide la raccomandazione e quale
-la applica? In cosa differiscono HPA (repliche), VPA (risorse per Pod) e Cluster
-Autoscaler (nodi)? In questa prova non usare un HPA CPU sullo stesso workload.
+Why did the UIDs change? Which component recommends resources and which applies them? Compare HPA (replicas), VPA (resources per Pod) and Cluster Autoscaler (nodes). Leave CPU-based HPA off this workload during the exercise.
 
 ## 5. Cleanup
 
-Rimuovere prima il VPA e il workload, poi l'installazione e gli oggetti generati:
+Remove the VPA object and workload before removing the installation and its generated objects.
 
 ```sh
 kubectl delete -f vpa.yaml -f deployment.yaml --cascade=foreground --timeout=180s
@@ -123,10 +94,7 @@ kubectl get crd
 kubectl -n kube-system get deployment vpa-recommender vpa-updater vpa-admission-controller --ignore-not-found
 ```
 
-Checkpoint: nessun workload della prova, controller VPA o CRD VPA residuo.
-Non applicare questa disinstallazione a un VPA condiviso con altri esercizi.
-Se si prosegue con Cluster Autoscaler, seguire la sua guida per ricreare il
-cluster vuoto con il dimensionamento previsto. **Alla fine del laboratorio**:
+Check for leftover exercise workloads, VPA controllers and VPA CRDs. Remove only the dedicated installation. If continuing to Cluster Autoscaler, use its guide to recreate the empty cluster at the required size. **At the end of the lab**, run:
 
 ```sh
 cloud clusters delete lecture03
@@ -134,16 +102,11 @@ cloud clusters list
 cloud volumes list
 ```
 
-Il test automatico del deck include questi checkpoint e cancella il cluster
-alla fine: `python3 scripts/verify-lecture03.py --recreate-empty-cluster`
-dalla radice del repository. In caso di errore conserva diagnostica e si ferma;
-consultare l'operatore prima di riprovare o modificare il cluster.
+The automatic deck test checks these conditions and deletes the cluster at the end. Run `python3 scripts/verify-lecture03.py --recreate-empty-cluster` from the repository root. It saves diagnostics and stops on error. Consult the instructor before retrying or changing the cluster.
 
-## Fonti e provenienza
+## Sources and provenance
 
-- [Quick start ufficiale VPA 1.7.1](https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/docs/quickstart.md): esempio hamster e osservazione delle request.
-- [Installazione ufficiale](https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/docs/installation.md).
-- `upstream/*.yaml`: copie senza modifiche dei sei file omonimi in [`vertical-pod-autoscaler/deploy/`](https://github.com/kubernetes/autoscaler/tree/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/deploy), tag `vertical-pod-autoscaler-1.7.1`; licenza Apache 2.0 inclusa. SHA256 in `../SHA256SUMS`.
-- Adattamenti didattici: BusyBox multiarch con consumo limitato, CPU soltanto,
-  modalità Off → Recreate, due repliche e TLS locale temporaneo. Nessun Helm,
-  cert-manager, servizio esterno o aggiornamento in-place richiesto.
+- [Official VPA 1.7.1 quick start](https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/docs/quickstart.md), including the hamster example and observation of requests.
+- [Official installation guide](https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/docs/installation.md).
+- `upstream/*.yaml` contains unchanged copies of the six corresponding files from [vertical-pod-autoscaler/deploy/](https://github.com/kubernetes/autoscaler/tree/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/deploy) at tag vertical-pod-autoscaler-1.7.1. The Apache 2.0 license is included. SHA-256 checksums are in ../SHA256SUMS.
+- Teaching adaptations include multiarch BusyBox with bounded CPU usage, CPU-only recommendations, Off → Recreate, two replicas and temporary local TLS. The exercise requires no Helm, cert-manager, external service or in-place update.

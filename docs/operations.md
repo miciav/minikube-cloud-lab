@@ -178,7 +178,7 @@ uses it; the cloud does not automatically delete historical orphan volumes.
 
 ## Cloud storage
 
-The cloud automatically installs storage classes for dynamically provisioned NFS volumes. `cloud-standard` deletes released volumes; `cloud-retain` preserves them for recovery. Deleting a cluster conservatively retains its remaining volumes, which can be removed explicitly. `cloud volumes list` displays their state. See the [storage tutorial](storage-tutorial.md) for creation and recovery across clusters.
+The cloud automatically installs storage classes for dynamically provisioned NFS volumes. `cloud-standard` deletes released volumes; `cloud-retain` preserves them for recovery. Deleting a cluster conservatively retains its remaining volumes, which can be removed explicitly. `cloud volumes list` displays their state. See the [storage tutorial](tutorials/storage/persistent-volumes.md) for creation and recovery across clusters.
 
 The NFS data is stored in a persistent named Docker volume. `docker compose down` keeps it; `docker compose down -v` removes it and all stored data. Each new volume has a separate bounded ext4 filesystem exported over NFS. Writes stop with a disk-full error when its virtual disk is full. Capacity includes filesystem overhead, is rounded up to MiB, and has a 16Mi minimum. `cloud storage status` reports the global allocation budget (default `20Gi`, configurable with `CLOUD_STORAGE_CAPACITY` in `.env`). Allocated and retained volumes count until permanently deleted; unused capacity inside a volume is still allocated. The budget does not reserve physical host disk space.
 

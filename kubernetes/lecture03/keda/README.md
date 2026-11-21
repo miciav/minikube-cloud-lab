@@ -1,33 +1,22 @@
-# KEDA — servizio attivo in una finestra temporale
+# KEDA — run an HTTP service during a scheduled window
 
-Esercizio semplice per osservare **0 → 2 → 0 repliche** mantenendo un solo nodo.
-Il segnale è l'apertura/chiusura di una finestra oraria: non servono broker,
-account esterni o un generatore di carico. KEDA registra il tipo `ScaledObject`,
-riconcilia la configurazione e crea un HPA. KEDA gestisce l'attivazione da zero
-e il ritorno a zero; l'HPA gestisce lo scaling mentre il workload è attivo.
+Watch **0 → 2 → 0 replicas** on a single node. Opening and closing a time window provides the scaling signal without a broker, external account or load generator. KEDA registers the `ScaledObject` type, reconciles its configuration and creates an HPA. KEDA activates the workload from zero and returns it to zero. The HPA scales replicas while the workload is active.
 
-## Fonti e file importati
+## Sources and imported files
 
-- Tutorial ufficiale [Setup Autoscaling with KEDA](https://keda.sh/docs/2.21/setupscaler/).
-- Esempio ufficiale [Cron scaler: fixed number of replicas](https://keda.sh/docs/2.21/scalers/cron/#example-fixed-number-of-replicas-scale-up-to-10-replicas-from-6am-to-8pm-and-scale-down-to-0-replicas-otherwise).
-- Deployment adattato dal [servizio HTTP del tutorial](https://keda.sh/docs/2.21/deploy/#step-1-deploy-a-sample-application).
-- [Manifest di release v2.21.0](https://github.com/kedacore/keda/releases/download/v2.21.0/keda-2.21.0.yaml), importato integralmente e senza modifiche in `upstream/`, con licenza Apache-2.0 in `upstream/LICENSE`.
-- La documentazione KEDA è CC-BY-4.0, © KEDA Authors: i due manifest didattici sono adattamenti con attribuzione, non copie identiche del tutorial.
+- Official tutorial: [Setup Autoscaling with KEDA](https://keda.sh/docs/2.21/setupscaler/).
+- Official example: [Cron scaler with a fixed replica count](https://keda.sh/docs/2.21/scalers/cron/#example-fixed-number-of-replicas-scale-up-to-10-replicas-from-6am-to-8pm-and-scale-down-to-0-replicas-otherwise).
+- Deployment adapted from the tutorial's [HTTP service](https://keda.sh/docs/2.21/deploy/#step-1-deploy-a-sample-application).
+- The complete [v2.21.0 release manifest](https://github.com/kedacore/keda/releases/download/v2.21.0/keda-2.21.0.yaml) is included unchanged in `upstream/`, with its Apache-2.0 license in `upstream/LICENSE`.
+- KEDA documentation is CC-BY-4.0, © KEDA Authors. The two teaching manifests are attributed adaptations.
 
-Adattamenti: nome `keda-http`; immagine HTTP echo fissata a `1.0.0` e verificata
-per ARM64; requests/limits e readiness probe; nessun Service necessario per
-osservare le repliche; trigger Cron al posto dell'esempio HTTP/Prometheus;
-UTC, due repliche massime, polling 5 s e cooldown 20 s per una dimostrazione breve.
-Il tutorial HTTP completo richiederebbe anche Prometheus e metriche applicative.
+The exercise names the workload keda-http, pins the ARM64-verified HTTP echo image to 1.0.0 and adds requests, limits and a readiness probe. Observing replicas requires no Service. A UTC Cron trigger, two-replica maximum, five-second polling and 20-second cooldown keep the demonstration short. The full HTTP tutorial uses Prometheus and application metrics.
 
-KEDA 2.21 è testata upstream con Kubernetes 1.34–1.36
-([compatibilità](https://keda.sh/docs/2.21/operate/cluster/#kubernetes-compatibility));
-il laboratorio usa Kubernetes 1.35.6. Le immagini della release sono fissate.
+Upstream tested KEDA 2.21 with Kubernetes 1.34–1.36. The lab uses Kubernetes 1.35.6 and pinned release images. [Compatibility](https://keda.sh/docs/2.21/operate/cluster/#kubernetes-compatibility).
 
-## 1. Preparare il cluster e installare KEDA
+## 1. Prepare the cluster and install KEDA
 
-Prima completare lo scale-down del Cluster Autoscaler, disinstallarlo e rimuovere
-il carico. Riutilizzare il nodo lab-small pulito. Dalla radice del progetto:
+Finish Cluster Autoscaler scale-down, uninstall that controller and remove its load. Reuse the clean lab-small node. From the repository root:
 
 ```sh
 source scripts/configure.sh
@@ -41,15 +30,9 @@ kubectl get apiservice v1beta1.external.metrics.k8s.io --ignore-not-found
 cd kubernetes/lecture03/keda
 ```
 
-Controllare che il contesto sia `lecture03` (o il cluster dedicato scelto) e
-che il namespace corrente sia `default`; un valore vuoto indica `default`.
-I manifest dell’applicazione indicano quel namespace, e i comandi di
-osservazione qui sotto lo assumono. Se è diverso, usare `-n default` nei comandi
-dell’applicazione.
+Check that the context is lecture03 or your chosen dedicated cluster and that the namespace is default (an empty value also means default). The application manifests and observation commands use default. If your current namespace differs, add `-n default` to application commands.
 
-Se KEDA o un altro adapter per external.metrics esistono già, fermarsi e consultare
-l'operatore: questa procedura installa e poi rimuove una propria istanza dedicata.
-Il Metrics Server di Kubernetes (`metrics.k8s.io`) resta al suo posto.
+If KEDA or another external.metrics adapter is already present, stop and consult the instructor. This procedure installs and removes a dedicated copy. Leave Kubernetes Metrics Server (`metrics.k8s.io`) in place.
 
 ```sh
 kubectl apply --server-side -f upstream/keda-2.21.0.yaml
@@ -59,26 +42,19 @@ kubectl -n keda rollout status deployment/keda-admission --timeout=5m
 kubectl wait --for=condition=Available apiservice/v1beta1.external.metrics.k8s.io --timeout=120s
 ```
 
-Checkpoint: tre Deployment disponibili e API esterna Available. Durante la
-prima generazione dei certificati, l’operatore può uscire volontariamente dopo
-l’aggiornamento dei Secret. Anche webhook e metrics-apiserver possono riavviarsi
-se partono prima che `/certs/tls.crt` e `/certs/ca.crt` siano disponibili: è stato
-osservato nella ripetizione della prova. Non assumere che qualunque riavvio sia
-innocuo; controllarne la causa:
+Check for three available Deployments and an Available external API. During initial certificate generation, the operator may exit voluntarily after refreshing Secrets. In the rerun, the webhook and metrics-apiserver also restarted when they started before `/certs/tls.crt` and `/certs/ca.crt` were available. Check the cause of each restart.
 
 ```sh
-# Usare --previous solo per i componenti che risultano riavviati:
+# Use --previous only for components that restarted:
 kubectl -n keda logs deployment/keda-operator --previous
 kubectl -n keda logs deployment/keda-metrics-apiserver --previous
 kubectl -n keda logs deployment/keda-admission --previous
 kubectl -n keda get pods
 ```
 
-Procedere solo dopo i rollout e l’API Available, con contatori dei riavvii
-stabili. Se i componenti non convergono o gli errori persistono, conservare i log
-e consultare l’operatore, senza disabilitare webhook o controlli TLS.
+Proceed after rollout and API availability, with restart counts stable. If errors persist, save the logs and consult the instructor. Keep webhooks and TLS checks enabled.
 
-## 2. Avviare l'applicazione e scegliere gli orari
+## 2. Start the application and choose the window
 
 ```sh
 kubectl apply -f deployment.yaml
@@ -86,23 +62,16 @@ kubectl rollout status deployment/keda-http --timeout=3m
 date -u '+%H:%M UTC'
 ```
 
-Attendere prima il download dell'immagine. **Ad ogni esecuzione**, modificare
-in `scaledobject.yaml` i due orari: `start` circa due minuti nel futuro e `end`
-circa due minuti dopo `start`, lasciando `timezone: Etc/UTC`.
-I campi cron sono `minuto ora giorno-del-mese mese giorno-della-settimana`.
-Per esempio, se ora sono le 10:50 UTC:
+Wait for the image download first. **For each run**, edit the two times in `scaledobject.yaml`. Set start about two minutes ahead and end about two minutes after start. Keep `timezone: Etc/UTC`. Cron fields are minute, hour, day of month, month and day of week. For example, at 10:50 UTC:
 
 ```yaml
 start: "52 10 * * *"
 end: "54 10 * * *"
 ```
 
-La finestra si ripete ogni giorno: il manifest non è un timer relativo.
-Non riutilizzare gli orari della prova registrata senza aggiornarli.
-Start ed end devono essere diversi. Il Cron scaler mantiene un Deployment
-attivo durante la finestra; non avvia Job periodici come un CronJob.
+The window repeats daily. Update the recorded times before using the manifest. Start and end must differ. The Cron scaler keeps a Deployment active during the window, whereas a CronJob starts scheduled Jobs.
 
-## 3. Osservare zero, attivazione e ritorno a zero
+## 3. Observe activation and the return to zero
 
 ```sh
 kubectl apply -f scaledobject.yaml
@@ -110,7 +79,7 @@ kubectl wait --for=condition=Ready scaledobject/keda-http-window --timeout=60s
 kubectl get deployment keda-http -w
 ```
 
-In un altro terminale, dopo `source scripts/configure.sh` dalla radice:
+In a second terminal, source `scripts/configure.sh` from the repository root.
 
 ```sh
 kubectl get scaledobjects,hpa
@@ -118,23 +87,15 @@ kubectl get pods -l app=keda-http
 kubectl describe scaledobject keda-http-window
 ```
 
-Checkpoint da registrare, senza modificare manualmente `replicas`:
+Record these checkpoints without manually adjusting replicas.
 
-1. Prima di start: `Ready=True`, `Active=False`, Deployment a zero.
-2. Durante la finestra: `Active=True`, Deployment con due repliche disponibili;
-   HPA `keda-hpa-keda-http-window` creato da KEDA.
-3. Dopo la chiusura e il cooldown: `Active=False`, Deployment di nuovo a zero e nessun
-   Pod keda-http. Polling e riconciliazione possono aggiungere alcuni secondi.
+1. Before start: Ready=True, Active=False and zero Deployment replicas.
+2. During the window: Active=True, two available replicas and the KEDA-generated HPA `keda-hpa-keda-http-window`.
+3. After closing and cooldown: Active=False, zero replicas and no keda-http Pods. Polling and reconciliation may add several seconds.
 
-Il cooldown di 20 s decorre dall’ultima rilevazione attiva (polling ogni 5 s)
-e riguarda il ritorno a zero, non sostituisce la finestra
-HPA di scale-down tra repliche positive. L'HPA può mostrare minimo 1 o
-`ScalingDisabled` quando KEDA porta il Deployment a zero: osservare il
-Deployment e lo ScaledObject insieme. Non creare un secondo HPA sullo stesso
-Deployment. Non riapplicare `deployment.yaml` durante la prova: contiene
-`replicas: 1` per la verifica iniziale.
+The 20-second cooldown runs from the last active observation, sampled every five seconds. It governs the return to zero. HPA stabilization governs scale-down between positive replica counts. HPA may show minimum 1 or ScalingDisabled at zero. Observe the Deployment and ScaledObject together. Do not create a second HPA for the same Deployment or reapply deployment.yaml during the test; that file declares one initial replica for verification.
 
-Diagnosi in caso di mancata convergenza:
+If the workload does not converge, collect diagnostics.
 
 ```sh
 kubectl describe scaledobject keda-http-window
@@ -144,19 +105,18 @@ kubectl get events --sort-by=.lastTimestamp
 kubectl top nodes
 ```
 
-Consultare l'operatore se la prova fallisce; conservare orari e log.
+Keep timestamps and logs and consult the instructor if the test fails.
 
-## 4. Cleanup prima dell'esercizio successivo
+## 4. Clean up before the next exercise
 
-Dopo aver osservato il ritorno a zero, terminare i watch con Ctrl+C.
-Eliminare lo ScaledObject mentre KEDA è ancora attivo:
+After observing zero replicas, stop the watches with Ctrl+C. Delete the ScaledObject while KEDA is still running.
 
 ```sh
 kubectl delete -f scaledobject.yaml
 kubectl wait --for=delete hpa/keda-hpa-keda-http-window --timeout=60s
 kubectl delete -f deployment.yaml
 kubectl get pods,hpa -n default
-# Solo l'installazione KEDA creata per questa prova:
+# Only remove the dedicated KEDA installation created for this run:
 kubectl delete -f upstream/keda-2.21.0.yaml --timeout=180s
 kubectl get crd
 kubectl get apiservice v1beta1.external.metrics.k8s.io --ignore-not-found
@@ -164,39 +124,22 @@ kubectl get ns keda --ignore-not-found
 kubectl get nodes
 ```
 
-Checkpoint: ScaledObject, HPA, Deployment e Pod didattici assenti; namespace,
-CRD, webhook e API esterna KEDA rimossi; il nodo rimane Ready. Il manifest
-upstream include oggetti di cluster: non usarne la cancellazione su KEDA condivisa.
+Check that the exercise ScaledObject, HPA, Deployment and Pods are absent. The KEDA namespace, CRDs, webhook and external API should be gone, and the node should still be Ready. The upstream manifest includes cluster-scoped objects. Do not delete a shared KEDA installation.
 
-Prima di MySQL utilizzare il setup a due lab-medium di [../README.md](../README.md),
-dopo il cleanup. Risultati della prova in [../SESSION.md](../SESSION.md).
+After cleanup, use the [two-lab-medium setup](../README.md) before MySQL. [Recorded results](../SESSION.md).
 
 
-## Prova registrata — 11 novembre 2026
+## Recorded run — November 11, 2026
 
-Finestra usata: 10:53–10:55 UTC. Deployment a zero prima dell’apertura,
-una replica alle 10:53:07, due disponibili alle 10:53:24; `Active=False`
-alle 10:55:01 e ritorno a zero osservato alle 10:55:17.
-Il polling campiona il comportamento: gli orari sono osservazioni, non
-la misura esatta dell’istante di transizione. Il singolo nodo è rimasto Ready.
-La partenza da una replica è servita solo a verificare l’immagine; durante
-il ciclo KEDA non è stato eseguito alcuno scaling manuale.
+The window was 10:53–10:55 UTC. The Deployment was at zero before opening, one replica at 10:53:07 and two available at 10:53:24. Active=False at 10:55:01 and zero replicas observed at 10:55:17. These are polling observations. The single node stayed Ready. The initial replica verified the image. No manual scaling occurred during the KEDA cycle.
 
-Log: [finestra e manifest](../evidence/62-keda-window.txt),
-[sequenza di scaling](../evidence/63-keda-scaling.log),
-[condizioni ed eventi](../evidence/64-keda-result-details.log).
+[Window and manifest](../evidence/62-keda-window.txt), [scaling sequence](../evidence/63-keda-scaling.log), [conditions and events](../evidence/64-keda-result-details.log).
 
-Cleanup completo verificato alle 10:58:09 UTC: [log finale](../evidence/65-keda-cleanup.log).
+Full cleanup was verified at 10:58:09 UTC. [Final log](../evidence/65-keda-cleanup.log).
 
 
-### Seconda prova — 11 novembre 2026
+### Second run — November 11, 2026
 
-Ripetuto il ciclo con finestra **12:29–12:31 UTC**: due repliche disponibili
-alle 12:29:22, ritorno a zero alle 12:31:19. Verificata anche la risposta HTTP
-`Hello, KEDA!`. Cleanup concluso alle 12:32:02; rimane il nodo lab-small Ready.
-I manifest conservano gli orari di questa seconda prova: aggiornarli prima
-della prossima esecuzione.
+With the **12:29–12:31 UTC** window, two replicas were available at 12:29:22 and zero at 12:31:19. The HTTP response was `Hello, KEDA!`. Cleanup finished at 12:32:02 with one Ready lab-small node. The manifests contain the times from this run. Update them for the next one.
 
-Evidenze: [ciclo](../evidence/keda-rerun-20261111-1226/04-cycle.log),
-[HTTP](../evidence/keda-rerun-20261111-1226/05-http.txt),
-[cleanup](../evidence/keda-rerun-20261111-1226/07-cleanup.log).
+[Cycle](../evidence/keda-rerun-20261111-1226/04-cycle.log), [HTTP](../evidence/keda-rerun-20261111-1226/05-http.txt), [cleanup](../evidence/keda-rerun-20261111-1226/07-cleanup.log).

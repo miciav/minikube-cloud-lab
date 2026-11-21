@@ -118,7 +118,7 @@ Recreate the cluster after changing host resources.
 Use a disposable lab for a complete run. See [course verification](course-verification.md) for runtime selection, prerequisites, expected results and cleanup.
 
 For the lecture03 deck (HPA, VPA, Cluster Autoscaler, KEDA, CRD and MySQL Operator),
-use the separate [lecture03 runner](../kubernetes/lecture03/README.md#esecuzione-automatica-del-deck):
+use the separate [lecture03 runner](../kubernetes/lecture03/README.md#run-the-deck-automatically):
 `python3 scripts/verify-lecture03.py --recreate-empty-cluster`.
 It requires a running platform and an empty, disposable `lecture03` cluster
 (or no cluster). Unlike the general acceptance suite, it recreates that dedicated
