@@ -248,21 +248,23 @@ Use the localhost Service endpoint shown by `lab services` with containerized ku
 
 ### Try NodePort and LoadBalancer
 
-These Services reuse the existing dashboard Pods, so the exercise adds no server
-workload. **Predict:** can two LoadBalancer Services both use port 80? Which port
+Create a dedicated namespace and one Nginx replica for this exercise. **Predict:** can two LoadBalancer Services both use port 80? Which port
 will you use from your computer?
 
 ```sh
-kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-node --type=NodePort --port=80 --target-port=8080
-kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-lb-one --type=LoadBalancer --port=80 --target-port=8080
-kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-lb-two --type=LoadBalancer --port=80 --target-port=8080
-kubectl -n yakd-dashboard get services
+kubectl create namespace service-demo
+kubectl -n service-demo create deployment web --image=nginx:1.28-alpine --port=80
+kubectl -n service-demo rollout status deployment/web
+kubectl -n service-demo expose deployment web --name=web-node --type=NodePort --port=80 --target-port=80
+kubectl -n service-demo expose deployment web --name=web-lb-one --type=LoadBalancer --port=80 --target-port=80
+kubectl -n service-demo expose deployment web --name=web-lb-two --type=LoadBalancer --port=80 --target-port=80
+kubectl -n service-demo get services
 lab services
 ```
 
 Wait a few seconds if LOCAL_ENDPOINT is empty, then repeat `lab services`. Copy
 each displayed endpoint into `curl http://127.0.0.1:PORT` (replace PORT) and confirm
-that all three return dashboard HTML. NodePort uses its Kubernetes NodePort on
+that all three return the Nginx welcome page. NodePort uses its Kubernetes NodePort on
 localhost. Each LoadBalancer uses a different Docker IP and a free mapped host
 port, even though both Services use port 80.
 
@@ -285,11 +287,11 @@ or type may interrupt connections and assign a new LoadBalancer host port.
 Delete the exercise Services and check that their relay containers disappear:
 
 ```sh
-kubectl -n yakd-dashboard delete service dashboard-node dashboard-lb-one dashboard-lb-two
+kubectl delete namespace service-demo
 lab services
 ```
 
-The original dashboard remains. Cluster deletion cleans up every owned relay.
+Cluster deletion cleans up every owned relay.
 The relay address pool needs the current /23 network; for a lab created with the
 old /24 configuration, follow the [README migration](../README.md) before starting.
 

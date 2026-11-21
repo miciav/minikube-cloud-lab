@@ -7,6 +7,8 @@ set -euo pipefail
 : "${TEST_CLOUD_CONTAINER:?cloud container ID}"
 : "${TEST_ARTIFACT_DIR:?directory for endpoint snapshots}"
 mkdir -p "$TEST_ARTIFACT_DIR"
+namespace_file="$TEST_ARTIFACT_DIR/exposure-namespace"
+if [[ $1 != prepare && $1 != deleted ]]; then namespace=$(cat "$namespace_file"); fi
 services=(mcl-test-node mcl-test-lb-one mcl-test-lb-two)
 relay_ids() {
     docker ps -aq --filter label=minikube-cloud-lab.service-proxy=true \
@@ -24,27 +26,27 @@ wait_for() {
     return 1
 }
 old_relay_gone() { [[ -z $(docker ps -aq --filter "label=minikube-cloud-lab.service-uid=$old_uid" --filter "label=minikube-cloud-lab.network=$TEST_NETWORK") ]]; }
-lb_two_rebound() { kubectl -n yakd-dashboard get service mcl-test-lb-two -o json | jq -e '.metadata.annotations["minikube-cloud-lab.io/host-endpoints"] | fromjson | .[0].hostPort == 30081' > /dev/null; }
-conflict_reported() { kubectl -n yakd-dashboard get service mcl-test-conflict -o json | jq -e '.metadata.annotations | .["minikube-cloud-lab.io/exposure-error"] != null and .["minikube-cloud-lab.io/host-endpoints"] == null' > /dev/null; }
-one_relay_left() { [[ $(relay_ids | wc -l | tr -d ' ') == 1 ]]; }
+lb_two_rebound() { kubectl -n "$namespace" get service mcl-test-lb-two -o json | jq -e '.metadata.annotations["minikube-cloud-lab.io/host-endpoints"] | fromjson | .[0].hostPort == 30081' > /dev/null; }
+conflict_reported() { kubectl -n "$namespace" get service mcl-test-conflict -o json | jq -e '.metadata.annotations | .["minikube-cloud-lab.io/exposure-error"] != null and .["minikube-cloud-lab.io/host-endpoints"] == null' > /dev/null; }
+baseline_restored() { relay_ids | sort > "$TEST_ARTIFACT_DIR/current.ids" && cmp -s "$TEST_ARTIFACT_DIR/baseline.ids" "$TEST_ARTIFACT_DIR/current.ids"; }
 wait_endpoint() {
     local name=$1
     for _ in {1..90}; do
-        if kubectl -n yakd-dashboard get service "$name" -o json | jq -e \
+        if kubectl -n "$namespace" get service "$name" -o json | jq -e \
             '. as $s | .metadata.annotations["minikube-cloud-lab.io/host-endpoints"] | fromjson | length > 0 and all(.[]; . as $p | any($s.spec.ports[]; .nodePort == $p.nodePort and .port == $p.servicePort) and ($s.spec.type != "NodePort" or .hostPort == .nodePort))' > /dev/null 2>&1; then return 0; fi
         sleep 2
     done
-    kubectl -n yakd-dashboard get service "$name" -o yaml
+    kubectl -n "$namespace" get service "$name" -o yaml
     return 1
 }
 check_http() {
     local name=$1 port ip
     wait_endpoint "$name"
-    port=$(kubectl -n yakd-dashboard get service "$name" -o json | jq -r '.metadata.annotations["minikube-cloud-lab.io/host-endpoints"] | fromjson | .[0].hostPort')
-    curl --retry 10 --retry-connrefused --retry-delay 1 --max-time 15 -fsS "http://127.0.0.1:$port" | grep -i '<html' > /dev/null
+    port=$(kubectl -n "$namespace" get service "$name" -o json | jq -r '.metadata.annotations["minikube-cloud-lab.io/host-endpoints"] | fromjson | .[0].hostPort')
+    curl --retry 10 --retry-connrefused --retry-delay 1 --max-time 15 -fsS "http://127.0.0.1:$port" | grep -F 'Welcome to nginx' > /dev/null
     if [[ "$name" == mcl-test-lb-* ]]; then
-        ip=$(kubectl -n yakd-dashboard get service "$name" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-        docker exec "$TEST_CLOUD_CONTAINER" curl --retry 10 --retry-connrefused --max-time 15 -fsS "http://$ip:80" | grep -i '<html' > /dev/null
+        ip=$(kubectl -n "$namespace" get service "$name" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        docker exec "$TEST_CLOUD_CONTAINER" curl --retry 10 --retry-connrefused --max-time 15 -fsS "http://$ip:80" | grep -F 'Welcome to nginx' > /dev/null
     fi
 }
 snapshot() {
@@ -56,12 +58,23 @@ snapshot() {
 }
 case ${1:?prepare, check, mutate-cleanup or deleted} in
     prepare)
+        namespace=$(kubectl create -f - -o jsonpath='{.metadata.name}' <<'YAML'
+apiVersion: v1
+kind: Namespace
+metadata:
+  generateName: service-demo-
+YAML
+)
+        printf '%s\n' "$namespace" > "$namespace_file"
+        relay_ids | sort > "$TEST_ARTIFACT_DIR/baseline.ids"
+        kubectl -n "$namespace" create deployment web --image=nginx:1.28-alpine --port=80
+        kubectl -n "$namespace" rollout status deployment/web --timeout=3m
         for name in "${services[@]}"; do
             kind=LoadBalancer
             if [[ "$name" == mcl-test-node ]]; then kind=NodePort; fi
-            kubectl -n yakd-dashboard expose deployment yakd-dashboard --name="$name" --type="$kind" --port=80 --target-port=8080
+            kubectl -n "$namespace" expose deployment web --name="$name" --type="$kind" --port=80 --target-port=80
         done
-        kubectl -n yakd-dashboard patch service mcl-test-node --type=json -p='[{"op":"replace","path":"/spec/ports/0/nodePort","value":30080}]'
+        kubectl -n "$namespace" patch service mcl-test-node --type=json -p='[{"op":"replace","path":"/spec/ports/0/nodePort","value":30080}]'
         for name in "${services[@]}"; do check_http "$name"; done
         ids=$(relay_ids)
         docker inspect $ids > "$TEST_ARTIFACT_DIR/relays.json"
@@ -72,7 +85,7 @@ from pathlib import Path
 p=Path(sys.argv[1]);network=json.loads((p/'network.json').read_text())[0]
 subnet=ipaddress.ip_network(network['IPAM']['Config'][0]['Subnet']);assert subnet.prefixlen==23
 first,second=list(subnet.subnets(new_prefix=24))
-relays=json.loads((p/'relays.json').read_text());assert len(relays)==4,len(relays)
+relays=json.loads((p/'relays.json').read_text());assert len(relays)==3+len((p/'baseline.ids').read_text().splitlines()),len(relays)
 for relay in relays:
     assert ipaddress.ip_address(relay['NetworkSettings']['Networks'][sys.argv[2]]['IPAddress']) in second
     assert not relay['Mounts']
@@ -80,7 +93,9 @@ for relay in relays:
         assert len(bindings)==1 and bindings[0]['HostIp']=='127.0.0.1',bindings
 relay_ids={r['Id'] for r in relays}
 for key,member in network['Containers'].items():
-    if key not in relay_ids: assert ipaddress.ip_interface(member['IPv4Address']).ip in first,member
+    if key not in relay_ids:
+        ip=ipaddress.ip_interface(member['IPv4Address']).ip
+        assert ip in first or ip==second.network_address,member
 print('Pool separation, four relays, localhost-only bindings and no mounts PASS')
 PY
         snapshot > "$TEST_ARTIFACT_DIR/before.json"
@@ -93,28 +108,29 @@ PY
         echo 'Relay IDs and endpoints survived cloud restart/capacity changes'
         ;;
     mutate-cleanup)
-        old_uid=$(kubectl -n yakd-dashboard get service mcl-test-node -o jsonpath='{.metadata.uid}')
-        kubectl -n yakd-dashboard delete service mcl-test-node
+        old_uid=$(kubectl -n "$namespace" get service mcl-test-node -o jsonpath='{.metadata.uid}')
+        kubectl -n "$namespace" delete service mcl-test-node
         wait_for "relay of deleted NodePort Service removed" old_relay_gone
-        kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=mcl-test-node --type=NodePort --port=80 --target-port=8080
-        kubectl -n yakd-dashboard patch service mcl-test-node --type=json -p='[{"op":"replace","path":"/spec/ports/0/nodePort","value":30080}]'
+        kubectl -n "$namespace" expose deployment web --name=mcl-test-node --type=NodePort --port=80 --target-port=80
+        kubectl -n "$namespace" patch service mcl-test-node --type=json -p='[{"op":"replace","path":"/spec/ports/0/nodePort","value":30080}]'
         check_http mcl-test-node
-        test "$(kubectl -n yakd-dashboard get service mcl-test-node -o jsonpath='{.metadata.uid}')" != "$old_uid"
-        kubectl -n yakd-dashboard patch service mcl-test-lb-two --type=merge -p='{"spec":{"type":"NodePort","ports":[{"name":"http","port":8081,"targetPort":8080,"nodePort":30081,"protocol":"TCP"}]}}'
+        test "$(kubectl -n "$namespace" get service mcl-test-node -o jsonpath='{.metadata.uid}')" != "$old_uid"
+        kubectl -n "$namespace" patch service mcl-test-lb-two --type=merge -p='{"spec":{"type":"NodePort","ports":[{"name":"http","port":8081,"targetPort":80,"nodePort":30081,"protocol":"TCP"}]}}'
         wait_for "LoadBalancer converted to NodePort 30081" lb_two_rebound
-        curl --retry 10 --retry-connrefused --max-time 15 -fsS http://127.0.0.1:30081 | grep -i '<html' > /dev/null
+        curl --retry 10 --retry-connrefused --max-time 15 -fsS http://127.0.0.1:30081 | grep -F 'Welcome to nginx' > /dev/null
         image=$(docker inspect "$TEST_CLOUD_CONTAINER" --format '{{.Image}}')
         blocker=$(docker run -d --entrypoint cloud -p 127.0.0.1:30090:30090 "$image" service-proxy --config-json '[{"listenPort":30090,"target":"127.0.0.1:1"}]')
         trap 'docker rm -f "$blocker" > /dev/null' EXIT
-        kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=mcl-test-conflict --type=NodePort --port=80 --target-port=8080
-        kubectl -n yakd-dashboard patch service mcl-test-conflict --type=json -p='[{"op":"replace","path":"/spec/ports/0/nodePort","value":30090}]'
+        kubectl -n "$namespace" expose deployment web --name=mcl-test-conflict --type=NodePort --port=80 --target-port=80
+        kubectl -n "$namespace" patch service mcl-test-conflict --type=json -p='[{"op":"replace","path":"/spec/ports/0/nodePort","value":30090}]'
         wait_for "occupied NodePort reported as exposure error" conflict_reported
-        kubectl -n yakd-dashboard get service mcl-test-conflict -o json | jq -e '.metadata.annotations["minikube-cloud-lab.io/exposure-error"] | test("port|bind";"i")'
+        kubectl -n "$namespace" get service mcl-test-conflict -o json | jq -e '.metadata.annotations["minikube-cloud-lab.io/exposure-error"] | test("port|bind";"i")'
         docker rm -f "$blocker" > /dev/null
         trap - EXIT
         check_http mcl-test-conflict
-        kubectl -n yakd-dashboard delete service "${services[@]}" mcl-test-conflict
-        wait_for "only the YAKD relay left" one_relay_left
+        kubectl -n "$namespace" delete service "${services[@]}" mcl-test-conflict
+        wait_for "pre-existing relays restored" baseline_restored
+        kubectl delete namespace "$namespace"
         echo 'UID replacement, port/type changes, occupied NodePort recovery and Service cleanup PASS'
         ;;
     deleted)

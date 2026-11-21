@@ -176,9 +176,12 @@ Use ordinary Kubernetes Service commands; the cloud publishes supported Services
 automatically, usually within two seconds while no capacity operation is running:
 
 ```sh
-kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-node --type=NodePort --port=80 --target-port=8080
-kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-lb-one --type=LoadBalancer --port=80 --target-port=8080
-kubectl -n yakd-dashboard expose deployment yakd-dashboard --name=dashboard-lb-two --type=LoadBalancer --port=80 --target-port=8080
+kubectl create namespace service-demo
+kubectl -n service-demo create deployment web --image=nginx:1.28-alpine --port=80
+kubectl -n service-demo rollout status deployment/web
+kubectl -n service-demo expose deployment web --name=web-node --type=NodePort --port=80 --target-port=80
+kubectl -n service-demo expose deployment web --name=web-lb-one --type=LoadBalancer --port=80 --target-port=80
+kubectl -n service-demo expose deployment web --name=web-lb-two --type=LoadBalancer --port=80 --target-port=80
 lab services
 ```
 
@@ -210,7 +213,7 @@ Each Service uses one small relay container from the cloud image. It has no
 Docker socket or credentials and does not count as a cloud machine.
 
 ```sh
-kubectl -n yakd-dashboard delete service dashboard-node dashboard-lb-one dashboard-lb-two
+kubectl delete namespace service-demo
 ```
 
 Deleting a Service removes its relay; deleting the cluster removes all its relays.
