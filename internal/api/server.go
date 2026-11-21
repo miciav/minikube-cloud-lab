@@ -57,7 +57,7 @@ func NewServer(svc *cloud.Service) http.Handler {
 			respond(w, 400, nil, cloud.ErrInvalid)
 			return
 		}
-		op, err := svc.SetDashboard(r.PathValue("name"), req.UID, action == "install")
+		op, err := svc.SetDashboard(r.Context(), r.PathValue("name"), req.UID, action == "install")
 		respond(w, http.StatusAccepted, op, err)
 	})
 	mux.HandleFunc("GET /v1/clusters/{name}/dashboard", func(w http.ResponseWriter, r *http.Request) {

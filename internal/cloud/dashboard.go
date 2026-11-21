@@ -64,7 +64,7 @@ func dashboardPort(svc *corev1.Service) int {
 }
 
 // SetDashboard records the requested addon change before starting infrastructure work.
-func (s *Service) SetDashboard(name, uid string, enabled bool) (Operation, error) {
+func (s *Service) SetDashboard(ctx context.Context, name, uid string, enabled bool) (Operation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if uid == "" {
@@ -88,6 +88,6 @@ func (s *Service) SetDashboard(name, uid string, enabled bool) (Operation, error
 	if err := s.store(next); err != nil {
 		return Operation{}, err
 	}
-	s.launch(op.ID, func() error { return backend.SetDashboard(context.Background(), name, uid, enabled) }, func(*snapshot, error) {})
+	s.launch(op.ID, func() error { return backend.SetDashboard(context.WithoutCancel(ctx), name, uid, enabled) }, func(*snapshot, error) {})
 	return op, nil
 }

@@ -124,29 +124,11 @@ _cloud_lab_configure() {
             shift 2
             "$CLOUD_LAB_ROOT/scripts/rootless-disk-shell.sh" "$@"
             return
-        elif [[ ${1:-} == instances && ${2:-} == create ]]; then
-            local -a args
-            local seed=
-            args=()
-            while (( $# )); do
-                case $1 in
-                    --user-data) shift; [[ -n ${1:-} ]] || { echo "Missing user-data file" >&2; return 2; }; seed=$1; args+=(--user-data=-) ;;
-                    --user-data=*) seed=${1#*=}; args+=(--user-data=-) ;;
-                    *) args+=("$1") ;;
-                esac
-                shift
-            done
-            if [[ -n ${seed:-} && $seed != - ]]; then
-                labcompose exec -T cloud cloud "${args[@]}" < "$seed"
-            else
-                labcompose exec -T cloud cloud "${args[@]}"
-            fi
-            return
         fi
         local -a args=(cloud cloud)
-        local word bootstrap=-
-        # Keep global flags in place when matching the groups create command.
-        for word in groups create; do
+        local file=- flag= word
+        # Consume only global flags and the two command words before interpreting file options.
+        for word in resource action; do
             while [[ $# -gt 0 ]]; do
                 case $1 in
                     --api-url) [[ $# -ge 2 ]] || break; args+=("$1" "$2"); shift 2 ;;
@@ -154,14 +136,18 @@ _cloud_lab_configure() {
                     *) break ;;
                 esac
             done
-            [[ ${1:-} == "$word" ]] || break
+            if [[ $word == resource ]]; then
+                case ${1:-} in groups) flag=--bootstrap ;; instances) flag=--user-data ;; *) break ;; esac
+            elif [[ ${1:-} != create ]]; then
+                break
+            fi
             args+=("$1"); shift
-            if [[ $word == create ]]; then
+            if [[ $word == action ]]; then
                 while [[ $# -gt 0 ]]; do
                     case $1 in
                         --) break ;;
-                        --bootstrap) [[ $# -ge 2 ]] || break; bootstrap=$2; shift; args+=(--bootstrap -) ;;
-                        --bootstrap=*) bootstrap=${1#*=}; args+=(--bootstrap -) ;;
+                        "$flag") [[ $# -ge 2 ]] || break; file=$2; shift; args+=("$flag" -) ;;
+                        "$flag="*) file=${1#*=}; args+=("$flag" -) ;;
                         *) args+=("$1") ;;
                     esac
                     shift
@@ -169,8 +155,8 @@ _cloud_lab_configure() {
             fi
         done
         set -- "${args[@]}" "$@"
-        if [[ $bootstrap != - ]]; then
-            labcompose exec -T "$@" < "$bootstrap"
+        if [[ $file != - ]]; then
+            labcompose exec -T "$@" < "$file"
         elif [[ ! -t 0 || ! -t 1 ]]; then
             labcompose exec -T "$@"
         else

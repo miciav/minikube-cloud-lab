@@ -57,12 +57,14 @@ jobs:
           lab status yakd | grep -F disabled
           bash tests/service-exposure.sh prepare
           lab services
+          lab uninstall instance-autoscaling
           docker compose up -d --force-recreate cloud
           for _ in $(seq 1 60); do
             if cloud machine-types list; then break; fi
             sleep 2
           done
           TEST_CLOUD_CONTAINER=$(docker compose ps -q cloud)
+          lab install instance-autoscaling
           bash tests/service-exposure.sh check
           kubectl get nodes -L node.kubernetes.io/instance-type,topology.kubernetes.io/zone
           # The cloud image must work without either host Kubernetes CLI binary.

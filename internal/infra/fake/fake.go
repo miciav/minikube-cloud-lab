@@ -243,3 +243,12 @@ func (f *Infra) Instances(ctx context.Context) ([]infra.Instance, error) {
 	slices.SortFunc(out, func(a, b infra.Instance) int { return strings.Compare(a.Name, b.Name) })
 	return out, nil
 }
+
+// SetDashboard records the requested addon action for service lifecycle tests.
+func (f *Infra) SetDashboard(ctx context.Context, name, _ string, enabled bool) error {
+	method := "UninstallDashboard"
+	if enabled {
+		method = "InstallDashboard"
+	}
+	return f.record(ctx, Call{Method: method, Cluster: name})
+}

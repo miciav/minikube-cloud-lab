@@ -428,3 +428,29 @@ func TestOutcomePersistenceFailureDoesNotLeaveWaitersHanging(t *testing.T) {
 		t.Fatalf("persistence failure: %+v", result)
 	}
 }
+
+func TestDashboardOperationSurvivesRequestCancellation(t *testing.T) {
+	s, backend, _ := newService(t)
+	if _, err := s.SetDashboard(t.Context(), "demo", "", true); !errors.Is(err, cloud.ErrInvalid) {
+		t.Fatalf("empty context UID: %v", err)
+	}
+	if _, err := s.SetDashboard(t.Context(), "demo", "uid", true); !errors.Is(err, cloud.ErrNotFound) {
+		t.Fatalf("missing cluster: %v", err)
+	}
+	create(t, s, 1)
+	for _, enabled := range []bool{true, false} {
+		ctx, cancel := context.WithCancel(t.Context())
+		op, err := s.SetDashboard(ctx, "demo", "uid", enabled)
+		cancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result := wait(t, s, op); result.Status != "DONE" {
+			t.Fatalf("%+v", result)
+		}
+	}
+	calls := backend.Calls()
+	if calls[len(calls)-2].Method != "InstallDashboard" || calls[len(calls)-1].Method != "UninstallDashboard" {
+		t.Fatalf("unexpected operations: %+v", calls)
+	}
+}

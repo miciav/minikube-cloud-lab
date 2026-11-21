@@ -85,3 +85,35 @@ func TestMalformedGroupRequests(t *testing.T) {
 		t.Fatalf("unknown module action: %d", resp.StatusCode)
 	}
 }
+
+func TestDashboardModuleAPI(t *testing.T) {
+	client, s, _, url := setup(t)
+	ctx := t.Context()
+	health, err := client.InstanceAutoscalingHealth(ctx)
+	if err != nil || health.State != "disabled" {
+		t.Fatalf("%+v %v", health, err)
+	}
+	if _, err := client.SetDashboard(ctx, "demo", "uid", "install"); err == nil {
+		t.Fatal("missing cluster")
+	}
+	op, err := s.CreateCluster("demo", "lab-small", 1, 2, "student")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait(t, s, op)
+	for _, action := range []string{"install", "uninstall"} {
+		op, err := client.SetDashboard(ctx, "demo", "uid", action)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wait(t, s, op)
+	}
+	for _, action := range []string{"install", "other"} {
+		if _, err := client.SetDashboard(ctx, "demo", "", action); err == nil {
+			t.Fatal("accepted invalid request")
+		}
+	}
+	if resp, _ := call(t, http.MethodPost, url+"/v1/clusters/demo/dashboard/install", "bad"); resp.StatusCode != http.StatusBadRequest {
+		t.Fatal(resp.Status)
+	}
+}

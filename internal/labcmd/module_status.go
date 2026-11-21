@@ -2,21 +2,25 @@ package labcmd
 
 import (
 	"fmt"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/miciav/minikube-cloud-lab/internal/api"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+
 	"github.com/spf13/cobra"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/miciav/minikube-cloud-lab/internal/api"
 )
 
 func moduleStatus(factory connector, path, kubeContext *string, files []string) *cobra.Command {
 	root := &cobra.Command{Use: "status", Short: "Show module scope and observed readiness"}
 	root.AddCommand(&cobra.Command{Use: "instance-autoscaling", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		h, err := api.NewClient("http://127.0.0.1:8080").InstanceAutoscalingHealth(cmd.Context())
+		h, err := moduleCloudClient().InstanceAutoscalingHealth(cmd.Context())
 		if err != nil {
 			return err
 		}
@@ -78,36 +82,13 @@ func dashboardCommand(action string, factory connector, path, kubeContext *strin
 		}
 		ctx := cmd.Context()
 		if action == "status" {
-			d, err := kube.Resource(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}).Namespace("yakd-dashboard").Get(ctx, "yakd-dashboard", metav1.GetOptions{})
-			state := "disabled"
-			if err != nil && !apierrors.IsNotFound(err) {
-				return err
-			}
-			svc, serr := kube.Resource(schema.GroupVersionResource{Version: "v1", Resource: "services"}).Namespace("yakd-dashboard").Get(ctx, "yakd-dashboard", metav1.GetOptions{})
-			if serr != nil && !apierrors.IsNotFound(serr) {
-				return serr
-			}
-			if err == nil || serr == nil {
-				state = "degraded"
-			}
-			if err == nil && serr == nil {
-				available, _, _ := unstructured.NestedInt64(d.Object, "status", "availableReplicas")
-				state = "installing"
-				if available > 0 {
-					state = "degraded missing local endpoint"
-					if ep, _ := serviceEndpoints(svc.GetAnnotations()); ep != "-" {
-						state = "ready"
-					}
-				}
-			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), "yakd cluster", state)
-			return err
+			return dashboardStatus(cmd, kube)
 		}
 		ns, err := kube.Resource(schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}).Get(ctx, "kube-system", metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
-		client := api.NewClient("http://127.0.0.1:8080")
+		client := moduleCloudClient()
 		clusters, err := client.Clusters(ctx)
 		if err != nil {
 			return err
@@ -137,4 +118,41 @@ func dashboardCommand(action string, factory connector, path, kubeContext *strin
 		}
 		return nil
 	}}
+}
+
+func moduleCloudClient() *api.Client {
+	address := os.Getenv("CLOUD_API_URL")
+	if address == "" {
+		address = "http://127.0.0.1:8080"
+	}
+	return api.NewClient(address)
+}
+
+func dashboardStatus(cmd *cobra.Command, kube dynamic.Interface) error {
+	ctx := cmd.Context()
+	d, err := kube.Resource(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}).Namespace("yakd-dashboard").Get(ctx, "yakd-dashboard", metav1.GetOptions{})
+	state := "disabled"
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	svc, serr := kube.Resource(schema.GroupVersionResource{Version: "v1", Resource: "services"}).Namespace("yakd-dashboard").Get(ctx, "yakd-dashboard", metav1.GetOptions{})
+	if serr != nil && !apierrors.IsNotFound(serr) {
+		return serr
+	}
+	if err == nil || serr == nil {
+		state = "degraded"
+	}
+	if err == nil && serr == nil {
+		available, _, _ := unstructured.NestedInt64(d.Object, "status", "availableReplicas")
+		state = "installing"
+		observed, _, _ := unstructured.NestedInt64(d.Object, "status", "observedGeneration")
+		if available > 0 && observed >= d.GetGeneration() {
+			state = "degraded missing local endpoint"
+			if ep, _ := serviceEndpoints(svc.GetAnnotations()); ep != "-" {
+				state = "ready"
+			}
+		}
+	}
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), "yakd cluster", state)
+	return err
 }

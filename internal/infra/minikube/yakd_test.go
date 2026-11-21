@@ -12,6 +12,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	clientapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/minikube/pkg/minikube/config"
@@ -140,5 +141,41 @@ func TestYAKDFailuresReturnWithoutEnablingAddon(t *testing.T) {
 				t.Fatalf("failed addon marked enabled: %+v, %v", saved, err)
 			}
 		})
+	}
+}
+
+func TestDashboardRemovalChecksContextAndOwnership(t *testing.T) {
+	var removed bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/v1/namespaces/kube-system":
+			_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"Namespace","metadata":{"uid":"cluster-uid"}}`))
+		case strings.Contains(r.URL.Path, "/clusterrolebindings/"):
+			if r.Method == http.MethodDelete {
+				var options metav1.DeleteOptions
+				if err := json.NewDecoder(r.Body).Decode(&options); err != nil || options.Preconditions == nil || options.Preconditions.UID == nil || *options.Preconditions.UID != "owner" {
+					t.Error("delete without object identity")
+				}
+				removed = true
+			}
+			_, _ = w.Write([]byte(`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"ClusterRoleBinding","metadata":{"uid":"owner","managedFields":[{"manager":"cloud-yakd","operation":"Apply"}]}}`))
+		case strings.Contains(r.URL.Path, "/deployments/"):
+			if r.Method != http.MethodGet {
+				t.Error("deleted student deployment")
+			}
+			_, _ = w.Write([]byte(`{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"uid":"student"}}`))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+		}
+	}))
+	defer server.Close()
+	yakdConfig(t, server.URL)
+	backend := &Infra{home: os.Getenv("MINIKUBE_HOME")}
+	if err := backend.SetDashboard(t.Context(), "demo", "wrong", false); err == nil || removed {
+		t.Fatal("wrong context accepted")
+	}
+	if err := backend.SetDashboard(t.Context(), "demo", "cluster-uid", false); err == nil || !strings.Contains(err.Error(), "unowned") || !removed {
+		t.Fatalf("removed=%t err=%v", removed, err)
 	}
 }

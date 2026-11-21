@@ -309,7 +309,7 @@ func TestReadingModuleHealthDoesNotActivate(t *testing.T) {
 	}
 	components := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/-/ready" {
-			w.WriteHeader(503)
+			w.WriteHeader(http.StatusServiceUnavailable)
 		}
 	}))
 	defer components.Close()

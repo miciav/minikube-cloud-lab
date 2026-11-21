@@ -251,3 +251,69 @@ func TestModuleStatusThroughLab(t *testing.T) {
 		}
 	}
 }
+
+func TestModuleCommandsThroughCloud(t *testing.T) {
+	f := newFake()
+	ns := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "kube-system", "uid": "selected"}}}
+	if err := f.Tracker().Create(schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}, ns, ""); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/clusters":
+			_, _ = fmt.Fprint(w, `[{"name":"demo"}]`)
+		case "/v1/instance-autoscaling/health":
+			_, _ = fmt.Fprint(w, `{"state":"degraded","detail":"metrics offline"}`)
+		case "/v1/clusters/demo/dashboard/install", "/v1/clusters/demo/dashboard/uninstall":
+			data, _ := io.ReadAll(r.Body)
+			if !strings.Contains(string(data), "selected") {
+				t.Error("missing context identity")
+			}
+			_, _ = fmt.Fprint(w, `{"id":"op-1","status":"RUNNING"}`)
+		case "/v1/operations/op-1":
+			_, _ = fmt.Fprint(w, `{"id":"op-1","status":"DONE"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("CLOUD_API_URL", server.URL)
+	for _, action := range []string{"install", "uninstall"} {
+		if _, err := run(t, f, action, "yakd"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if out, err := run(t, f, "status", "instance-autoscaling"); err != nil || !strings.Contains(out, "degraded metrics offline") {
+		t.Fatalf("%q %v", out, err)
+	}
+}
+
+func TestDashboardReadiness(t *testing.T) {
+	f := newFake()
+	deployment := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
+	service := schema.GroupVersionResource{Version: "v1", Resource: "services"}
+	obj := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": map[string]any{"name": "yakd-dashboard", "namespace": "yakd-dashboard"}, "status": map[string]any{"availableReplicas": int64(1)}}}
+	if err := f.Tracker().Create(deployment, obj, "yakd-dashboard"); err != nil {
+		t.Fatal(err)
+	}
+	check := func(want string) {
+		t.Helper()
+		out, err := run(t, f, "status", "yakd")
+		if err != nil || !strings.Contains(out, want) {
+			t.Fatalf("%q %v; want %s", out, err, want)
+		}
+	}
+	check("degraded")
+	svc := obj.DeepCopy()
+	svc.SetAPIVersion("v1")
+	svc.SetKind("Service")
+	if err := f.Tracker().Create(service, svc, "yakd-dashboard"); err != nil {
+		t.Fatal(err)
+	}
+	check("missing local endpoint")
+	svc.SetAnnotations(map[string]string{"minikube-cloud-lab.io/host-endpoints": `[{"servicePort":80,"nodePort":31000,"hostPort":31000}]`})
+	if err := f.Tracker().Update(service, svc, "yakd-dashboard"); err != nil {
+		t.Fatal(err)
+	}
+	check("ready")
+}

@@ -12,8 +12,9 @@ case "$image" in
 esac
 vm="init-test-$(date +%s)-$$"
 scratch=$(mktemp -d)
+created=false
 cleanup() {
-    cloud instances delete "$vm" </dev/null || true
+    if $created; then cloud instances delete "$vm" </dev/null || true; fi
     rm -rf "$scratch"
 }
 trap cleanup EXIT
@@ -41,6 +42,7 @@ runcmd:
   - [sh, -c, 'echo once >> /var/tmp/cloud-init-count']
 CONFIG
 cloud instances create "$vm" --image "$image" --user-data=- < "$scratch/config"
+created=true
 guest() { cloud instances ssh "$vm" -- "$@" </dev/null; }
 guest curl -fsS localhost/version | grep -Fx cloud-init-ok
 guest sudo passwd -S learner | grep -E '^learner P '

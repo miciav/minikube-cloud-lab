@@ -233,20 +233,8 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 		return infra.Instance{}, fmt.Errorf("volume %s ownership mismatch", name)
 	}
 	cfg, host, endpoints := instanceContainer(spec, image, i.network, ip, instanceRootless())
-	if diskVolume := os.Getenv("CLOUD_DISK_VOLUME"); diskVolume != "" && !instanceRootless() {
-		slot := filepath.Join("slots", spec.Name)
-		path := filepath.Join(filepath.Dir(i.home), "instance-disks", slot)
-		if err := os.MkdirAll(path, 0o700); err != nil {
-			return infra.Instance{}, err
-		}
-		entries, err := os.ReadDir(path)
-		if err != nil {
-			return infra.Instance{}, err
-		}
-		if len(entries) != 0 {
-			return infra.Instance{}, fmt.Errorf("disk attachments remain for %s", spec.Name)
-		}
-		host.Mounts = append(host.Mounts, mount.Mount{Type: mount.TypeVolume, Source: diskVolume, Target: "/var/lib/mcl-disk-images", VolumeOptions: &mount.VolumeOptions{Subpath: slot, NoCopy: true}})
+	if err := i.mountDiskSlot(host, spec.Name); err != nil {
+		return infra.Instance{}, err
 	}
 	created, err := client.ContainerCreate(ctx, cfg, host, endpoints, nil, name)
 	if err != nil {
@@ -270,6 +258,25 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 		}
 	}
 	return infra.Instance{Name: spec.Name, IP: ip.String(), HostKey: key, GroupID: spec.GroupID, Running: true}, nil
+}
+
+func (i *Infra) mountDiskSlot(host *container.HostConfig, name string) error {
+	if diskVolume := os.Getenv("CLOUD_DISK_VOLUME"); diskVolume != "" && !instanceRootless() {
+		slot := filepath.Join("slots", name)
+		path := filepath.Join(filepath.Dir(i.home), "instance-disks", slot)
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return err
+		}
+		if len(entries) != 0 {
+			return fmt.Errorf("disk attachments remain for %s", name)
+		}
+		host.Mounts = append(host.Mounts, mount.Mount{Type: mount.TypeVolume, Source: diskVolume, Target: "/var/lib/mcl-disk-images", VolumeOptions: &mount.VolumeOptions{Subpath: slot, NoCopy: true}})
+	}
+	return nil
 }
 
 // Execute a file so the kernel selects its shebang interpreter. Plain scripts retain sh semantics.

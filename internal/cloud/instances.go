@@ -325,13 +325,7 @@ func (s *Service) reconcileInstances(now time.Time) {
 	observed, err := s.instances.Instances(context.Background())
 	if err != nil {
 		s.logger.Error("cannot reconcile instances; records preserved for cleanup", "error", err)
-		for i := range s.state.Instances {
-			member := &s.state.Instances[i]
-			if member.GroupID != "" && member.Status != "CREATING" && member.Status != "DELETING" {
-				continue
-			}
-			member.Status = "ERROR"
-		}
+		s.markUnobservedInstances()
 		return
 	}
 	byName := make(map[string]infra.Instance, len(observed))
@@ -371,6 +365,16 @@ func (s *Service) reconcileInstances(now time.Time) {
 	s.state.Instances = kept
 	for name := range byName {
 		s.logger.Warn("ignoring unregistered instance container", "instance", name)
+	}
+}
+
+func (s *Service) markUnobservedInstances() {
+	for i := range s.state.Instances {
+		member := &s.state.Instances[i]
+		if member.GroupID != "" && member.Status != "CREATING" && member.Status != "DELETING" {
+			continue
+		}
+		member.Status = "ERROR"
 	}
 }
 

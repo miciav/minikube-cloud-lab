@@ -116,8 +116,8 @@ for image in ubuntu-26.04 debian-12; do
 done
 python3 tests/rootless-disk-console.py
 if $full; then bash tests/instance-autoscaling.sh; fi
-created=true
 cloud instances create "$instance"
+created=true
 cloud instances ssh "$instance" -- sudo touch "/var/tmp/$instance"
 cloud instances stop "$instance"
 cloud instances start "$instance"
