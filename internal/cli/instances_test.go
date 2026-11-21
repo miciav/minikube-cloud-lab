@@ -118,13 +118,13 @@ func TestInstanceUserData(t *testing.T) {
 		{"ubuntu-26.04", "", false},
 		{"ubuntu-26.04", "bad header", false},
 		{"ubuntu-26.04", strings.Repeat("a", 65537), false},
-		{"debian-12", config, false},
+		{"debian-12", config, true},
 		{"ubuntu-26.04", config, true},
 	} {
 		if err := os.WriteFile(path, []byte(tc.data), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		_, err := execute(t, url, "instances", "create", "vm", "--image", tc.image, "--user-data", path)
+		_, err := execute(t, url, "instances", "create", "vm-"+strings.Split(tc.image, "-")[0], "--image", tc.image, "--user-data", path)
 		if (err == nil) != tc.ok {
 			t.Fatalf("image=%s bytes=%d: %v", tc.image, len(tc.data), err)
 		}

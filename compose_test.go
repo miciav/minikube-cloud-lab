@@ -13,13 +13,13 @@ import (
 
 func TestComposeConfiguration(t *testing.T) {
 	envPath := filepath.Join(t.TempDir(), "sample.env")
-	if err := os.WriteFile(envPath, []byte("UID=1001\nGID=1001\nDOCKER_GID=998\nHOME=/tmp/cloud-lab-home\nCLOUD_IMAGE=example/cloud:test\nLAB_IMAGE=example/lab:test\nPORTAL_IMAGE=example/portal:test\nUBUNTU_IMAGE=example/ubuntu:test\n"), 0o600); err != nil {
+	if err := os.WriteFile(envPath, []byte("UID=1001\nGID=1001\nDOCKER_GID=998\nHOME=/tmp/cloud-lab-home\nCLOUD_IMAGE=example/cloud:test\nLAB_IMAGE=example/lab:test\nPORTAL_IMAGE=example/portal:test\nUBUNTU_IMAGE=example/ubuntu:test\nDEBIAN_IMAGE=example/debian:test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("docker", "compose", "--env-file", envPath, "-f", "compose.yaml", "--profile", "tools", "config", "--format", "json")
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
-		if name != "UID" && name != "GID" && name != "DOCKER_GID" && name != "HOME" && name != "CLOUD_IMAGE" && name != "LAB_IMAGE" && name != "UBUNTU_IMAGE" {
+		if name != "UID" && name != "GID" && name != "DOCKER_GID" && name != "HOME" && name != "CLOUD_IMAGE" && name != "LAB_IMAGE" && name != "UBUNTU_IMAGE" && name != "DEBIAN_IMAGE" {
 			cmd.Env = append(cmd.Env, entry)
 		}
 	}
@@ -104,8 +104,8 @@ func TestComposeConfiguration(t *testing.T) {
 	if len(cloud.Networks) != 2 || cloud.Networks["lab"].IPv4Address != "172.30.0.254" || len(lab.Networks) != 0 {
 		t.Fatalf("shared network: cloud=%+v lab=%+v", cloud.Networks, lab.Networks)
 	}
-	if cloud.Environment["CLOUD_UBUNTU_IMAGE"] != "example/ubuntu:test" {
-		t.Fatalf("Ubuntu instance image override ignored: %+v", cloud.Environment)
+	if cloud.Environment["CLOUD_UBUNTU_IMAGE"] != "example/ubuntu:test" || cloud.Environment["CLOUD_DEBIAN_IMAGE"] != "example/debian:test" {
+		t.Fatalf("instance image override ignored: %+v", cloud.Environment)
 	}
 	if cloud.Environment["CLOUD_DOCKER_NETWORK"] != "minikube-cloud-lab" || cloud.Environment["CLOUD_DOCKER_IP"] != "172.30.0.254" || lab.Environment["KUBECONFIG"] != "/data/minikube/kubeconfig" {
 		t.Fatalf("endpoint configuration: cloud=%+v lab=%+v", cloud.Environment, lab.Environment)
@@ -122,8 +122,8 @@ func TestComposeConfiguration(t *testing.T) {
 	if len(lab.Profiles) != 1 || lab.Profiles[0] != "tools" {
 		t.Fatalf("tools profile: %+v", lab)
 	}
-	expected := map[string]string{"/data": "/tmp/cloud-lab-home/.minikube-cloud-lab", "/kube": "/tmp/cloud-lab-home/.kube", "/var/run/docker.sock": "/var/run/docker.sock", "/data/storage": "storage"}
-	if len(cloud.Volumes) != 4 {
+	expected := map[string]string{"/data": "/tmp/cloud-lab-home/.minikube-cloud-lab", "/kube": "/tmp/cloud-lab-home/.kube", "/var/run/docker.sock": "/var/run/docker.sock", "/data/storage": "storage", "/data/instance-disks": "instance-disks"}
+	if len(cloud.Volumes) != len(expected) {
 		t.Fatalf("cloud volumes: %+v", cloud.Volumes)
 	}
 	for _, volume := range cloud.Volumes {

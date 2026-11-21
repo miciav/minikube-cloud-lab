@@ -11,6 +11,7 @@ services:
       CLOUD_STORAGE_CAPACITY: ${CLOUD_STORAGE_CAPACITY:-20Gi}
       CLOUD_DOCKER_NETWORK: minikube-cloud-lab
       CLOUD_DOCKER_IP: ${CLOUD_DOCKER_IP:-172.30.0.254}
+      CLOUD_DEBIAN_IMAGE: ${DEBIAN_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/instance-debian:12}
       CLOUD_UBUNTU_IMAGE: ${UBUNTU_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/instance-ubuntu:26.04}
     networks:
       portal: {}

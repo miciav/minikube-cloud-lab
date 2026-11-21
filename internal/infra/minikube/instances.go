@@ -120,9 +120,15 @@ func instanceRootless() bool { return os.Getenv("CLOUD_ROOTLESS") == "true" }
 const defaultUbuntuImage = "ghcr.io/miciav/minikube-cloud-lab/instance-ubuntu:26.04"
 
 // instanceImageRef maps a catalog name to an image; kicbase images come through minikube's cache.
-func instanceImageRef(name string) (ref string, kicbase bool, err error) {
+func instanceImageRef(name string, cloudInit bool) (ref string, kicbase bool, err error) {
 	switch name {
 	case "debian-12":
+		if cloudInit {
+			if ref := os.Getenv("CLOUD_DEBIAN_IMAGE"); ref != "" {
+				return ref, false, nil
+			}
+			return "ghcr.io/miciav/minikube-cloud-lab/instance-debian:12", false, nil
+		}
 		return kic.BaseImage, true, nil
 	case "ubuntu-26.04":
 		if ref := os.Getenv("CLOUD_UBUNTU_IMAGE"); ref != "" {
@@ -174,8 +180,8 @@ func ensureImage(ctx context.Context, client *dockerclient.Client, ref string) e
 	return nil
 }
 
-func instanceImage(ctx context.Context, client *dockerclient.Client, name string) (string, error) {
-	ref, kicbase, err := instanceImageRef(name)
+func instanceImage(ctx context.Context, client *dockerclient.Client, spec infra.InstanceSpec) (string, error) {
+	ref, kicbase, err := instanceImageRef(spec.Image, spec.UserData != "")
 	if err != nil {
 		return "", err
 	}
@@ -206,7 +212,7 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 	if err != nil {
 		return infra.Instance{}, err
 	}
-	image, err := instanceImage(ctx, client, spec.Image)
+	image, err := instanceImage(ctx, client, spec)
 	if err != nil {
 		return infra.Instance{}, fmt.Errorf("prepare image: %w", err)
 	}

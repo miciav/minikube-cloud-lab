@@ -124,8 +124,8 @@ func (s *Service) CreateInstance(name, image, kind, requester, userData string) 
 	if err != nil {
 		return Operation{}, err
 	}
-	if userData != "" && (image != "ubuntu-26.04" || len(userData) > MaxUserDataBytes || strings.TrimSpace(strings.SplitN(userData, "\n", 2)[0]) != "#cloud-config") {
-		return Operation{}, fmt.Errorf("%w: user-data requires Ubuntu and a #cloud-config file of at most 64 KiB", ErrInvalid)
+	if userData != "" && (len(userData) > MaxUserDataBytes || strings.TrimSpace(strings.SplitN(userData, "\n", 2)[0]) != "#cloud-config") {
+		return Operation{}, fmt.Errorf("%w: user-data requires a #cloud-config file of at most 64 KiB", ErrInvalid)
 	}
 	shape, err := LookupMachineType(kind)
 	if err != nil {

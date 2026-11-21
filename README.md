@@ -467,9 +467,9 @@ instances generate their own SSH host keys at first boot; `debian-12` instances 
 the host keys baked into kicbase. Each connection is checked against the key recorded
 for that instance. Use instances only on a trusted lab host.
 
-### Configure Ubuntu at first boot
+### Configure Ubuntu or Debian at first boot
 
-With the cloud and Ubuntu images built from the same revision, create an instance
+With the cloud and instance images built from the same revision, create an instance
 using a local YAML file (up to 64 KiB):
 
 ```sh
@@ -493,11 +493,19 @@ runcmd:
 
 Replace the placeholder with your public key. Standard cloud-init modules also
 support password hashes, SSH password authentication, package upgrades and file
-creation. The lab retains SSH access as `ubuntu`. Creation waits for cloud-init
-to finish. Stop/start preserves its state; deleting and recreating the instance
+creation. For Debian with Docker Engine, run:
+
+```sh
+cloud instances create app --image debian-12 --user-data app.yaml
+```
+
+With user-data, Debian uses a kicbase image with cloud-init installed. Set
+`DEBIAN_IMAGE` to select a local build. The lab retains SSH access as `ubuntu`
+on Ubuntu and `docker` on Debian. Creation waits for cloud-init to finish. Stop/start preserves its state; deleting and recreating the instance
 applies the supplied configuration again. To stream YAML use `--user-data -`.
 Run the lifecycle test against a running lab with
-`TEST_CLOUD_CONTAINER=$(labcompose ps -q cloud) RUNTIME=$CLOUD_LAB_RUNTIME bash tests/instance-cloud-init.sh`.
+`TEST_CLOUD_CONTAINER=$(labcompose ps -q cloud) RUNTIME=$CLOUD_LAB_RUNTIME bash tests/instance-cloud-init.sh debian-12`.
+Omit the image argument to test Ubuntu.
 
 ### Persistent disks for standalone instances
 

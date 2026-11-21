@@ -76,6 +76,8 @@ build() {
     podman build --target "$1" --format docker -t "$2" .
 }
 export UBUNTU_IMAGE="localhost/mcl-test/instance-ubuntu:$revision"
+export DEBIAN_IMAGE="localhost/mcl-test/instance-debian:$revision"
+build instance-debian "$DEBIAN_IMAGE"
 build instance-ubuntu "$UBUNTU_IMAGE"
 build cloud "$CLOUD_IMAGE"
 source scripts/configure.sh
@@ -98,7 +100,9 @@ started=true
 labcompose up -d cloud
 for _ in {1..40}; do if cloud images list >/dev/null 2>&1; then break; fi; sleep 1; done
 cloud images list
-TEST_CLOUD_CONTAINER=$(labcompose ps -q cloud) RUNTIME=podman bash tests/instance-cloud-init.sh
+for image in ubuntu-26.04 debian-12; do
+    TEST_CLOUD_CONTAINER=$(labcompose ps -q cloud) RUNTIME=podman bash tests/instance-cloud-init.sh "$image"
+done
 python3 tests/rootless-disk-console.py
 created=true
 cloud instances create "$instance"

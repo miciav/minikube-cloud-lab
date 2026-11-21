@@ -77,6 +77,15 @@ COPY --from=web-build /src/web/dist /app/web
 USER 65532:65532
 ENTRYPOINT ["portal"]
 
+# Keep the Docker-enabled Debian environment used by the instance catalog.
+FROM gcr.io/k8s-minikube/kicbase:v0.0.51 AS instance-debian
+# hadolint ignore=DL3008
+RUN apt-get update -o Dir::Etc::sourcelist=sources.list.d/debian.sources -o Dir::Etc::sourceparts=- && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cloud-init && \
+    rm -rf /var/lib/apt/lists/* /usr/sbin/policy-rc.d && \
+    mkdir -p /etc/cloud/mcl-seed && \
+    printf 'locale: C.UTF-8\nsystem_info:\n  default_user:\n    name: docker\n' > /etc/cloud/cloud.cfg.d/90-lab-user.cfg
+
 # A clean Ubuntu LTS for standalone instances: students install Docker themselves.
 FROM ubuntu:26.04 AS instance-ubuntu
 ENV DEBIAN_FRONTEND=noninteractive
