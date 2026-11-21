@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
+
+	"github.com/miciav/minikube-cloud-lab/internal/cloud"
 )
 
 func TestInstanceAutoscalingCommands(t *testing.T) {
@@ -70,5 +75,28 @@ func TestInstanceAutoscalingCommands(t *testing.T) {
 		if _, err := execute(t, url, args...); err != nil {
 			t.Fatalf("%v: %v", args, err)
 		}
+	}
+}
+
+func TestUninstallWaitsWhileDrainProgresses(t *testing.T) {
+	for _, stall := range []bool{false, true} {
+		synctest.Test(t, func(t *testing.T) {
+			start := time.Now()
+			remaining := []string{"web", "a", "b", "c"}
+			poll := func(context.Context, string) (cloud.InstanceAutoscalingStatus, error) {
+				count := len(remaining)
+				if !stall {
+					count = max(0, count-int(time.Since(start)/(2*time.Minute)))
+				}
+				return cloud.InstanceAutoscalingStatus{Remaining: remaining[:count]}, nil
+			}
+			err := waitAutoscalingRemoval(t.Context(), remaining, poll)
+			if stall && (err == nil || !strings.Contains(err.Error(), "web")) {
+				t.Fatalf("stalled cleanup = %v", err)
+			}
+			if !stall && (err != nil || time.Since(start) != 8*time.Minute) {
+				t.Fatalf("progressing cleanup took %s: %v", time.Since(start), err)
+			}
+		})
 	}
 }

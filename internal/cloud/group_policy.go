@@ -7,7 +7,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
+
+const groupCooldown = 30 * time.Second
 
 func groupPolicy(g Group) string {
 	labels := fmt.Sprintf("{service=%q}", g.ID+"@file")
@@ -21,7 +24,7 @@ func groupPolicy(g Group) string {
   type = "cluster"
   policy {
     evaluation_interval = "5s"
-    cooldown = "30s"
+    cooldown = "%s"
     check "requests-per-healthy-instance" {
       source = "prometheus"
       query_window = "instant"
@@ -36,7 +39,7 @@ func groupPolicy(g Group) string {
     }
   }
 }
-`, g.ID, g.Min, g.Max, strconv.Quote(query), strconv.FormatFloat(g.TargetRPS, 'f', -1, 64), g.ID)
+`, g.ID, g.Min, g.Max, groupCooldown, strconv.Quote(query), strconv.FormatFloat(g.TargetRPS, 'f', -1, 64), g.ID)
 }
 
 func (s *Service) writeGroupPoliciesLocked() (string, error) {

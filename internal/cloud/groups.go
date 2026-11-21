@@ -173,7 +173,9 @@ func (s *Service) groupStatus(g Group) Group {
 			g.Pending++
 		}
 	}
-	g.ScalingReady = s.state.Autoscaling == "active" && !g.Deleting && g.Pending == 0 && g.Ready == g.Desired
+	quotaBlocked := g.Ready > 0 && g.Ready < g.Desired && len(s.state.Instances) >= MaxInstances
+	g.ScalingReady = s.state.Autoscaling == "active" && !g.Deleting && g.Pending == 0 &&
+		(g.Ready == g.Desired || quotaBlocked) && now.Sub(g.LastScaleAt) >= groupCooldown
 	return g
 }
 
@@ -211,8 +213,17 @@ func (s *Service) resizeGroup(key string, desired int, requester, reason string,
 	if desired == g.Desired {
 		return s.groupStatus(*g), nil
 	}
-	if expected != nil && (*expected != g.Desired || !s.groupStatus(*g).ScalingReady) {
-		return Group{}, fmt.Errorf("%w: group capacity changed or is still converging", ErrFailedPrecondition)
+	if expected != nil {
+		if *expected != g.Desired || !s.groupStatus(*g).ScalingReady {
+			return Group{}, fmt.Errorf("%w: group changed, is converging or is in cooldown", ErrFailedPrecondition)
+		}
+		if desired > g.Desired {
+			free := MaxInstances - len(s.state.Instances)
+			if free <= 0 {
+				return Group{}, fmt.Errorf("%w: instance quota reached", ErrFailedPrecondition)
+			}
+			desired = min(desired, g.Desired+free)
+		}
 	}
 	g.Desired = desired
 	op := next.newOperation("RESIZE_GROUP", g.Name, requester)
@@ -220,7 +231,7 @@ func (s *Service) resizeGroup(key string, desired int, requester, reason string,
 	now := time.Now().UTC()
 	g.LastScaleAt = now
 	entry.Status, entry.EndedAt, entry.Reason = "DONE", &now, reason
-	return *g, s.store(next)
+	return s.groupStatus(*g), s.store(next)
 }
 
 // DeleteGroup marks a group for removal by its controller.

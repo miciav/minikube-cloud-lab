@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -156,9 +158,16 @@ func groupMemberHealth(ctx context.Context, address string, service *proxyGroupV
 			return healthFailed
 		}
 	}
+	// Before registration, a connected peer that cannot serve HTTP is an observed backend failure.
+	var connected atomic.Bool
+	if !registered {
+		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+			GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
+		})
+	}
 	response, err := groupGet(ctx, address)
 	if err != nil {
-		if !registered && errors.Is(err, syscall.ECONNREFUSED) {
+		if !registered && ctx.Err() == nil && (connected.Load() || errors.Is(err, syscall.ECONNREFUSED)) {
 			return healthFailed
 		}
 		return healthUnknown

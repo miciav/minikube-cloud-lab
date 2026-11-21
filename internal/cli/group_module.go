@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/miciav/minikube-cloud-lab/internal/api"
+	"github.com/miciav/minikube-cloud-lab/internal/cloud"
 )
 
 func instanceAutoscalingCommand() *cobra.Command {
@@ -25,25 +26,35 @@ func instanceAutoscalingCommand() *cobra.Command {
 			if err != nil || action != "begin-removal" {
 				return err
 			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
-			defer cancel()
-			tick := time.NewTicker(time.Second)
-			defer tick.Stop()
-			for len(result.Remaining) > 0 {
-				select {
-				case <-ctx.Done():
-					return fmt.Errorf("instance group cleanup pending for %s: %w", strings.Join(result.Remaining, ", "), ctx.Err())
-				case <-tick.C:
-					result, err = c.InstanceAutoscaling(ctx, "")
-					if err != nil {
-						return err
-					}
-				}
-			}
-			return nil
+			return waitAutoscalingRemoval(cmd.Context(), result.Remaining, c.InstanceAutoscaling)
 		}})
 	}
 	return root
+}
+
+func waitAutoscalingRemoval(ctx context.Context, remaining []string, status func(context.Context, string) (cloud.InstanceAutoscalingStatus, error)) error {
+	const stallTimeout = 5 * time.Minute
+	deadline := time.Now().Add(stallTimeout)
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	for len(remaining) > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tick.C:
+		}
+		result, err := status(ctx, "")
+		if err != nil {
+			return err
+		}
+		if len(result.Remaining) < len(remaining) {
+			deadline = time.Now().Add(stallTimeout)
+		} else if !time.Now().Before(deadline) {
+			return fmt.Errorf("instance group cleanup stalled for %s", strings.Join(result.Remaining, ", "))
+		}
+		remaining = result.Remaining
+	}
+	return nil
 }
 
 func waitAutoscalingActivation(parent context.Context, c *api.Client) error {

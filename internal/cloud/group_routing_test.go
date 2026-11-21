@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -236,4 +237,64 @@ func TestGroupPolicyPublicationMigratesPrivateConfig(t *testing.T) {
 		}
 	}
 	checkGroupFile(t, file, string(content))
+}
+
+func TestFirstProbeWithClosedHTTPConnection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+	if got := groupMemberHealth(t.Context(), server.URL, nil, "", false); got != healthFailed {
+		t.Fatalf("closed before response headers: health = %v", got)
+	}
+	if got := groupMemberHealth(t.Context(), server.URL, nil, "", true); got != healthUnknown {
+		t.Fatalf("without proxy confirmation, registered backend health = %v", got)
+	}
+}
+
+func TestGroupPolicyWithLimitedQuotaAndManualResize(t *testing.T) {
+	s, err := NewService(fake.New(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := Group{ID: "asg-web", GroupSpec: GroupSpec{Name: "web", Min: 1, Desired: 6, Max: 8}}
+	s.state.Autoscaling = "active"
+	s.state.Groups = []Group{g}
+	s.state.Instances = []Instance{{Name: "manual"}}
+	ready := Instance{GroupID: g.ID, Status: "RUNNING", ReadyAt: time.Now().Add(-time.Minute)}
+	for range 6 {
+		s.state.Instances = append(s.state.Instances, ready)
+	}
+	if err := s.ApplyGroupPolicy(g.ID, 6, 8, "load"); err != nil {
+		t.Fatal(err)
+	}
+	scaled, _ := s.Group(g.ID)
+	if scaled.Desired != 7 {
+		t.Fatalf("quota allows seven group members, got %+v", scaled)
+	}
+	s.state.Instances = append(s.state.Instances, ready)
+	shrunk, err := s.ResizeGroup(g.ID, 6, "student", "")
+	if err != nil || shrunk.Ready != 7 || shrunk.Pending != 0 {
+		t.Fatalf("resize = %+v, %v", shrunk, err)
+	}
+	s.state.Instances = s.state.Instances[:7] // The manual scale-in has finished and quota is available.
+	if err := s.ApplyGroupPolicy(g.ID, 6, 7, "load"); !errors.Is(err, ErrFailedPrecondition) {
+		t.Fatalf("scale immediately after manual resize = %v", err)
+	}
+	s.state.Groups[0].LastScaleAt = time.Now().Add(-time.Minute)
+	if err := s.ApplyGroupPolicy(g.ID, 6, 7, "load"); err != nil {
+		t.Fatal(err)
+	}
+	// An older snapshot or a competing allocation can leave desired above quota.
+	s.state.Groups[0].Desired = 8
+	s.state.Groups[0].LastScaleAt = time.Now().Add(-time.Minute)
+	s.state.Instances = append(s.state.Instances, ready)
+	if err := s.ApplyGroupPolicy(g.ID, 8, 6, "quiet"); err != nil {
+		t.Fatal(err)
+	}
 }
