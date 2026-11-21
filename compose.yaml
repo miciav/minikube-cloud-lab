@@ -6,6 +6,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
+      CLOUD_COURSE_PROJECT: ${CLOUD_COURSE_PROJECT:-mcl}
       CLOUD_INSTANCE_LB_URL: http://instance-lb:8082
       CLOUD_INSTANCE_METRICS_URL: http://instance-metrics:9090
       CLOUD_INSTANCE_AUTOSCALER_URL: http://127.0.0.1:8085
@@ -46,6 +47,7 @@ services:
     restart: unless-stopped
   portal:
     image: ${PORTAL_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/portal:latest}
+    profiles: [portal]
     depends_on: [cloud]
     ports: ["127.0.0.1:3000:3000"]
     networks: [portal]
@@ -70,6 +72,18 @@ services:
     user: "${UID:?set UID in .env}:${GID:?set GID in .env}"
     volumes:
       - ${HOME}/.minikube-cloud-lab:/data:ro
+  monitoring:
+    image: docker.io/prom/prometheus:v3.11.3@sha256:e4254400b85610324913f0dc4acf92603d9984e7519414c5a12811aa6146acc3
+    profiles: [monitoring]
+    restart: unless-stopped
+    network_mode: service:cloud
+    depends_on: [cloud]
+    labels:
+      io.course.monitoring.scope: ${CLOUD_COURSE_PROJECT:-mcl}
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=1d", "--web.listen-address=127.0.0.1:9092"]
+    volumes:
+      - ./lab/services/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro,z
+      - monitoring-history:/prometheus
   instance-lb:
     image: docker.io/library/traefik:v3.6@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d
     profiles: [instance-autoscaling]
@@ -115,6 +129,9 @@ networks:
           gateway: ${CLOUD_DOCKER_GATEWAY:-172.30.0.1}
 
 volumes:
+  monitoring-history:
+    labels:
+      io.course.monitoring.scope: ${CLOUD_COURSE_PROJECT:-mcl}
   instance-disks:
     name: minikube-cloud-lab-disks
   storage:

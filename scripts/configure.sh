@@ -99,6 +99,7 @@ _cloud_lab_configure() {
     source "$lab_root/scripts/kubectl-forward.sh" || return 1
     CLOUD_LAB_ROOT=$lab_root
     CLOUD_LAB_RUNTIME=$runtime
+    export CLOUD_COURSE_PROJECT=${COMPOSE_PROJECT_NAME:-mcl}
     # The function keyword avoids expanding a pre-existing alias in both shells.
     function labcompose {
         if [[ $CLOUD_LAB_RUNTIME == docker ]]; then
@@ -202,6 +203,10 @@ _cloud_lab_configure() {
     }
     function lab {
         case "${2:-}" in
+            portal|monitoring)
+                CLOUD_RUNTIME=$CLOUD_LAB_RUNTIME python3 "$CLOUD_LAB_ROOT/scripts/console-module.py" "$@"
+                return
+                ;;
             object-storage|queue|database)
                 CLOUD_RUNTIME=$CLOUD_LAB_RUNTIME python3 "$CLOUD_LAB_ROOT/scripts/course-service.py" "$@"
                 return
@@ -257,7 +262,7 @@ _cloud_lab_configure() {
     unalias labcompose cloud lab kubectl labtool tofu ansible ansible-playbook 2>/dev/null || true
     if [[ $runtime == docker ]]; then
         printf 'Lab configuration ready. Existing .env values were preserved.\n'
-        printf 'Start the cloud and portal yourself with: labcompose up -d\n'
+        printf 'Start the cloud with: labcompose up -d cloud. Optional console: lab install portal\n'
     else
         printf 'Ready. Start: labcompose up -d cloud\n'
     fi

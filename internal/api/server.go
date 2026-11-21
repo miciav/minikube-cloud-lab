@@ -45,6 +45,7 @@ func respond(w http.ResponseWriter, status int, value any, err error) {
 func NewServer(svc *cloud.Service) http.Handler {
 	mux := http.NewServeMux()
 	registerGroups(mux, svc)
+	registerMonitoring(mux, svc)
 	diskRoutes(mux, svc)
 	mux.HandleFunc("POST /v1/clusters/{name}/dashboard/{action}", func(w http.ResponseWriter, r *http.Request) {
 		action := r.PathValue("action")

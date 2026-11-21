@@ -16,7 +16,7 @@ func TestComposeConfiguration(t *testing.T) {
 	if err := os.WriteFile(envPath, []byte("UID=1001\nGID=1001\nDOCKER_GID=998\nHOME=/tmp/cloud-lab-home\nCLOUD_IMAGE=example/cloud:test\nLAB_IMAGE=example/lab:test\nPORTAL_IMAGE=example/portal:test\nUBUNTU_IMAGE=example/ubuntu:test\nDEBIAN_IMAGE=example/debian:test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("docker", "compose", "--env-file", envPath, "-f", "compose.yaml", "--profile", "tools", "config", "--format", "json")
+	cmd := exec.Command("docker", "compose", "--env-file", envPath, "-f", "compose.yaml", "--profile", "tools", "--profile", "portal", "config", "--format", "json")
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		if name != "UID" && name != "GID" && name != "DOCKER_GID" && name != "HOME" && name != "CLOUD_IMAGE" && name != "LAB_IMAGE" && name != "UBUNTU_IMAGE" && name != "DEBIAN_IMAGE" {
@@ -73,7 +73,7 @@ func TestComposeConfiguration(t *testing.T) {
 		t.Fatal("forwarding container must reach cluster network")
 	}
 	portal := config.Services["portal"]
-	if portal.Image != "example/portal:test" || len(portal.Networks) != 1 || len(portal.Volumes) != 0 || len(portal.CapAdd) != 0 || len(portal.Ports) != 1 || portal.Ports[0].HostIP != "127.0.0.1" || portal.Ports[0].Target != 3000 || portal.Ports[0].Published != "3000" {
+	if len(portal.Profiles) != 1 || portal.Profiles[0] != "portal" || portal.Image != "example/portal:test" || len(portal.Networks) != 1 || len(portal.Volumes) != 0 || len(portal.CapAdd) != 0 || len(portal.Ports) != 1 || portal.Ports[0].HostIP != "127.0.0.1" || portal.Ports[0].Target != 3000 || portal.Ports[0].Published != "3000" {
 		t.Fatalf("portal isolation: %+v", portal)
 	}
 	if _, ok := portal.Networks["portal"]; !ok {
@@ -170,6 +170,49 @@ func TestComposeConfigurationAutoscaling(t *testing.T) {
 				service, exists := config.Services[svc]
 				if exists != enabled || (enabled && (service.Restart != restart || service.Networks["lab"].Address != ip)) {
 					t.Errorf("%s profile enabled=%v: %s = %+v", file, enabled, svc, service)
+				}
+			}
+		}
+	}
+}
+
+func TestOptionalConsoleProfiles(t *testing.T) {
+	for _, file := range []string{"compose.yaml", "compose.rootless.yaml"} {
+		for _, profile := range []string{"", "monitoring", "portal"} {
+			cmdArgs := []string{"compose", "-f", file}
+			if profile != "" {
+				cmdArgs = append(cmdArgs, "--profile", profile)
+			}
+			cmdArgs = append(cmdArgs, "config", "--format", "json")
+			cmd := exec.CommandContext(t.Context(), "docker", cmdArgs...) // #nosec G204 -- fixed test matrix.
+			cmd.Env = append(os.Environ(), "UID=1001", "GID=1001", "DOCKER_GID=998", "XDG_RUNTIME_DIR=/run/user/1001")
+			raw, e := cmd.Output()
+			if e != nil {
+				t.Fatal(e)
+			}
+			var conf struct {
+				Services map[string]struct {
+					NetworkMode string `json:"network_mode"`
+					Ports       []struct {
+						HostIP string `json:"host_ip"`
+					}
+					Volumes  []struct{ Source string }
+					Networks map[string]any
+				}
+			}
+			if e = json.Unmarshal(raw, &conf); e != nil {
+				t.Fatal(e)
+			}
+			for _, name := range []string{"monitoring", "portal", "instance-metrics"} {
+				s, exists := conf.Services[name]
+				if exists != (profile == name) {
+					t.Fatalf("%s with profile %q: unexpected %s", file, profile, name)
+				}
+				if exists && name == "monitoring" && (s.NetworkMode != "service:cloud" || len(s.Ports) != 0 || len(s.Volumes) != 2) {
+					t.Fatalf("collector isolation: %+v", s)
+				}
+				if exists && name == "portal" && (len(s.Volumes) != 0 || len(s.Ports) != 1 || s.Ports[0].HostIP != "127.0.0.1" || len(s.Networks) != 1) {
+					t.Fatalf("portal isolation: %+v", s)
 				}
 			}
 		}

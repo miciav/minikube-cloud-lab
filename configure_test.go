@@ -725,7 +725,7 @@ func TestInfrastructureToolsUseLabImage(t *testing.T) {
 				setup := `source "$CONFIG_TEST_SCRIPT" || exit`
 				if runtime == "podman" {
 					setup = podmanWrappers(t)
-					if err := os.WriteFile(filepath.Join(f.bin, "podman-compose"), []byte("#!/bin/sh\nprintf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"\n"), 0700); err != nil {
+					if err := os.WriteFile(filepath.Join(f.bin, "podman-compose"), []byte("#!/bin/sh\nprintf '%s\\000' \"$@\" >> \"$CONFIG_TEST_DOCKER_LOG\"\n"), 0o700); err != nil { // #nosec G306 -- executable test fixture in a private temporary directory.
 						t.Fatal(err)
 					}
 				}
@@ -744,6 +744,28 @@ ansible-playbook -i inventory site.yml`, "CONFIG_TEST_ROOT="+f.root)
 					if !bytes.Contains(data, []byte(strings.Join(argv, "\x00")+"\x00")) {
 						t.Fatalf("missing arguments %q in %q", argv, data)
 					}
+				}
+			})
+		}
+	}
+}
+
+func TestConsoleStatusFromConfiguredShell(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh"} {
+		for _, runtime := range []string{"docker", "podman"} {
+			t.Run(shell+"/"+runtime, func(t *testing.T) {
+				f := newConfigurationFixture(t)
+				setup := `source "$CONFIG_TEST_SCRIPT" || exit`
+				if runtime == "podman" {
+					setup = podmanWrappers(t)
+				}
+				helper := filepath.Join(f.root, "scripts", "console-module.py")
+				if err := os.WriteFile(helper, []byte("import os,sys\nprint(os.environ['CLOUD_RUNTIME'], *sys.argv[1:])\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				out, err := f.runShell(t, shell, setup+"\nlab status portal && lab status monitoring", "CONFIG_TEST_ROOT="+f.root)
+				if err != nil || !strings.Contains(string(out), runtime+" status portal") || !strings.Contains(string(out), runtime+" status monitoring") {
+					t.Fatalf("%s: %v", out, err)
 				}
 			})
 		}

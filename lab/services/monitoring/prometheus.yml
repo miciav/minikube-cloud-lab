@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 12s
+scrape_configs:
+  - job_name: course
+    static_configs:
+      - targets: ["127.0.0.1:8080"]
+        labels: {source: kubernetes}
+      - targets: ["127.0.0.1:8080"]
+        labels: {source: queue}
+      - targets: ["127.0.0.1:8080"]
+        labels: {source: object-storage}
+    relabel_configs:
+      - source_labels: [source]
+        target_label: __metrics_path__
+        replacement: /internal/metrics/$1

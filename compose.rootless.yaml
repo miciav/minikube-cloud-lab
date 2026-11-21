@@ -1,5 +1,7 @@
 services:
   cloud:
+    labels:
+      io.course.console.project: ${COMPOSE_PROJECT_NAME}
     restart: always
     image: ${CLOUD_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/cloud:latest}
     command: [serve, --data-dir, /data, --api, '0.0.0.0:8080']
@@ -7,6 +9,7 @@ services:
     security_opt: [label=disable]
     ports: ['127.0.0.1:8080:8080']
     environment:
+      CLOUD_COURSE_PROJECT: ${CLOUD_COURSE_PROJECT:-mcl}
       CLOUD_INSTANCE_LB_URL: http://instance-lb:8082
       CLOUD_INSTANCE_METRICS_URL: http://instance-metrics:9090
       CLOUD_INSTANCE_AUTOSCALER_URL: http://127.0.0.1:8085
@@ -19,6 +22,7 @@ services:
       CLOUD_DEBIAN_IMAGE: ${DEBIAN_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/instance-debian:12}
       CLOUD_UBUNTU_IMAGE: ${UBUNTU_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/instance-ubuntu:26.04}
     networks:
+      portal: {}
       lab:
         ipv4_address: ${CLOUD_DOCKER_IP:-172.30.0.254}
     volumes:
@@ -28,6 +32,13 @@ services:
       - instance-disks:/data/instance-disks
       - kube:/kube
       - storage:/data/storage
+  portal:
+    image: ${PORTAL_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/portal:latest}
+    profiles: [portal]
+    depends_on: [cloud]
+    ports: ["127.0.0.1:3000:3000"]
+    networks: [portal]
+    restart: always
   lab:
     security_opt: [label=disable]
     image: ${LAB_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/lab:latest}
@@ -46,6 +57,18 @@ services:
     environment:
       KUBECONFIG: /data/minikube/kubeconfig
     volumes: [state:/data:ro]
+  monitoring:
+    image: docker.io/prom/prometheus:v3.11.3@sha256:e4254400b85610324913f0dc4acf92603d9984e7519414c5a12811aa6146acc3
+    profiles: [monitoring]
+    restart: always
+    network_mode: service:cloud
+    depends_on: [cloud]
+    labels:
+      io.course.monitoring.scope: ${CLOUD_COURSE_PROJECT:-mcl}
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=1d", "--web.listen-address=127.0.0.1:9092"]
+    volumes:
+      - ./lab/services/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro,z
+      - monitoring-history:/prometheus
   instance-lb:
     security_opt: [label=disable]
     image: docker.io/library/traefik:v3.6@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d
@@ -84,6 +107,7 @@ services:
     volumes: [autoscaling:/autoscaling:ro]
 
 networks:
+  portal: {}
   lab:
     name: minikube-cloud-lab-rootless
     driver: bridge
@@ -92,6 +116,9 @@ networks:
         - subnet: ${CLOUD_DOCKER_SUBNET:-172.30.0.0/23}
           gateway: ${CLOUD_DOCKER_GATEWAY:-172.30.0.1}
 volumes:
+  monitoring-history:
+    labels:
+      io.course.monitoring.scope: ${CLOUD_COURSE_PROJECT:-mcl}
   autoscaling:
   instance-disks:
     name: minikube-cloud-lab-rootless-disks

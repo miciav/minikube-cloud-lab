@@ -317,3 +317,24 @@ func TestDashboardReadiness(t *testing.T) {
 	}
 	check("ready")
 }
+
+func TestConsoleVerbs(t *testing.T) {
+	root := newRoot(nil)
+	for _, tc := range []struct {
+		verb, module string
+		present      bool
+	}{
+		{"install", "portal", true},
+		{"status", "monitoring", true},
+		{"uninstall", "portal", true},
+		{"purge", "monitoring", true},
+		{"purge", "portal", false},
+		{"client", "monitoring", false},
+		{"client", "portal", false},
+	} {
+		cmd, _, _ := root.Find([]string{tc.verb, tc.module})
+		if (cmd != nil && cmd.Name() == tc.module) != tc.present {
+			t.Errorf("%s %s available=%v", tc.verb, tc.module, !tc.present)
+		}
+	}
+}

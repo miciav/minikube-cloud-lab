@@ -116,7 +116,14 @@ func newRoot(factory connector) *cobra.Command {
 }
 
 func addCourseServices(parent *cobra.Command) {
-	for _, module := range []string{"object-storage", "queue", "database"} {
+	modules := []string{"object-storage", "queue", "database"}
+	switch parent.Name() {
+	case "install", "status", "uninstall":
+		modules = append(modules, "portal", "monitoring")
+	case "purge":
+		modules = append(modules, "monitoring")
+	}
+	for _, module := range modules {
 		parent.AddCommand(&cobra.Command{
 			Use: module, Short: "Run through the configured lab shell",
 			RunE: func(cmd *cobra.Command, _ []string) error {
