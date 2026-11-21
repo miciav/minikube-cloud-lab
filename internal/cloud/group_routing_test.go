@@ -211,3 +211,29 @@ func waitGroupOperation(t *testing.T, s *Service) {
 		t.Fatalf("operation %s: %+v, %v", op.ID, op, err)
 	}
 }
+
+func TestGroupPolicyPublicationMigratesPrivateConfig(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "autoscaling")
+	parent := filepath.Join(root, "policies")
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(parent, "groups.hcl")
+	content := []byte("# generated policy")
+	if err := os.WriteFile(file, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeGroupFile(file, content); err != nil {
+		t.Fatal(err)
+	}
+	for path, mode := range map[string]os.FileMode{root: 0o755, parent: 0o755, file: 0o644} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != mode {
+			t.Fatalf("%s mode = %o, want %o", path, info.Mode().Perm(), mode)
+		}
+	}
+	checkGroupFile(t, file, string(content))
+}

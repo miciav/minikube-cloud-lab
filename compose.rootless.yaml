@@ -44,7 +44,7 @@ services:
     volumes: [state:/data:ro]
   instance-lb:
     security_opt: [label=disable]
-    image: traefik:v3.6@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d
+    image: docker.io/library/traefik:v3.6@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d
     profiles: [instance-autoscaling]
     ports: ["127.0.0.1:8084:8080"]
     networks: [lab]
@@ -58,7 +58,7 @@ services:
       - --entrypoints.traefik.address=:8082
   instance-metrics:
     security_opt: [label=disable]
-    image: prom/prometheus:v3.11.3@sha256:e4254400b85610324913f0dc4acf92603d9984e7519414c5a12811aa6146acc3
+    image: docker.io/prom/prometheus:v3.11.3@sha256:e4254400b85610324913f0dc4acf92603d9984e7519414c5a12811aa6146acc3
     profiles: [instance-autoscaling]
     ports: ["127.0.0.1:9091:9090"]
     networks: [lab]
@@ -66,7 +66,7 @@ services:
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=1d"]
   instance-autoscaler:
     security_opt: [label=disable]
-    image: minikube-cloud-lab/instance-autoscaler:local
+    image: localhost/minikube-cloud-lab/instance-autoscaler:local
     build: ./tools/instance-autoscaler
     profiles: [instance-autoscaling]
     network_mode: service:cloud

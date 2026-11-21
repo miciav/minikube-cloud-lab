@@ -160,7 +160,7 @@ func assertConfigurationWrapperArguments(t *testing.T, f configurationFixture) {
 	}
 	got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
 	prefix := []string{"compose", "--project-directory", f.root, "--env-file", filepath.Join(f.root, ".env"), "-f", filepath.Join(f.root, "compose.yaml")}
-	want := append(append([]string{}, prefix...), "exec", "cloud", "cloud", "clusters", "describe", "name with spaces")
+	want := append(append([]string{}, prefix...), "exec", "-T", "cloud", "cloud", "clusters", "describe", "name with spaces")
 	want = append(want, "compose", "--progress", "quiet")
 	want = append(want, prefix[1:]...)
 	want = append(want, "run", "--rm", "lab", "load", "start", "--replicas", "4")
@@ -396,7 +396,7 @@ kubectl apply -f 'manifest with spaces.yaml'
 				var want []string
 				for _, args := range [][]string{
 					{"up", "-d", "cloud"},
-					{"exec", "cloud", "cloud", "clusters", "list"},
+					{"exec", "-T", "cloud", "cloud", "clusters", "list"},
 					{"--profile", "tools", "run", "--rm", "lab", "load", "start"},
 					{"--profile", "tools", "run", "-T", "--rm", "--entrypoint", "kubectl", "--volume", f.taskHome + ":/workspace", "--workdir", "/workspace", "lab", "apply", "-f", "manifest with spaces.yaml"},
 				} {
@@ -610,6 +610,20 @@ func TestInstanceAutoscalingWrappersRunOnlyOptionalServices(t *testing.T) {
 			if runtime == "podman" {
 				setup = podmanWrappers(t)
 				prefix = []string{"compose", "-f", filepath.Join(f.root, "compose.rootless.yaml")}
+				stub := `#!/bin/sh
+printf '%s\000' "$@" >> "$CONFIG_TEST_DOCKER_LOG"
+if [ "$1" = ps ]; then
+    if [ "$2" = -a ]; then
+        printf '%s\n' 'cloud-id cloud' 'lb-id instance-lb' 'metrics-id instance-metrics' 'policy-id instance-autoscaler' 'other-id portal'
+    else
+        printf '%s\n' fixture-project
+    fi
+fi
+`
+				if err := os.WriteFile(filepath.Join(f.bin, "podman"), []byte(stub), 0o700); err != nil { // #nosec G306 -- private executable fixture.
+					t.Fatal(err)
+				}
+
 			}
 			out, err := f.run(t, setup+`
 lab install instance-autoscaling || exit
@@ -624,19 +638,25 @@ lab uninstall instance-autoscaling
 				t.Fatal(err)
 			}
 			var want []string
-			for _, args := range [][]string{
-				{"exec", "cloud", "cloud", "instance-autoscaling", "prepare"},
-				{"--profile", "instance-autoscaling", "up", "-d", "--no-deps", "--build", "instance-lb", "instance-metrics", "instance-autoscaler"},
-				{"exec", "cloud", "cloud", "instance-autoscaling", "activate"},
-				{"exec", "-T", "cloud", "cloud", "groups", "create", "web", "--bootstrap", "-"},
-				{"exec", "cloud", "cloud", "instance-autoscaling", "begin-removal"},
-				{"--profile", "instance-autoscaling", "stop", "instance-lb", "instance-metrics", "instance-autoscaler"},
-				{"--profile", "instance-autoscaling", "rm", "-f", "-v", "instance-lb", "instance-metrics", "instance-autoscaler"},
-				{"exec", "cloud", "cloud", "instance-autoscaling", "finish-removal"},
-			} {
+			compose := func(args ...string) {
 				want = append(want, prefix...)
 				want = append(want, args...)
 			}
+			compose("exec", "-T", "cloud", "cloud", "instance-autoscaling", "prepare")
+			compose("--profile", "instance-autoscaling", "up", "-d", "--no-deps", "--build", "instance-lb", "instance-metrics", "instance-autoscaler")
+			compose("exec", "-T", "cloud", "cloud", "instance-autoscaling", "activate")
+			compose("exec", "-T", "cloud", "cloud", "groups", "create", "web", "--bootstrap", "-")
+			compose("exec", "-T", "cloud", "cloud", "instance-autoscaling", "begin-removal")
+			if runtime == "podman" {
+				want = append(want, "ps", "--filter", "network=minikube-cloud-lab-rootless", "--filter", "label=com.docker.compose.service=cloud", "--format", `{{.Label "com.docker.compose.project"}}`)
+				want = append(want, "ps", "-a", "--filter", "label=com.docker.compose.project=fixture-project", "--format", `{{.ID}} {{.Label "com.docker.compose.service"}}`)
+				want = append(want, "rm", "--ignore", "-f", "-v", "lb-id", "metrics-id", "policy-id")
+			} else {
+				compose("--profile", "instance-autoscaling", "stop", "instance-lb", "instance-metrics", "instance-autoscaler")
+				compose("--profile", "instance-autoscaling", "rm", "-f", "-v", "instance-lb", "instance-metrics", "instance-autoscaler")
+			}
+			compose("exec", "-T", "cloud", "cloud", "instance-autoscaling", "finish-removal")
+
 			got := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("argv: %q want %q", got, want)

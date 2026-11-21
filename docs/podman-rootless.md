@@ -56,6 +56,20 @@ Ubuntu 26.04 instances (`ubuntu-26.04`, the default) were verified the same way.
 
 `systemctl is-system-running` reports `degraded` inside rootless instances: the kernel debug, tracing and configuration mounts and the binfmt automount cannot be mounted in a user namespace. Packages, services and Docker are unaffected. For a few seconds after a start, `systemctl` reports "Failed to connect to bus" while systemd and D-Bus come up. Run `RUNTIME=podman bash tests/instance-feasibility.sh` to check a new VM image before distributing it.
 
+### On-demand instance autoscaling
+
+The optional instance autoscaling profile uses the same `lab install` and
+`lab uninstall` commands on Podman rootless. See the
+[standalone HTTP exercise](student-tutorial.md#autoscale-a-standalone-http-service)
+for the workflow.
+
+With the cloud service running on a disposable Podman lab, run the smoke test
+from the checkout to verify scaling, health replacement, uninstall and reinstall:
+
+```sh
+CLOUD_RUNTIME=podman bash tests/instance-autoscaling.sh
+```
+
 ## Existing VM without administrator privileges
 
 Upgrading the operating system is not required just to install Compose. The configuration script installs `podman-compose` in your account automatically when no Compose provider is available. Python 3, pip and access to PyPI are required; no sudo is used:

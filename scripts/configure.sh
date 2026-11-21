@@ -120,10 +120,37 @@ _cloud_lab_configure() {
         fi
     }
     function cloud {
-        if [[ $# -ge 2 && $1 == groups && $2 == create && ! -t 0 ]]; then
+        if [[ ! -t 0 || ! -t 1 ]]; then
             labcompose exec -T cloud cloud "$@"
         else
             labcompose exec cloud cloud "$@"
+        fi
+    }
+    function _cloud_lab_remove_instance_autoscaling {
+        if [[ $CLOUD_LAB_RUNTIME == docker ]]; then
+            labcompose --profile instance-autoscaling stop instance-lb instance-metrics instance-autoscaler || return
+            labcompose --profile instance-autoscaling rm -f -v instance-lb instance-metrics instance-autoscaler
+            return
+        fi
+
+        # podman-compose 1.5 has no rm; scope native removal to the running lab's project.
+        local project containers id service
+        local -a ids=()
+        project=$(podman ps --filter network=minikube-cloud-lab-rootless \
+            --filter label=com.docker.compose.service=cloud --format '{{.Label "com.docker.compose.project"}}') || return
+        if [[ -z $project || $project == *$'\n'* ]]; then
+            printf '%s\n' 'Cannot identify the Podman Compose project for instance autoscaling.' >&2
+            return 1
+        fi
+        containers=$(podman ps -a --filter "label=com.docker.compose.project=$project" \
+            --format '{{.ID}} {{.Label "com.docker.compose.service"}}') || return
+        while read -r id service; do
+            case $service in
+                instance-lb|instance-metrics|instance-autoscaler) ids+=("$id") ;;
+            esac
+        done <<< "$containers"
+        if [[ -n ${ids[*]:-} ]]; then
+            podman rm --ignore -f -v "${ids[@]}"
         fi
     }
     function lab {
@@ -142,8 +169,7 @@ _cloud_lab_configure() {
                         cloud instance-autoscaling activate
                     else
                         cloud instance-autoscaling begin-removal || return
-                        labcompose --profile instance-autoscaling stop instance-lb instance-metrics instance-autoscaler || return
-                        labcompose --profile instance-autoscaling rm -f -v instance-lb instance-metrics instance-autoscaler || return
+                        _cloud_lab_remove_instance_autoscaling || return
                         cloud instance-autoscaling finish-removal
                     fi
                     return

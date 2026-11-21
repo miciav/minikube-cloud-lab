@@ -49,13 +49,28 @@ func backendURL(member Instance, group Group) (string, bool) {
 }
 
 func writeGroupFile(path string, data []byte) error {
-	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(data, existing) { // #nosec G304 -- generated configuration belongs to cloud state.
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	parent := filepath.Dir(path)
+	if err := os.MkdirAll(parent, 0o755); err != nil { // #nosec G301 -- generated config must be traversable by its reader.
 		return err
 	}
-	return atomicfile.Write(path, data)
+	// The volume contains only generated configuration for read-only service mounts.
+	for _, dir := range []string{filepath.Dir(parent), parent} {
+		info, err := os.Stat(dir)
+		if err != nil {
+			return err
+		}
+		if info.Mode().Perm() != 0o755 {
+			if err := os.Chmod(dir, 0o755); err != nil { // #nosec G302 -- this is a dedicated config directory.
+				return err
+			}
+		}
+	}
+	if info, err := os.Stat(path); err == nil && info.Mode().Perm() == 0o644 {
+		if existing, err := os.ReadFile(path); err == nil && bytes.Equal(data, existing) { // #nosec G304 -- generated configuration belongs to cloud state.
+			return nil
+		}
+	}
+	return atomicfile.WriteMode(path, data, 0o644)
 }
 
 type proxyServer struct {
