@@ -107,8 +107,11 @@ func newInstanceKey() (private []byte, authorized string, err error) {
 	return pem.EncodeToMemory(block), strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))), nil
 }
 
+// MaxUserDataBytes bounds the cloud-config supplied by a client.
+const MaxUserDataBytes = 64 << 10
+
 // CreateInstance accepts one standalone instance and provisions it asynchronously.
-func (s *Service) CreateInstance(name, image, kind, requester string) (Operation, error) {
+func (s *Service) CreateInstance(name, image, kind, requester, userData string) (Operation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.instances == nil {
@@ -120,6 +123,9 @@ func (s *Service) CreateInstance(name, image, kind, requester string) (Operation
 	img, err := LookupImage(image)
 	if err != nil {
 		return Operation{}, err
+	}
+	if userData != "" && (image != "ubuntu-26.04" || len(userData) > MaxUserDataBytes || strings.TrimSpace(strings.SplitN(userData, "\n", 2)[0]) != "#cloud-config") {
+		return Operation{}, fmt.Errorf("%w: user-data requires Ubuntu and a #cloud-config file of at most 64 KiB", ErrInvalid)
 	}
 	shape, err := LookupMachineType(kind)
 	if err != nil {
@@ -149,7 +155,7 @@ func (s *Service) CreateInstance(name, image, kind, requester string) (Operation
 		_ = os.RemoveAll(dir)
 		return Operation{}, err
 	}
-	spec := infra.InstanceSpec{Name: name, Image: image, Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, SSHUser: img.SSHUser, AuthorizedKey: authorized}
+	spec := infra.InstanceSpec{UserData: userData, Name: name, Image: image, Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, SSHUser: img.SSHUser, AuthorizedKey: authorized}
 	var observed infra.Instance
 	s.launch(op.ID, func() error {
 		var err error

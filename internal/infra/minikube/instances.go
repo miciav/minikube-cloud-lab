@@ -2,6 +2,7 @@ package minikube
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -110,7 +111,7 @@ var _ infra.Instances = (*Infra)(nil)
 const prepareInstance = `rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup >/dev/null &&
 systemctl restart systemd-journald &&
 install -d -m 700 -o "$SSH_USER" -g "$(id -gn "$SSH_USER")" "/home/$SSH_USER/.ssh" &&
-printf '%s\n' "$AUTHORIZED_KEY" > "/home/$SSH_USER/.ssh/authorized_keys" &&
+printf '\n%s\n' "$AUTHORIZED_KEY" >> "/home/$SSH_USER/.ssh/authorized_keys" &&
 chown "$SSH_USER:" "/home/$SSH_USER/.ssh/authorized_keys" && chmod 600 "/home/$SSH_USER/.ssh/authorized_keys"`
 
 func instanceRootless() bool { return os.Getenv("CLOUD_ROOTLESS") == "true" }
@@ -236,11 +237,39 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 	for _, warning := range created.Warnings {
 		slog.Warn("container create warning", "instance", spec.Name, "warning", warning)
 	}
+	if spec.UserData != "" {
+		if err := seedCloudInit(ctx, client, created.ID, spec); err != nil {
+			return infra.Instance{}, fmt.Errorf("seed cloud-init: %w", err)
+		}
+	}
 	key, err := i.bootInstance(ctx, client, spec, ip.String(), host.Resources)
 	if err != nil {
 		return infra.Instance{}, err
 	}
 	return infra.Instance{Name: spec.Name, IP: ip.String(), HostKey: key, Running: true}, nil
+}
+
+// seedCloudInit delivers NoCloud files before PID 1 starts. Container IDs are unique across recreations.
+func seedCloudInit(ctx context.Context, client *dockerclient.Client, id string, spec infra.InstanceSpec) error {
+	var archive bytes.Buffer
+	writer := tar.NewWriter(&archive)
+	for path, value := range map[string]string{
+		"mcl-seed/meta-data":     "instance-id: " + id + "\nlocal-hostname: " + spec.Name + "\n",
+		"mcl-seed/user-data":     spec.UserData,
+		"ds-identify.cfg":        "policy: enabled\n",
+		"cloud.cfg.d/99-mcl.cfg": "datasource_list: [NoCloud]\ndatasource:\n  NoCloud:\n    seedfrom: file:///etc/cloud/mcl-seed/\nnetwork: {config: disabled}\npreserve_hostname: true\n",
+	} {
+		if err := writer.WriteHeader(&tar.Header{Name: path, Mode: 0o600, Size: int64(len(value))}); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(writer, value); err != nil {
+			return err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	return client.CopyToContainer(ctx, id, "/etc/cloud", &archive, container.CopyToContainerOptions{})
 }
 
 // instanceSlot runs the cheap host checks before any image download and returns a free address.
@@ -290,6 +319,11 @@ func (i *Infra) bootInstance(ctx context.Context, client *dockerclient.Client, s
 	}
 	if err := waitSSH(ctx, net.JoinHostPort(ip, "22"), containerAlive(client, name)); err != nil {
 		return "", err
+	}
+	if spec.UserData != "" {
+		if err := execRootTimeout(ctx, client, name, nil, "cloud-init status --wait && test -f /var/lib/cloud/instance/boot-finished", 15*time.Minute); err != nil {
+			return "", fmt.Errorf("cloud-init failed (inspect /var/log/cloud-init-output.log): %w", err)
+		}
 	}
 	if err := execRoot(ctx, client, name, []string{"SSH_USER=" + spec.SSHUser, "AUTHORIZED_KEY=" + spec.AuthorizedKey}, prepareInstance); err != nil {
 		return "", fmt.Errorf("install SSH key: %w", err)

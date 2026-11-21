@@ -23,7 +23,7 @@ import (
 
 func createInstance(t *testing.T, s *cloud.Service, name string) {
 	t.Helper()
-	op, err := s.CreateInstance(name, "debian-12", "lab-small", "student")
+	op, err := s.CreateInstance(name, "debian-12", "lab-small", "student", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestImagesCatalog(t *testing.T) {
 
 func TestCreateInstanceRecordsOperationAndKey(t *testing.T) {
 	s, f, dir := newService(t)
-	op, err := s.CreateInstance("vm1", "debian-12", "lab-small", "student")
+	op, err := s.CreateInstance("vm1", "debian-12", "lab-small", "student", "")
 	if err != nil || op.Type != "CREATE_INSTANCE" || op.Target != "vm1" || op.Requester != "student" || op.Status != "RUNNING" {
 		t.Fatalf("accepted: %+v %v", op, err)
 	}
@@ -87,19 +87,19 @@ func TestCreateInstanceRecordsOperationAndKey(t *testing.T) {
 func TestCreateInstanceValidation(t *testing.T) {
 	s, _, _ := newService(t)
 	for _, tc := range []struct{ name, image, kind string }{{"Bad_Name", "debian-12", "lab-small"}, {"vm1", "ubuntu", "lab-small"}, {"vm1", "debian-12", "huge"}} {
-		if _, err := s.CreateInstance(tc.name, tc.image, tc.kind, "student"); !errors.Is(err, cloud.ErrInvalid) {
+		if _, err := s.CreateInstance(tc.name, tc.image, tc.kind, "student", ""); !errors.Is(err, cloud.ErrInvalid) {
 			t.Fatalf("%+v: %v", tc, err)
 		}
 	}
 	createInstance(t, s, "vm1")
-	if _, err := s.CreateInstance("vm1", "debian-12", "lab-small", "student"); !errors.Is(err, cloud.ErrConflict) {
+	if _, err := s.CreateInstance("vm1", "debian-12", "lab-small", "student", ""); !errors.Is(err, cloud.ErrConflict) {
 		t.Fatalf("duplicate: %v", err)
 	}
 	for i := 2; i <= cloud.MaxInstances; i++ {
 		createInstance(t, s, fmt.Sprintf("vm%d", i))
 	}
 	before := len(s.Operations())
-	if _, err := s.CreateInstance("vm9", "debian-12", "lab-small", "student"); !errors.Is(err, cloud.ErrConflict) {
+	if _, err := s.CreateInstance("vm9", "debian-12", "lab-small", "student", ""); !errors.Is(err, cloud.ErrConflict) {
 		t.Fatalf("limit: %v", err)
 	}
 	if len(s.Operations()) != before {
@@ -110,7 +110,7 @@ func TestCreateInstanceValidation(t *testing.T) {
 func TestCreateInstanceFailureKeepsRecord(t *testing.T) {
 	s, f, dir := newService(t)
 	f.Errors["CreateInstance"] = errors.New("boom")
-	op, err := s.CreateInstance("vm1", "debian-12", "lab-small", "student")
+	op, err := s.CreateInstance("vm1", "debian-12", "lab-small", "student", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestInstancesUnavailableWithoutBackend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.CreateInstance("vm1", "debian-12", "lab-small", "student")
+	_, err = s.CreateInstance("vm1", "debian-12", "lab-small", "student", "")
 	if !errors.Is(err, cloud.ErrUnavailable) || err.Error() != "standalone instances are not supported by this backend" {
 		t.Fatalf("no backend: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestStopStartInstance(t *testing.T) {
 func TestInstanceBusyRejected(t *testing.T) {
 	s, f, _ := newService(t)
 	f.Delay = 200 * time.Millisecond
-	if _, err := s.CreateInstance("vm1", "debian-12", "lab-small", "student"); err != nil {
+	if _, err := s.CreateInstance("vm1", "debian-12", "lab-small", "student", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.StopInstance("vm1", "student"); !errors.Is(err, cloud.ErrFailedPrecondition) {

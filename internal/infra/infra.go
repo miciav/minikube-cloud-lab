@@ -28,6 +28,7 @@ type InstanceSpec struct {
 	Name, Image   string // Image is a catalog name such as "debian-12".
 	Shape         MachineShape
 	SSHUser       string
+	UserData      string
 	AuthorizedKey string // One authorized_keys line.
 }
 

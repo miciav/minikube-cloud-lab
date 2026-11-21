@@ -152,11 +152,11 @@ func NewServer(svc *cloud.Service) http.Handler {
 	mux.HandleFunc("GET /v1/instances", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Instances(), nil) })
 	mux.HandleFunc("POST /v1/instances", func(w http.ResponseWriter, r *http.Request) {
 		var request instanceRequest
-		if err := decodeJSON(w, r, &request); err != nil {
+		if err := decodeLimitedJSON(w, r, &request, 6*cloud.MaxUserDataBytes+4096); err != nil {
 			respond(w, 400, nil, cloud.ErrInvalid)
 			return
 		}
-		op, err := svc.CreateInstance(request.Name, request.Image, request.MachineType, "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		op, err := svc.CreateInstance(request.Name, request.Image, request.MachineType, "student", request.UserData) //nolint:contextcheck // accepted work must survive HTTP request cancellation.
 		respond(w, http.StatusAccepted, op, err)
 	})
 	mux.HandleFunc("GET /v1/instances/{name}", func(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +190,11 @@ func NewServer(svc *cloud.Service) http.Handler {
 
 // decodeJSON accepts exactly one small JSON object without unknown fields.
 func decodeJSON(w http.ResponseWriter, r *http.Request, value any) error {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	return decodeLimitedJSON(w, r, value, 4096)
+}
+
+func decodeLimitedJSON(w http.ResponseWriter, r *http.Request, value any, limit int64) error {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(value); err != nil {
 		return err

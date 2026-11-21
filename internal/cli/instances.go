@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"text/tabwriter"
 	"time"
 
@@ -63,11 +65,31 @@ func instanceAction(use, done string, request func(*api.Client, *cobra.Command, 
 func addInstanceCommands(root *cobra.Command) *cobra.Command {
 	parent := &cobra.Command{Use: "instances", Short: "Manage standalone Linux instances"}
 	root.AddCommand(parent)
-	var image, kind string
+	var image, kind, config string
 	var async bool
 	create := &cobra.Command{Use: "create NAME", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		c := client(cmd)
-		op, err := c.CreateInstance(cmd.Context(), args[0], image, kind)
+		var data []byte
+		if cmd.Flags().Changed("user-data") {
+			r := cmd.InOrStdin()
+			if config != "-" {
+				f, err := os.Open(config) // #nosec G304 -- explicit CLI input path.
+				if err != nil {
+					return err
+				}
+				defer func() { _ = f.Close() }()
+				r = f
+			}
+			var err error
+			data, err = io.ReadAll(io.LimitReader(r, cloud.MaxUserDataBytes+1))
+			if err != nil {
+				return err
+			}
+			if len(data) == 0 || len(data) > cloud.MaxUserDataBytes {
+				return fmt.Errorf("user-data must contain 1 to %d bytes", cloud.MaxUserDataBytes)
+			}
+		}
+		op, err := c.CreateInstance(cmd.Context(), args[0], image, kind, string(data))
 		if err != nil {
 			return err
 		}
@@ -85,6 +107,7 @@ func addInstanceCommands(root *cobra.Command) *cobra.Command {
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Created instance %s at %s\n", created.Name, created.IP)
 		return err
 	}}
+	create.Flags().StringVar(&config, "user-data", "", "Ubuntu cloud-config file (or - for stdin)")
 	create.Flags().StringVar(&image, "image", "ubuntu-26.04", "Image from cloud images list")
 	create.Flags().StringVar(&kind, "machine-type", "lab-small", "Machine type")
 	create.Flags().BoolVar(&async, "async", false, "Return the operation ID immediately")

@@ -85,7 +85,7 @@ func TestInstanceClient(t *testing.T) {
 	if images, err := c.Images(ctx); err != nil || len(images) != 2 || images[0].Name != "ubuntu-26.04" {
 		t.Fatalf("images: %+v %v", images, err)
 	}
-	op, err := c.CreateInstance(ctx, "vm1", "debian-12", "lab-small")
+	op, err := c.CreateInstance(ctx, "vm1", "debian-12", "lab-small", "")
 	if err != nil {
 		t.Fatal(err)
 	}

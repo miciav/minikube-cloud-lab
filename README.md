@@ -459,6 +459,39 @@ filesystem in the container: both survive stop/start and cloud restarts and are
 removed by `cloud instances delete`. Delete instances before `docker compose down`,
 as with clusters: they stay attached to the lab network.
 
+### Configure Ubuntu at first boot
+
+With the cloud and Ubuntu images built from the same revision, create an instance
+using a local YAML file (up to 64 KiB):
+
+```sh
+cloud instances create app --user-data app.yaml
+```
+
+For example, `app.yaml` can install and start a web server:
+
+```yaml
+#cloud-config
+users:
+  - default
+  - name: deploy
+    ssh_authorized_keys:
+      - ssh-ed25519 REPLACE_WITH_YOUR_PUBLIC_KEY
+package_update: true
+packages: [nginx]
+runcmd:
+  - [systemctl, enable, --now, nginx]
+```
+
+Replace the placeholder with your public key. Standard cloud-init modules also
+support password hashes, SSH password authentication, package upgrades and file
+creation. The lab retains SSH access as `ubuntu`. Creation waits for cloud-init
+to finish. Stop/start preserves its state; deleting and recreating the instance
+applies the supplied configuration again. To stream YAML use `--user-data -`.
+Run the lifecycle test against a running lab with
+`TEST_CLOUD_CONTAINER=$(labcompose ps -q cloud) RUNTIME=$CLOUD_LAB_RUNTIME bash tests/instance-cloud-init.sh`.
+
+
 Instances are privileged containers, like the cluster nodes: on rootful Docker,
 root inside an instance is root on the Docker host; on Podman rootless it is the
 student's own user. The SSH private key is served by the management API, which has

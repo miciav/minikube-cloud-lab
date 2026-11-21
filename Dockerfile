@@ -87,10 +87,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 # happens in a container), and sshd starts at boot instead of on first connection.
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends systemd systemd-sysv libpam-systemd dbus openssh-server sudo ca-certificates \
+    apt-get install -y --no-install-recommends cloud-init systemd systemd-sysv libpam-systemd dbus openssh-server sudo ca-certificates \
         curl wget nano vim-tiny less iputils-ping iproute2 git gnupg lsb-release && \
     rm -rf /var/lib/apt/lists/* /usr/sbin/policy-rc.d /etc/ssh/ssh_host_* && \
     echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-ubuntu && chmod 0440 /etc/sudoers.d/90-ubuntu && \
+    mkdir -p /etc/cloud/mcl-seed && echo "policy: disabled" > /etc/cloud/ds-identify.cfg && \
     : > /etc/machine-id && \
     systemctl mask systemd-binfmt.service && systemctl disable ssh.socket && systemctl enable ssh.service && \
     mkdir -p /etc/systemd/system/ssh.service.d && \
