@@ -1,0 +1,10 @@
+services:
+  queue:
+    image: docker.io/softwaremill/elasticmq:1.6.15@sha256:f6c6a5aa5ccfa2415a26c0aeb0e49456c1d4cebf434297c4c278fe2eb3c54977
+    restart: unless-stopped
+    ports: ["127.0.0.1:${SERVICE_PORT:-9324}:9324"]
+    volumes:
+      - ./elasticmq.conf:/opt/elasticmq.conf:ro,z
+      - data:/data
+volumes:
+  data: {}

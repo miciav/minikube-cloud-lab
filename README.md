@@ -67,6 +67,8 @@ Use `lab install NAME`, `lab status NAME` and `lab uninstall NAME` from a config
 | `instance-autoscaling` | Shared by instance groups in the lab. Install to start Traefik, Prometheus and Nomad Autoscaler. | Drains and deletes **all groups, their machines and local filesystems**. Independently created instances and persistent volumes survive. |
 | `yakd` | Kubernetes dashboard. Included when a new cluster is created. | Removes the managed dashboard resources and retains its namespace for student resources. |
 
+The [managed services exercises](docs/tutorials/README.md#managed-services) use three independent modules: `object-storage` (Garage), `queue` (ElasticMQ) and `database` (PostgreSQL). Install any one from the configured shell without starting Kubernetes. Uninstall releases its containers and ports while retaining its data. See the [command reference](docs/commands.md#managed-services).
+
 ## Run and maintain the lab
 
 - [Command reference](docs/commands.md) for cluster sizing, instances, groups, modules and operation history.

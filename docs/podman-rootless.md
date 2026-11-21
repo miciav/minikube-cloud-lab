@@ -181,3 +181,7 @@ Verified on Fedora CoreOS 44 ARM64 with Podman 6.1.4 rootless, Kubernetes 1.35.6
 All lab containers in this configuration run under Podman rootless. New Minikube nodes receive an explicit limit of 4096 processes/threads, preserved when CPU/RAM limits are updated. This avoids relying on implicit zero/unlimited PID handling in the Docker-compatible API. A node with `pids.max=1` cannot fork during entrypoint startup; verify the effective cgroup value, not only `podman inspect`.
 
 This configuration uses real persistent directories shared by every node and a simulated allocation budget. It does not impose physical write quotas. Keep enough free disk space in the VM. Use dedicated rootless state; existing Docker/NFS volumes are not migrated.
+
+## Optional course services
+
+The [object storage, queue and database exercises](tutorials/README.md#managed-services) run as the course user without a Kubernetes cluster. Run `python3 scripts/verify-course-vm.py` before assigning them. The acceptance script needs all three modules to start disabled with no retained data. Each publishes its application endpoint on VM loopback; use a localhost SSH tunnel for access from a laptop.

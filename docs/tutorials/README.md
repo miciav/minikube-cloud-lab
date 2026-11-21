@@ -35,3 +35,11 @@ Start with the [course environment](../../README.md#prepare-the-environment). Ea
 
 - [Define a CronTab resource](../../kubernetes/lecture03/README.md#crd) — register a new resource type and inspect an instance through the Kubernetes API.
 - [Run MySQL with an operator](../../kubernetes/lecture03/README.md#mysql-operator) — verify three online members, connect through Router and follow cleanup through volume release.
+
+## Managed services
+
+- [Object storage](storage/object-storage.md) — upload, list and download objects with two access levels.
+- [Messaging](messaging/queues.md) — observe delivery, visibility timeout and acknowledgment.
+- [Database](databases/postgresql.md) — persist relational data and reconnect after reinstall.
+
+For the combined exercise install all three modules and run `bash lab/services/examples/csv-worker.sh` from the checkout. Inspect the reported job in the course-files bucket and the csv_results table. The worker processes the same message twice after a simulated interruption. A unique job key keeps a single committed result.

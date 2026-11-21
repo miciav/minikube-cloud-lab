@@ -17,6 +17,7 @@ The command starts the user socket and cloud, checks the inventory, then runs th
 | Suite | Evidence |
 | --- | --- |
 | Runner tests and Lecture 02 validation | Verification logic, manifest consistency and worker setup in Bash and zsh. Lecture 02's interactive slide exercises are a separate manual rehearsal. |
+| Managed services | Install Garage, ElasticMQ and PostgreSQL individually, check persistence and isolation, run the CSV exercise, then remove the test installations. Existing service data stops this stage. |
 | Standalone compute and storage | Test cloud-init and SSH on both Ubuntu and Debian. Write a disk on one instance and read it on another through the QEMU console. |
 | Instance autoscaling | Generate HTTP load, check scale-out and scale-in, simulate a metrics outage, replace a failed member and uninstall the module. |
 | Lecture 03 | Exercise HPA, VPA, Cluster Autoscaler, KEDA, custom resources and the MySQL Operator on disposable clusters. |

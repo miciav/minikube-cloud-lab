@@ -191,6 +191,12 @@ _cloud_lab_configure() {
         fi
     }
     function lab {
+        case "${2:-}" in
+            object-storage|queue|database)
+                CLOUD_RUNTIME=$CLOUD_LAB_RUNTIME python3 "$CLOUD_LAB_ROOT/scripts/course-service.py" "$@"
+                return
+                ;;
+        esac
         if [[ $# -ge 2 && $2 == instance-autoscaling ]]; then
             case "$1" in
                 install|uninstall)

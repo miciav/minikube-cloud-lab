@@ -192,3 +192,9 @@ available, but new allocations are blocked until an explicit offline migration
 or removal of the old volumes. If you choose to delete all legacy volumes,
 restart NFS afterward with `docker compose restart nfs`. Keep backups; do not use
 `down -v` as a migration tool.
+
+## Course service state
+
+Each managed service owns a separate Compose project and one named volume. Its private bootstrap settings live under `~/.minikube-cloud-lab/services/<runtime>/<project>-<module>/`. Preserve the volume and this directory together when moving a lab. Reuse the installed PostgreSQL major version when restoring its volume. The core project's Compose shutdown and cluster deletion leave these service projects independent. To release resources use `lab uninstall NAME`; use `lab status NAME` to see retained data.
+
+For diagnostics inspect the service container with the runtime's logs command. Filter container inventory by the `com.docker.compose.project` label. A failed first install can be retried after resolving image, port or filesystem errors. Keep the existing volume when credentials are missing and restore the matching private configuration.

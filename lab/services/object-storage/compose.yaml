@@ -1,0 +1,10 @@
+services:
+  object-storage:
+    image: docker.io/dxflrs/garage:v2.1.0@sha256:4c9b34c113e61358466e83fd6e7d66e6d18657ede14b776eb78a93ee8da7cf6a
+    restart: unless-stopped
+    ports: ["127.0.0.1:${SERVICE_PORT:-3900}:3900"]
+    volumes:
+      - data:/var/lib/garage
+      - ${SERVICE_STATE:?}/garage.toml:/etc/garage.toml:ro,z
+volumes:
+  data: {}

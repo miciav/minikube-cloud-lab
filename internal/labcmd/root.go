@@ -82,13 +82,21 @@ func newRoot(factory connector) *cobra.Command {
 		parent.AddCommand(&cobra.Command{Use: "autoscaler", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 			return action(cmd, autoscalerFiles, verb == "uninstall", nil)
 		}})
+		addCourseServices(parent)
 		parent.AddCommand(dashboardCommand(verb, factory, &path, &context))
 		parent.AddCommand(&cobra.Command{Use: "instance-autoscaling", Short: "Manage instance groups and their local filesystems through the lab shell", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
 			return fmt.Errorf("source scripts/configure.sh and run lab %s instance-autoscaling", verb)
 		}})
 		root.AddCommand(parent)
 	}
-	root.AddCommand(moduleStatus(factory, &path, &context, autoscalerFiles))
+	status := moduleStatus(factory, &path, &context, autoscalerFiles)
+	addCourseServices(status)
+	root.AddCommand(status)
+	for _, verb := range []string{"client", "purge"} {
+		parent := &cobra.Command{Use: verb}
+		addCourseServices(parent)
+		root.AddCommand(parent)
+	}
 	load := &cobra.Command{Use: "load", Short: "Generate resource pressure"}
 	var replicas int32
 	start := &cobra.Command{Use: "start", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
@@ -105,4 +113,15 @@ func newRoot(factory connector) *cobra.Command {
 	load.AddCommand(start, &cobra.Command{Use: "stop", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return action(cmd, []string{"load.yaml"}, true, nil) }})
 	root.AddCommand(load, servicesCommand(factory, &path, &context))
 	return root
+}
+
+func addCourseServices(parent *cobra.Command) {
+	for _, module := range []string{"object-storage", "queue", "database"} {
+		parent.AddCommand(&cobra.Command{
+			Use: module, Short: "Run through the configured lab shell",
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				return fmt.Errorf("source scripts/configure.sh and run %s", cmd.CommandPath())
+			},
+		})
+	}
 }

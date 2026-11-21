@@ -7,6 +7,9 @@ on:
       - 'Dockerfile'
       - 'internal/**'
       - 'scripts/configure.sh'
+      - 'scripts/course-service.py'
+      - 'lab/services/**'
+      - 'tests/managed-services.sh'
       - 'tools/instance-autoscaler/**'
       - 'tests/instance-*.sh'
       - 'tests/service-exposure.sh'
@@ -27,6 +30,12 @@ env:
   DEBIAN_IMAGE: minikube-cloud-lab/instance-debian:dev
   KUBECTL_VERSION: v1.35.6
 jobs:
+  managed-services:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: bash tests/managed-services.sh
   student-path:
     runs-on: ubuntu-24.04
     timeout-minutes: 55

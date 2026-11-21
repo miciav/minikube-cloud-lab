@@ -77,3 +77,9 @@ The cloud CLI uses `--api-url` or `CLOUD_API_URL` (default
 Create and delete commands wait for completion; `--async` returns the operation
 ID immediately. Ctrl-C stops the client's wait, while the operation continues
 in the service.
+
+## Managed services
+
+Use `lab install NAME`, `lab status NAME`, `lab client NAME ...` and `lab uninstall NAME` after sourcing the shell helper. Each module uses its own Compose project, network and named data volume. Each install prints its connection settings directory. Temporary clients join the service project’s private network; use the published loopback endpoint from host applications. Override the host port before installation with `OBJECT_STORAGE_PORT`, `QUEUE_PORT` or `DATABASE_PORT`. Keep the same project name and runtime when returning to your data.
+
+To permanently remove **all** retained data and credentials for one module, uninstall it first, then run `lab purge NAME --yes`. A fresh install generates new credentials. The local account controls the runtime and its private configuration directory. The queue endpoint is for a trusted single-team host; loopback is accessible to other accounts on that host.
