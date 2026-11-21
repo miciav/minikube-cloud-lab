@@ -160,17 +160,24 @@ func TestCreateInstanceRefusesStaleVolume(t *testing.T) {
 }
 
 func TestInstanceImageRef(t *testing.T) {
-	if ref, kicbase, err := instanceImageRef("ubuntu-26.04"); err != nil || kicbase || ref != "ghcr.io/miciav/minikube-cloud-lab/instance-ubuntu:26.04" {
+	if ref, kicbase, err := instanceImageRef("ubuntu-26.04", false); err != nil || kicbase || ref != "ghcr.io/miciav/minikube-cloud-lab/instance-ubuntu:26.04" {
 		t.Fatalf("default: %q %v %v", ref, kicbase, err)
 	}
 	t.Setenv("CLOUD_UBUNTU_IMAGE", "example/ubuntu:test")
-	if ref, _, err := instanceImageRef("ubuntu-26.04"); err != nil || ref != "example/ubuntu:test" {
+	if ref, _, err := instanceImageRef("ubuntu-26.04", false); err != nil || ref != "example/ubuntu:test" {
 		t.Fatalf("override: %q %v", ref, err)
 	}
-	if _, kicbase, err := instanceImageRef("debian-12"); err != nil || !kicbase {
+	if _, kicbase, err := instanceImageRef("debian-12", false); err != nil || !kicbase {
 		t.Fatalf("kicbase: %v %v", kicbase, err)
 	}
-	if _, _, err := instanceImageRef("fedora"); err == nil {
+	if ref, kic, err := instanceImageRef("debian-12", true); err != nil || kic || ref != "ghcr.io/miciav/minikube-cloud-lab/instance-debian:12" {
+		t.Fatalf("Debian cloud-init: %s %v", ref, err)
+	}
+	t.Setenv("CLOUD_DEBIAN_IMAGE", "example/debian:test")
+	if ref, _, _ := instanceImageRef("debian-12", true); ref != "example/debian:test" {
+		t.Fatal(ref)
+	}
+	if _, _, err := instanceImageRef("fedora", false); err == nil {
 		t.Fatal("accepted an unknown image")
 	}
 }

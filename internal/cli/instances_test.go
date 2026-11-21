@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -83,4 +85,54 @@ func TestCreateInstanceDefaultsToUbuntu(t *testing.T) {
 			t.Fatalf("default image: %+v", c.Instance)
 		}
 	}
+}
+
+func TestDiskCommands(t *testing.T) {
+	t.Setenv("CLOUD_DISK_VOLUME", "test")
+	_, url := setup(t, nil)
+	if out, err := execute(t, url, "disks", "create", "data", "--size", "1Gi"); err != nil || out != "data\n" {
+		t.Fatalf("create: %q %v", out, err)
+	}
+	if out, err := execute(t, url, "disks", "list"); err != nil || !strings.Contains(out, "1073741824") {
+		t.Fatalf("list: %q %v", out, err)
+	}
+	for _, action := range []string{"attach", "detach"} {
+		if _, err := execute(t, url, "disks", action, "data", "--instance", "missing"); err == nil || !strings.Contains(err.Error(), "missing") {
+			t.Fatalf("%s: %v", action, err)
+		}
+	}
+	if out, err := execute(t, url, "disks", "delete", "data"); err != nil || out != "data\n" {
+		t.Fatalf("delete: %q %v", out, err)
+	}
+}
+
+func TestInstanceUserData(t *testing.T) {
+	f := fake.New()
+	_, url := setup(t, f)
+	path := filepath.Join(t.TempDir(), "user data.yaml")
+	config := "#cloud-config\n# " + strings.Repeat("a", 5000)
+	for _, tc := range []struct {
+		image, data string
+		ok          bool
+	}{
+		{"ubuntu-26.04", "", false},
+		{"ubuntu-26.04", "bad header", false},
+		{"ubuntu-26.04", strings.Repeat("a", 65537), false},
+		{"debian-12", config, true},
+		{"ubuntu-26.04", config, true},
+	} {
+		if err := os.WriteFile(path, []byte(tc.data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := execute(t, url, "instances", "create", "vm-"+strings.Split(tc.image, "-")[0], "--image", tc.image, "--user-data", path)
+		if (err == nil) != tc.ok {
+			t.Fatalf("image=%s bytes=%d: %v", tc.image, len(tc.data), err)
+		}
+	}
+	for _, call := range f.Calls() {
+		if call.Method == "CreateInstance" && call.Instance.UserData == config {
+			return
+		}
+	}
+	t.Fatal("cloud-config did not reach the backend intact")
 }

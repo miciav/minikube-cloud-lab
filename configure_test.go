@@ -600,3 +600,18 @@ result=$?
 		t.Fatalf("unsupported mode: %s (%v)", out, err)
 	}
 }
+
+func TestUserDataFileThroughCompose(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh"} {
+		f := newConfigurationFixture(t)
+		body := podmanWrappers(t) + `
+labcompose() { echo "$*"; cat; }
+printf 'file contents\n' > 'user data.yaml'
+cloud instances create vm --user-data 'user data.yaml'
+`
+		out, err := f.runShell(t, shell, body, "CONFIG_TEST_ROOT="+f.root)
+		if err != nil || !strings.Contains(string(out), "exec -T cloud cloud instances create vm --user-data=-\nfile contents") {
+			t.Fatalf("%s: %s %v", shell, out, err)
+		}
+	}
+}

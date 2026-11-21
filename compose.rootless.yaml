@@ -6,11 +6,13 @@ services:
     security_opt: [label=disable]
     ports: ['127.0.0.1:8080:8080']
     environment:
+      CLOUD_DISK_VOLUME: minikube-cloud-lab-rootless-disks
       CLOUD_ROOTLESS: 'true'
       CLOUD_STORAGE_VOLUME: minikube-cloud-lab-rootless-storage
       CLOUD_STORAGE_CAPACITY: ${CLOUD_STORAGE_CAPACITY:-20Gi}
       CLOUD_DOCKER_NETWORK: minikube-cloud-lab-rootless
       CLOUD_DOCKER_IP: 172.30.0.254
+      CLOUD_DEBIAN_IMAGE: ${DEBIAN_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/instance-debian:12}
       CLOUD_UBUNTU_IMAGE: ${UBUNTU_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/instance-ubuntu:26.04}
     networks:
       lab:
@@ -18,6 +20,7 @@ services:
     volumes:
       - ${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR must identify the student runtime directory}/podman/podman.sock:/var/run/docker.sock
       - state:/data
+      - instance-disks:/data/instance-disks
       - kube:/kube
       - storage:/data/storage
   lab:
@@ -47,6 +50,8 @@ networks:
         - subnet: 172.30.0.0/23
           gateway: 172.30.0.1
 volumes:
+  instance-disks:
+    name: minikube-cloud-lab-rootless-disks
   state:
     name: minikube-cloud-lab-rootless-state
   kube:

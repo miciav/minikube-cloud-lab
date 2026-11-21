@@ -139,3 +139,87 @@ cleanup; forcibly killing the script or shutting down the VM can leave resources
 
 Exit codes: **0** all checks passed, **1** failures (including cleanup), **2** no
 failures but some checks skipped. A SKIP is not full certification of the VM.
+
+## Reproducible Multipass VM
+
+From a checkout containing the changes to test, run:
+
+```sh
+bash scripts/multipass-rootless.sh
+```
+
+The host needs Git and Multipass. The script creates a dedicated Ubuntu 26.04
+VM named `mcl-rootless-test` with 4 CPUs, 8 GiB of RAM and a 48 GiB virtual
+disk. It provisions Podman, Compose, kernel modules and cgroup delegation,
+then builds the cloud image from the indicated Git commit inside the VM.
+Commit local edits before running. The VM needs internet access to Ubuntu
+package mirrors, container registries and Go modules on its first run.
+
+The short test creates two standalone instances and a blank disk, formats it
+in an emulated Linux console, checks that detachment is refused while the
+console is open and reads the file from the second instance. It also checks
+SSH and ordinary instance persistence across stop/start. Use `--full` to also build the lab image and run
+`verify-lab.py --runtime podman --no-pull` with its Kubernetes and storage
+checks. A nonzero exit indicates a failed or incomplete verification.
+
+Rerunning the command reuses the marked VM and its image cache. Specify
+`--vm NAME` for a separate environment. The script leaves the VM available
+for inspection. Stop it with `multipass stop mcl-rootless-test`.
+
+### Block-device feasibility on the test VM
+
+From the checkout on the host, after provisioning the Multipass VM:
+
+```sh
+multipass exec mcl-rootless-test -- bash -s < tests/rootless-block-device.sh
+```
+
+The probe uses sudo in the dedicated VM to associate a fresh 64 MiB file with
+a loop device and create a private device node for the lab user. Two successive
+rootless Podman containers receive that node as `/dev/cloud-disks/dati`. The
+first formats the block device using `mkfs.ext4` and writes a file through
+`fuse2fs`. The second mounts the same disk and checks the file contents.
+The probe removes its device and image on exit.
+
+This optional probe demonstrates host-assisted loop allocation. Student disk
+consoles use QEMU software emulation and can run without the probe.
+
+### Student disk exercise with QEMU
+
+In the VM, source `scripts/configure.sh` and start the rootless cloud. With two
+running instances named `vm1` and `vm2`, run:
+
+```sh
+cloud disks create dati --size 64Mi
+cloud disks attach dati --instance vm1
+cloud disks shell vm1 dati
+```
+
+The shell opens a minimal Linux guest with one virtio data disk. On first use
+Podman builds the console image from this checkout. In that shell run:
+
+```sh
+lsblk
+mkfs.ext4 /dev/vda
+mount /dev/vda /mnt
+echo hello > /mnt/message
+umount /mnt
+exit
+```
+
+Back on the VM, move the disk to the second instance:
+
+```sh
+cloud disks detach dati --instance vm1
+cloud disks attach dati --instance vm2
+cloud disks shell vm2 dati
+```
+
+Run `mount /dev/vda /mnt` and `cat /mnt/message`. The guest root filesystem is
+temporary; the disk image lives in the named Podman volume
+`minikube-cloud-lab-rootless-disks`. The emulated console is separate from the
+instance's ordinary SSH shell and shares the instance's lifetime. Exit the
+console before stopping the instance, detaching the disk or deleting the owner.
+Only one console can open a disk at a time. The host-side shell command is
+provided by `scripts/configure.sh`; it runs QEMU with TCG, without KVM, sudo
+or a privileged device helper.

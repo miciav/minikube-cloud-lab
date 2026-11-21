@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -106,8 +107,11 @@ func newInstanceKey() (private []byte, authorized string, err error) {
 	return pem.EncodeToMemory(block), strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))), nil
 }
 
+// MaxUserDataBytes bounds the cloud-config supplied by a client.
+const MaxUserDataBytes = 64 << 10
+
 // CreateInstance accepts one standalone instance and provisions it asynchronously.
-func (s *Service) CreateInstance(name, image, kind, requester string) (Operation, error) {
+func (s *Service) CreateInstance(name, image, kind, requester, userData string) (Operation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.instances == nil {
@@ -119,6 +123,9 @@ func (s *Service) CreateInstance(name, image, kind, requester string) (Operation
 	img, err := LookupImage(image)
 	if err != nil {
 		return Operation{}, err
+	}
+	if userData != "" && (len(userData) > MaxUserDataBytes || strings.TrimSpace(strings.SplitN(userData, "\n", 2)[0]) != "#cloud-config") {
+		return Operation{}, fmt.Errorf("%w: user-data requires a #cloud-config file of at most 64 KiB", ErrInvalid)
 	}
 	shape, err := LookupMachineType(kind)
 	if err != nil {
@@ -148,7 +155,7 @@ func (s *Service) CreateInstance(name, image, kind, requester string) (Operation
 		_ = os.RemoveAll(dir)
 		return Operation{}, err
 	}
-	spec := infra.InstanceSpec{Name: name, Image: image, Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, SSHUser: img.SSHUser, AuthorizedKey: authorized}
+	spec := infra.InstanceSpec{UserData: userData, Name: name, Image: image, Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, SSHUser: img.SSHUser, AuthorizedKey: authorized}
 	var observed infra.Instance
 	s.launch(op.ID, func() error {
 		var err error
@@ -267,14 +274,25 @@ func (s *Service) DeleteInstance(name, requester string) (Operation, error) {
 		if err := s.instances.DeleteInstance(context.Background(), name); err != nil {
 			return err
 		}
-		return os.RemoveAll(s.instanceDir(name))
+		return s.removeInstanceFiles(name)
 	}, func(st *snapshot, err error) {
 		if err == nil {
+			maps.DeleteFunc(st.DiskOwners, func(_ string, owner string) bool { return owner == name })
 			st.Instances = slices.DeleteFunc(st.Instances, func(i Instance) bool { return i.Name == name })
 		} else if i, lookup := st.instance(name); lookup == nil {
 			i.Status = "ERROR"
 		}
 	})
+}
+
+func (s *Service) removeInstanceFiles(name string) error {
+	if s.disksEnabled() {
+		// Attachment links live here. The independent images survive instance deletion.
+		if err := os.RemoveAll(filepath.Join(s.diskRoot(), "slots", name)); err != nil {
+			return err
+		}
+	}
+	return os.RemoveAll(s.instanceDir(name))
 }
 
 // reconcileInstances aligns recorded instances with the containers that survived a restart.
@@ -300,7 +318,13 @@ func (s *Service) reconcileInstances(now time.Time) {
 		delete(byName, i.Name)
 		switch {
 		case !found && i.Status == "DELETING":
-			_ = os.RemoveAll(s.instanceDir(i.Name))
+			if err := s.removeInstanceFiles(i.Name); err != nil {
+				s.logger.Error("removing instance files", "error", err)
+				i.Status = "ERROR"
+				kept = append(kept, i)
+				continue
+			}
+			maps.DeleteFunc(s.state.DiskOwners, func(_ string, owner string) bool { return owner == i.Name })
 			continue
 		case !found:
 			i.Status = "ERROR"

@@ -119,7 +119,31 @@ _cloud_lab_configure() {
             labcompose --profile tools run "$@"
         fi
     }
-    function cloud { labcompose exec cloud cloud "$@"; }
+    function cloud {
+        if [[ $CLOUD_LAB_RUNTIME == podman && ${1:-} == disks && ${2:-} == shell ]]; then
+            shift 2
+            "$CLOUD_LAB_ROOT/scripts/rootless-disk-shell.sh" "$@"
+        elif [[ ${1:-} == instances && ${2:-} == create ]]; then
+            local -a args
+            local seed=
+            args=()
+            while (( $# )); do
+                case $1 in
+                    --user-data) shift; [[ -n ${1:-} ]] || { echo "Missing user-data file" >&2; return 2; }; seed=$1; args+=(--user-data=-) ;;
+                    --user-data=*) seed=${1#*=}; args+=(--user-data=-) ;;
+                    *) args+=("$1") ;;
+                esac
+                shift
+            done
+            if [[ -n ${seed:-} && $seed != - ]]; then
+                labcompose exec -T cloud cloud "${args[@]}" < "$seed"
+            else
+                labcompose exec -T cloud cloud "${args[@]}"
+            fi
+        else
+            labcompose exec cloud cloud "$@"
+        fi
+    }
     function lab { _cloud_lab_run --rm lab "$@"; }
     function kubectl {
         local -a _cloud_forward_ports _cloud_forward_args

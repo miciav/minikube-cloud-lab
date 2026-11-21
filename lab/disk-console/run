@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+disk=/slot/$1
+# Take the same inode lock as the cloud, then recheck the attachment after taking it.
+exec 8< "$disk"
+flock -n 8 || { echo 'Disk console in use' >&2; exit 1; }
+test "$disk" -ef /proc/self/fd/8 || { echo 'Disk detached' >&2; exit 1; }
+case $(uname -m) in
+    aarch64) qemu=qemu-system-aarch64; machine=virt; cpu=cortex-a57; console=ttyAMA0; device=virtio-blk-device ;;
+    x86_64) qemu=qemu-system-x86_64; machine=q35; cpu=max; console=ttyS0; device=virtio-blk-pci ;;
+esac
+"$qemu" -accel tcg -machine "$machine" -cpu "$cpu" -m 256 -nodefaults -no-reboot -display none \
+    -serial stdio -monitor none -kernel /guest-kernel -initrd /guest-initrd \
+    -append "console=$console rdinit=/init panic=1 quiet" \
+    -drive "if=none,id=data,format=raw,file=$disk" -device "$device,drive=data"
