@@ -125,8 +125,7 @@ Docker. No forwarding terminal is needed. On a remote VM, use an SSH tunnel
 (`ssh -L PORT:127.0.0.1:PORT USER@VM`) with that port.
 YAKD uses a cluster-admin service account: keep this local UI private. It requests
 128 MiB and is capped at 256 MiB. New clusters also include Metrics Server 0.9.0,
-so YAKD can show live Pod CPU and memory usage. Existing clusters are not modified;
-recreate them to obtain the new addons. An API error installing YAKD fails the create operation and leaves
+so YAKD can show live Pod CPU and memory usage. Use `lab status yakd` to inspect readiness and `lab uninstall yakd` or `lab install yakd` to remove or restore the dashboard on an existing cluster. An API error installing YAKD fails the create operation and leaves
 the partial cluster available for inspection or deletion through `cloud`.
 
 ### Cloud portal

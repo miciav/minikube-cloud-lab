@@ -159,12 +159,12 @@ func TestDashboardRemovalChecksContextAndOwnership(t *testing.T) {
 				}
 				removed = true
 			}
-			_, _ = w.Write([]byte(`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"ClusterRoleBinding","metadata":{"uid":"owner","managedFields":[{"manager":"cloud-yakd","operation":"Apply"}]}}`))
+			_, _ = w.Write([]byte(`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"ClusterRoleBinding","metadata":{"name":"yakd-dashboard","uid":"owner","managedFields":[{"manager":"cloud-yakd","operation":"Apply"}]}}`))
 		case strings.Contains(r.URL.Path, "/deployments/"):
 			if r.Method != http.MethodGet {
 				t.Error("deleted student deployment")
 			}
-			_, _ = w.Write([]byte(`{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"uid":"student"}}`))
+			_, _ = w.Write([]byte(`{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"yakd-dashboard","uid":"student"}}`))
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
 		}

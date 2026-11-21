@@ -14,7 +14,7 @@ sudo modprobe vxlan
 printf 'br_netfilter\nvxlan\n' | sudo tee /etc/modules-load.d/cloud-lab.conf
 ```
 
-Enable the user's API socket with `systemctl --user enable --now podman.socket`. Verify `podman info` reports rootless and cgroups v2.
+Enable the user's API socket with `systemctl --user enable --now podman.socket`. For recovery after a guest reboot, enable `podman-restart.service` with `systemctl --user enable podman-restart.service` and enable lingering for the lab user. Verify `podman info` reports rootless and cgroups v2.
 
 The CI builds and publishes the cloud and tools images to GHCR for amd64 and arm64 after checks pass on main. Once publication finishes, pull those images in the student VM:
 
@@ -179,6 +179,9 @@ checks. A nonzero exit indicates a failed or incomplete verification.
 Rerunning the command reuses the marked VM and its image cache. Specify
 `--vm NAME` for a separate environment. The script leaves the VM available
 for inspection. Stop it with `multipass stop mcl-rootless-test`.
+For an isolated run use `--full --ephemeral --vm NAME` with an unused name.
+The script connects with a one-time SSH key and purges its guest on exit,
+including after a failed check.
 
 ### Block-device feasibility on the test VM
 

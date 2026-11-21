@@ -1,6 +1,16 @@
 name: Student path
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'compose*.yaml'
+      - 'Dockerfile'
+      - 'internal/**'
+      - 'scripts/configure.sh'
+      - 'tools/instance-autoscaler/**'
+      - 'tests/instance-*.sh'
+      - 'tests/service-exposure.sh'
+      - '.github/workflows/student-path.yml'
 permissions:
   contents: read
 defaults:
@@ -53,7 +63,19 @@ jobs:
           export TEST_CLOUD_CONTAINER
           TEST_CLOUD_CONTAINER=$(docker compose ps -q cloud)
           export TEST_ARTIFACT_DIR="$RUNNER_TEMP/service-exposure"
+          # Run once with the dashboard relay as an existing endpoint.
+          bash tests/service-exposure.sh prepare
+          bash tests/service-exposure.sh mutate-cleanup
+          kubectl -n yakd-dashboard create service clusterip student --tcp=80:80
+          uid=$(kubectl -n yakd-dashboard get service yakd-dashboard -o jsonpath='{.metadata.uid}')
           lab uninstall yakd
+          kubectl -n yakd-dashboard get service student
+          for _ in {1..60}; do
+            ids=$(docker ps -aq --filter "label=minikube-cloud-lab.service-uid=$uid")
+            [[ -n $ids ]] || break
+            sleep 1
+          done
+          [[ -z $ids ]]
           lab status yakd | grep -F disabled
           bash tests/service-exposure.sh prepare
           lab services
@@ -110,6 +132,8 @@ jobs:
           bash tests/service-exposure.sh check
           bash tests/service-exposure.sh mutate-cleanup
           lab install yakd
+          kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
+          curl --retry 30 --retry-delay 2 --retry-all-errors -fsS http://127.0.0.1:8080/v1/clusters/demo/dashboard
           lab uninstall instance-autoscaling
           bash tests/storage-capacity.sh
           bash tests/storage.sh prepare

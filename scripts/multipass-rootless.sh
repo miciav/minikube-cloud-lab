@@ -42,13 +42,25 @@ write_files:
       br_netfilter
       vxlan
 CLOUD
+    if $ephemeral; then
+        ssh-keygen -q -t ed25519 -N '' -f "$scratch/key"
+        printf 'ssh_authorized_keys:\n  - ' >> "$scratch/cloud-init.yaml"
+        cat "$scratch/key.pub" >> "$scratch/cloud-init.yaml"
+    fi
     multipass launch 26.04 --name "$vm" --cpus 4 --memory 8G --disk 48G --cloud-init "$scratch/cloud-init.yaml"
     created_vm=true
 else
     if $ephemeral; then echo "Temporary VM name already in use" >&2; exit 1; fi
     multipass start "$vm"
 fi
-guest() { multipass exec "$vm" -- "$@"; }
+guest() {
+    if ! $ephemeral; then multipass exec "$vm" -- "$@"; return; fi
+    local ip command
+    ip=$(multipass info "$vm" --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"][sys.argv[1]]["ipv4"][0])' "$vm") || return
+    printf -v command '%q ' "$@"
+    ssh -i "$scratch/key" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+        -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$scratch/known_hosts" "ubuntu@$ip" "$command"
+}
 guest bash -se <<'PROVISION'
 [[ -f /etc/mcl-multipass-rootless-test ]] || { echo "Refusing to modify an unrelated VM" >&2; exit 1; }
 if ! command -v podman >/dev/null || ! command -v podman-compose >/dev/null; then
@@ -62,13 +74,14 @@ sudo modprobe br_netfilter
 sudo modprobe vxlan
 sudo loginctl enable-linger "$(id -un)"
 systemctl --user enable --now podman.socket
+systemctl --user enable podman-restart.service
 test "$(id -u)" != 0
 podman info --format 'Podman {{.Version.Version}} rootless={{.Host.Security.Rootless}} cgroups={{.Host.CgroupsVersion}}'
 test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
 PROVISION
 git -C "$root" archive --format=tar.gz -o "$scratch/source.tgz" "$revision"
 guest_archive=$(guest mktemp /tmp/mcl-source-XXXXXXXX.tgz)
-multipass transfer "$scratch/source.tgz" "$vm:$guest_archive"
+guest bash -c 'cat > "$1"' archive "$guest_archive" < "$scratch/source.tgz"
 guest bash -c 'file=$(mktemp) || exit; cat > "$file" && bash -e "$file" "$@" </dev/null; rc=$?; rm -f "$file"; exit "$rc"' verify "$revision" "$full" "$guest_archive" <<'VERIFY'
 set -o pipefail
 revision=$1
@@ -111,8 +124,10 @@ started=true
 labcompose up -d cloud
 for _ in {1..40}; do if cloud images list >/dev/null 2>&1; then break; fi; sleep 1; done
 cloud images list
+cloud_id=$(podman ps -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" --filter label=com.docker.compose.service=cloud)
+[[ -n $cloud_id && $cloud_id != *$'\n'* ]]
 for image in ubuntu-26.04 debian-12; do
-    TEST_CLOUD_CONTAINER=$(labcompose ps -q cloud) RUNTIME=podman bash tests/instance-cloud-init.sh "$image"
+    TEST_CLOUD_CONTAINER=$cloud_id RUNTIME=podman bash tests/instance-cloud-init.sh "$image"
 done
 python3 tests/rootless-disk-console.py
 if $full; then bash tests/instance-autoscaling.sh; fi
@@ -138,4 +153,40 @@ if $full; then
     python3 scripts/verify-lab.py --runtime podman --no-pull
 fi
 VERIFY
-echo "PASS: $vm ($revision). Stop with: multipass stop $vm"
+if $full && $ephemeral; then
+    guest bash -se -- "$revision" <<'BEFORE_REBOOT'
+cd "$HOME/mcl-test/$1"
+export CLOUD_RUNTIME=podman COMPOSE_PROJECT_NAME=mcl-rootless-verification
+export CLOUD_IMAGE="localhost/mcl-test/cloud:$1"
+source scripts/configure.sh
+labcompose up -d cloud
+lab install instance-autoscaling
+BEFORE_REBOOT
+    boot_id=$(guest cat /proc/sys/kernel/random/boot_id)
+    guest sudo systemctl reboot || true # SSH may close before systemctl returns.
+    for _ in {1..60}; do
+        next_boot=$(guest cat /proc/sys/kernel/random/boot_id 2>/dev/null) || { sleep 2; continue; }
+        if [[ $next_boot != "$boot_id" ]]; then break; fi
+        sleep 2
+    done
+    [[ -n ${next_boot:-} && $next_boot != "$boot_id" ]]
+    guest bash -se -- "$revision" <<'AFTER_REBOOT'
+cd "$HOME/mcl-test/$1"
+export CLOUD_RUNTIME=podman COMPOSE_PROJECT_NAME=mcl-rootless-verification
+source scripts/configure.sh
+for _ in {1..60}; do
+    if curl -fsS http://127.0.0.1:8080/v1/instance-autoscaling/health |
+        python3 -c 'import json,sys; sys.exit(json.load(sys.stdin)["state"] != "ready")'; then break; fi
+    sleep 2
+done
+curl -fsS http://127.0.0.1:8080/v1/instance-autoscaling/health |
+    python3 -c 'import json,sys; assert json.load(sys.stdin)["state"] == "ready"'
+lab uninstall instance-autoscaling
+labcompose down
+AFTER_REBOOT
+fi
+if $ephemeral; then
+    echo "PASS: $vm ($revision); removing test VM"
+else
+    echo "PASS: $vm ($revision). Stop with: multipass stop $vm"
+fi

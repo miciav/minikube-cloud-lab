@@ -73,6 +73,7 @@ while true; do curl -fsS --max-time 2 "$web" >/dev/null || true; sleep 0.06; don
 load_pid=$!
 wait_for capacity 3
 labcompose --profile instance-autoscaling stop instance-metrics
+curl -fsS "$base/v1/instance-autoscaling/health" | python3 -c 'import json,sys; h=json.load(sys.stdin); assert h["state"]=="degraded" and "instance-metrics" in h["detail"]'
 kill "$load_pid"
 wait "$load_pid" 2>/dev/null || true
 load_pid=
@@ -91,6 +92,8 @@ stopped=$(member)
 cloud instances stop "$stopped"
 cloud groups create cleanup-smoke --desired 2 --max 2 --bootstrap - < "$repo/lab/instance-autoscaling/web.sh"
 cleanup_id=$(curl -fsS "$base/v1/groups/cleanup-smoke" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+# Resume an uninstall whose caller disconnected after the cloud persisted its intent.
+curl -fsS -X POST "$base/v1/instance-autoscaling/begin-removal" >/dev/null
 lab uninstall instance-autoscaling
 module_disabled
 all_removed "$id"

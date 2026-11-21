@@ -138,6 +138,10 @@ func TestComposeConfiguration(t *testing.T) {
 
 func TestComposeConfigurationAutoscaling(t *testing.T) {
 	for _, file := range []string{"compose.yaml", "compose.rootless.yaml"} {
+		restart := "unless-stopped"
+		if file == "compose.rootless.yaml" {
+			restart = "always"
+		}
 		for _, enabled := range []bool{false, true} {
 			args := []string{"compose", "-f", file}
 			if enabled {
@@ -164,7 +168,7 @@ func TestComposeConfigurationAutoscaling(t *testing.T) {
 			}
 			for svc, ip := range map[string]string{"instance-lb": "172.29.240.255", "instance-metrics": "172.29.241.0", "instance-autoscaler": ""} {
 				service, exists := config.Services[svc]
-				if exists != enabled || (enabled && (service.Restart != "unless-stopped" || service.Networks["lab"].Address != ip)) {
+				if exists != enabled || (enabled && (service.Restart != restart || service.Networks["lab"].Address != ip)) {
 					t.Errorf("%s profile enabled=%v: %s = %+v", file, enabled, svc, service)
 				}
 			}

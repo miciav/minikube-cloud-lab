@@ -16,7 +16,7 @@ import (
 var reviewed = map[string]string{
 	// Upstream identifies vulnerable minikube 0.3.0–0.29.0, fixed in 0.30.0.
 	// https://github.com/kubernetes/minikube/issues/3208
-	"GO-2023-1961 k8s.io/minikube@v1.39.0": "dashboard issue fixed in v0.30.0; no dashboard is enabled",
+	"GO-2023-1961 k8s.io/minikube@v1.39.0": "minikube dashboard issue fixed in v0.30.0; this lab uses the separate YAKD addon",
 	// Both advisories affect Docker Engine plugin handling, not the SDK client used here.
 	// https://github.com/moby/moby/security/advisories/GHSA-x744-4wpc-v9h2
 	"GO-2026-4887 github.com/docker/docker@v28.5.2+incompatible": "daemon AuthZ plugin handling; this program only uses the Docker client",

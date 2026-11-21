@@ -1,6 +1,6 @@
 services:
   cloud:
-    restart: unless-stopped
+    restart: always
     image: ${CLOUD_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/cloud:latest}
     command: [serve, --data-dir, /data, --api, '0.0.0.0:8080']
     user: '0:0'
@@ -50,7 +50,7 @@ services:
     security_opt: [label=disable]
     image: docker.io/library/traefik:v3.6@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d
     profiles: [instance-autoscaling]
-    restart: unless-stopped
+    restart: always
     ports: ["127.0.0.1:8084:8080"]
     networks:
       lab:
@@ -67,7 +67,7 @@ services:
     security_opt: [label=disable]
     image: docker.io/prom/prometheus:v3.11.3@sha256:e4254400b85610324913f0dc4acf92603d9984e7519414c5a12811aa6146acc3
     profiles: [instance-autoscaling]
-    restart: unless-stopped
+    restart: always
     ports: ["127.0.0.1:9091:9090"]
     networks:
       lab:
@@ -79,7 +79,7 @@ services:
     image: localhost/minikube-cloud-lab/instance-autoscaler:local
     build: ./tools/instance-autoscaler
     profiles: [instance-autoscaling]
-    restart: unless-stopped
+    restart: always
     network_mode: service:cloud
     volumes: [autoscaling:/autoscaling:ro]
 

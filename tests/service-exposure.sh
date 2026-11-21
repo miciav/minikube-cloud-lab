@@ -25,7 +25,10 @@ wait_for() {
     echo "Timeout: $what" >&2
     return 1
 }
-old_relay_gone() { [[ -z $(docker ps -aq --filter "label=minikube-cloud-lab.service-uid=$old_uid" --filter "label=minikube-cloud-lab.network=$TEST_NETWORK") ]]; }
+old_relay_gone() {
+    local ids
+    ids=$(docker ps -aq --filter "label=minikube-cloud-lab.service-uid=$old_uid" --filter "label=minikube-cloud-lab.network=$TEST_NETWORK") && [[ -z $ids ]]
+}
 lb_two_rebound() { kubectl -n "$namespace" get service mcl-test-lb-two -o json | jq -e '.metadata.annotations["minikube-cloud-lab.io/host-endpoints"] | fromjson | .[0].hostPort == 30081' > /dev/null; }
 conflict_reported() { kubectl -n "$namespace" get service mcl-test-conflict -o json | jq -e '.metadata.annotations | .["minikube-cloud-lab.io/exposure-error"] != null and .["minikube-cloud-lab.io/host-endpoints"] == null' > /dev/null; }
 baseline_restored() { relay_ids | sort > "$TEST_ARTIFACT_DIR/current.ids" && cmp -s "$TEST_ARTIFACT_DIR/baseline.ids" "$TEST_ARTIFACT_DIR/current.ids"; }
@@ -96,7 +99,7 @@ for key,member in network['Containers'].items():
     if key not in relay_ids:
         ip=ipaddress.ip_interface(member['IPv4Address']).ip
         assert ip in first or ip==second.network_address,member
-print('Pool separation, four relays, localhost-only bindings and no mounts PASS')
+print('Pool separation, relay count, localhost-only bindings and no mounts PASS')
 PY
         snapshot > "$TEST_ARTIFACT_DIR/before.json"
         docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' $ids
@@ -134,7 +137,8 @@ PY
         echo 'UID replacement, port/type changes, occupied NodePort recovery and Service cleanup PASS'
         ;;
     deleted)
-        test -z "$(relay_ids)"
+        ids=$(relay_ids)
+        test -z "$ids"
         echo 'Cluster relay cleanup PASS'
         ;;
     *) echo 'Unknown test phase' >&2; exit 1 ;;
