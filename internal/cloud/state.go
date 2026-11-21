@@ -57,6 +57,7 @@ type Operation struct {
 	Requester string     `json:"requester"`
 	Status    OpStatus   `json:"status"`
 	Error     string     `json:"error,omitempty"`
+	Reason    string     `json:"reason,omitempty"`
 	StartedAt time.Time  `json:"startedAt"`
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
 }
@@ -109,15 +110,17 @@ type Volume struct {
 }
 
 type snapshot struct {
-	Instances  []Instance  `json:"instances,omitempty"`
-	Volumes    []Volume    `json:"volumes,omitempty"`
-	Clusters   []Cluster   `json:"clusters"`
-	Machines   []Machine   `json:"machines"`
-	Operations []Operation `json:"operations"`
+	Autoscaling string      `json:"instanceAutoscaling,omitempty"`
+	Groups      []Group     `json:"instanceGroups,omitempty"`
+	Instances   []Instance  `json:"instances,omitempty"`
+	Volumes     []Volume    `json:"volumes,omitempty"`
+	Clusters    []Cluster   `json:"clusters"`
+	Machines    []Machine   `json:"machines"`
+	Operations  []Operation `json:"operations"`
 }
 
 func (st snapshot) clone() snapshot {
-	return snapshot{Instances: slices.Clone(st.Instances), Volumes: slices.Clone(st.Volumes), Clusters: slices.Clone(st.Clusters), Machines: slices.Clone(st.Machines), Operations: slices.Clone(st.Operations)}
+	return snapshot{Autoscaling: st.Autoscaling, Groups: slices.Clone(st.Groups), Instances: slices.Clone(st.Instances), Volumes: slices.Clone(st.Volumes), Clusters: slices.Clone(st.Clusters), Machines: slices.Clone(st.Machines), Operations: slices.Clone(st.Operations)}
 }
 
 func save(dir string, st snapshot) error {

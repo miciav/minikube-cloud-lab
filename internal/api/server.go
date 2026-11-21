@@ -44,6 +44,7 @@ func respond(w http.ResponseWriter, status int, value any, err error) {
 // NewServer routes management requests to the shared cloud service.
 func NewServer(svc *cloud.Service) http.Handler {
 	mux := http.NewServeMux()
+	registerGroups(mux, svc)
 	mux.HandleFunc("GET /v1/clusters/{name}/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		v, err := svc.Dashboard(r.Context(), r.PathValue("name"))
 		respond(w, 200, v, err)
@@ -189,7 +190,11 @@ func NewServer(svc *cloud.Service) http.Handler {
 
 // decodeJSON accepts exactly one small JSON object without unknown fields.
 func decodeJSON(w http.ResponseWriter, r *http.Request, value any) error {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	return decodeJSONLimit(w, r, value, 4096)
+}
+
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, value any, limit int64) error {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(value); err != nil {
 		return err
