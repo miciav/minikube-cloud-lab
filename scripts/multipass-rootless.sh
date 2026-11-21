@@ -37,10 +37,6 @@ write_files:
     content: |
       [Service]
       Delegate=cpu cpuset io memory pids
-  - path: /etc/modules-load.d/cloud-lab.conf
-    content: |
-      br_netfilter
-      vxlan
 CLOUD
     if $ephemeral; then
         ssh-keygen -q -t ed25519 -N '' -f "$scratch/key"
@@ -61,7 +57,11 @@ guest() {
     ssh -i "$scratch/key" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
         -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$scratch/known_hosts" "ubuntu@$ip" "$command"
 }
-guest bash -se <<'PROVISION'
+# Give commands such as compose exec their own stdin, separate from the script.
+guest_script() {
+    guest bash -c 'file=$(mktemp) || exit; cat > "$file" && bash -e "$file" "$@" </dev/null; rc=$?; rm -f "$file"; exit "$rc"' verify "$@"
+}
+guest_script <<'PROVISION'
 [[ -f /etc/mcl-multipass-rootless-test ]] || { echo "Refusing to modify an unrelated VM" >&2; exit 1; }
 if ! command -v podman >/dev/null || ! command -v podman-compose >/dev/null; then
     sudo apt-get update
@@ -70,8 +70,10 @@ fi
 # Ubuntu's pasta AppArmor profile denies the termination signal from Podman at teardown.
 mkdir -p "$HOME/.config/containers/containers.conf.d"
 printf '%s\n' '[network]' 'default_rootless_network_cmd="slirp4netns"' > "$HOME/.config/containers/containers.conf.d/90-mcl-test.conf"
-sudo modprobe br_netfilter
-sudo modprobe vxlan
+# The Docker daemon inside Debian instances uses legacy iptables and cannot load host modules.
+modules=(br_netfilter vxlan iptable_nat iptable_filter iptable_mangle iptable_raw)
+printf '%s\n' "${modules[@]}" | sudo tee /etc/modules-load.d/cloud-lab.conf >/dev/null
+sudo modprobe -a "${modules[@]}"
 sudo loginctl enable-linger "$(id -un)"
 systemctl --user enable --now podman.socket
 systemctl --user enable podman-restart.service
@@ -82,7 +84,7 @@ PROVISION
 git -C "$root" archive --format=tar.gz -o "$scratch/source.tgz" "$revision"
 guest_archive=$(guest mktemp /tmp/mcl-source-XXXXXXXX.tgz)
 guest bash -c 'cat > "$1"' archive "$guest_archive" < "$scratch/source.tgz"
-guest bash -c 'file=$(mktemp) || exit; cat > "$file" && bash -e "$file" "$@" </dev/null; rc=$?; rm -f "$file"; exit "$rc"' verify "$revision" "$full" "$guest_archive" <<'VERIFY'
+guest_script "$revision" "$full" "$guest_archive" <<'VERIFY'
 set -o pipefail
 revision=$1
 full=$2
@@ -154,7 +156,7 @@ if $full; then
 fi
 VERIFY
 if $full && $ephemeral; then
-    guest bash -se -- "$revision" <<'BEFORE_REBOOT'
+    guest_script "$revision" <<'BEFORE_REBOOT'
 cd "$HOME/mcl-test/$1"
 export CLOUD_RUNTIME=podman COMPOSE_PROJECT_NAME=mcl-rootless-verification
 export CLOUD_IMAGE="localhost/mcl-test/cloud:$1"
@@ -170,7 +172,7 @@ BEFORE_REBOOT
         sleep 2
     done
     [[ -n ${next_boot:-} && $next_boot != "$boot_id" ]]
-    guest bash -se -- "$revision" <<'AFTER_REBOOT'
+    guest_script "$revision" <<'AFTER_REBOOT'
 cd "$HOME/mcl-test/$1"
 export CLOUD_RUNTIME=podman COMPOSE_PROJECT_NAME=mcl-rootless-verification
 source scripts/configure.sh
