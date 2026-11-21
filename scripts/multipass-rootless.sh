@@ -38,8 +38,8 @@ else
     multipass start "$vm"
 fi
 guest() { multipass exec "$vm" -- "$@"; }
-guest test -f /etc/mcl-multipass-rootless-test || { echo "Refusing to modify an unrelated VM: $vm" >&2; exit 1; }
 guest bash -se <<'PROVISION'
+[[ -f /etc/mcl-multipass-rootless-test ]] || { echo "Refusing to modify an unrelated VM" >&2; exit 1; }
 if ! command -v podman >/dev/null || ! command -v podman-compose >/dev/null; then
     sudo apt-get update
     sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y podman podman-compose uidmap dbus-user-session fuse-overlayfs slirp4netns

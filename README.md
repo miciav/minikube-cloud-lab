@@ -459,6 +459,14 @@ filesystem in the container: both survive stop/start and cloud restarts and are
 removed by `cloud instances delete`. Delete instances before `docker compose down`,
 as with clusters: they stay attached to the lab network.
 
+Instances are privileged containers, like the cluster nodes: on rootful Docker,
+root inside an instance is root on the Docker host; on Podman rootless it is the
+student's own user. The SSH private key is served by the management API, which has
+no authentication and listens only on localhost, like cluster kubeconfigs. Ubuntu
+instances generate their own SSH host keys at first boot; `debian-12` instances share
+the host keys baked into kicbase. Each connection is checked against the key recorded
+for that instance. Use instances only on a trusted lab host.
+
 ### Configure Ubuntu at first boot
 
 With the cloud and Ubuntu images built from the same revision, create an instance
@@ -490,15 +498,6 @@ to finish. Stop/start preserves its state; deleting and recreating the instance
 applies the supplied configuration again. To stream YAML use `--user-data -`.
 Run the lifecycle test against a running lab with
 `TEST_CLOUD_CONTAINER=$(labcompose ps -q cloud) RUNTIME=$CLOUD_LAB_RUNTIME bash tests/instance-cloud-init.sh`.
-
-
-Instances are privileged containers, like the cluster nodes: on rootful Docker,
-root inside an instance is root on the Docker host; on Podman rootless it is the
-student's own user. The SSH private key is served by the management API, which has
-no authentication and listens only on localhost, like cluster kubeconfigs. Ubuntu
-instances generate their own SSH host keys at first boot; `debian-12` instances share
-the host keys baked into kicbase. Each connection is checked against the key recorded
-for that instance. Use instances only on a trusted lab host.
 
 ### Persistent disks for standalone instances
 
