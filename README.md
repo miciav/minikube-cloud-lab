@@ -32,7 +32,15 @@ On the annual **IT-provided Linux VM**, install the course images and run the ac
 python3 scripts/verify-course-vm.py
 ```
 
-The [course VM checklist](docs/course-verification.md#annual-acceptance-on-the-it-provided-vm) describes prerequisites, coverage and the saved report.
+The runner includes portal and monitoring, managed services, instance provisioning and autoscaling, the mixed VM and Kubernetes capstone, and the Kubernetes exercises. It stops at the first failure and prints the location of its JSON report and per-stage logs. See the [course VM checklist](docs/course-verification.md#annual-acceptance-on-the-it-provided-vm) for prerequisites and coverage.
+
+To verify just the portal and monitoring lifecycle on Docker or rootless Podman, run the smoke test on an empty lab with the course images available:
+
+```sh
+bash tests/monitoring.sh
+```
+
+It checks independent installation and removal, queue and bucket metrics, history retention after reinstall, and explicit history purge.
 
 For the shorter Kubernetes check on a disposable lab with no existing cluster, run the acceptance suite for the runtime you will teach. Allow roughly 20–40 minutes. It creates a temporary cluster, grows it from one node to two, scales it back down, exercises networking and storage, then removes the cluster and stops the project. Exit code 0 means all checks passed. The last line gives the report location.
 
