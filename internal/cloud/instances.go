@@ -270,6 +270,9 @@ func (s *Service) instanceOperation(name, kind, requester string, check func(Ins
 	if s.state.instanceBusy(name) {
 		return Operation{}, fmt.Errorf("%w: an operation is running on instance %s", ErrFailedPrecondition, name)
 	}
+	if image, locked := s.state.capturing(name); locked {
+		return Operation{}, fmt.Errorf("%w: instance %s is being captured into image %s", ErrFailedPrecondition, name, image)
+	}
 	if current.GroupID != "" {
 		g, err := s.state.group(current.GroupID)
 		if err != nil || kind != "STOP_INSTANCE" || s.state.Autoscaling != "active" || g.Deleting {

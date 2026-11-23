@@ -136,3 +136,28 @@ func TestOwnedInstanceDeletionChecksGroup(t *testing.T) {
 		t.Fatalf("fake load balancer: %v %v", running, err)
 	}
 }
+
+func TestImageLifecycle(t *testing.T) {
+	f := fake.New()
+	ctx := context.Background()
+	f.ImageCloudInit = true
+	captured, err := f.CaptureImage(ctx, infra.ImageSpec{Name: "web"})
+	if err != nil || captured.Bytes != 1<<20 || !captured.CloudInit {
+		t.Fatalf("capture: %+v %v", captured, err)
+	}
+	if ok, err := f.ImageExists(ctx, "web"); !ok || err != nil {
+		t.Fatalf("exists: %v %v", ok, err)
+	}
+	if err := errors.Join(f.DeleteImage(ctx, "web"), f.DeleteImage(ctx, "web")); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := f.ImageExists(ctx, "web"); ok {
+		t.Fatal("deleted image exists")
+	}
+	f.Errors["CaptureImage"], f.Errors["DeleteImage"], f.Errors["ImageExists"] = errors.New("x"), errors.New("x"), errors.New("x")
+	_, captureErr := f.CaptureImage(ctx, infra.ImageSpec{Name: "web"})
+	_, existsErr := f.ImageExists(ctx, "web")
+	if captureErr == nil || existsErr == nil || f.DeleteImage(ctx, "web") == nil {
+		t.Fatal("configured errors ignored")
+	}
+}

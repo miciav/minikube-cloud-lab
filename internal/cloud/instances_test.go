@@ -43,7 +43,13 @@ func seedImages(t *testing.T, images ...cloud.Image) *cloud.Service {
 	if err := os.WriteFile(filepath.Join(dir, "state.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s, err := cloud.NewService(fake.New(), dir, nil)
+	f := fake.New()
+	for _, image := range images {
+		if _, err := f.CaptureImage(context.Background(), infra.ImageSpec{Name: image.Name}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := cloud.NewService(f, dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

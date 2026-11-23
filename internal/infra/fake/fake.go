@@ -17,6 +17,7 @@ type Call struct {
 	Method, Cluster, Machine string
 	Spec                     infra.ClusterSpec
 	Instance                 infra.InstanceSpec
+	Image                    infra.ImageSpec
 }
 
 // Infra records requests and supports errors and delays configured before use.
@@ -24,16 +25,19 @@ type Infra struct {
 	mu        sync.Mutex
 	machines  map[string][]infra.Machine
 	instances map[string]infra.Instance
+	images    map[string]bool
 	calls     []Call
 	next      int
 	created   int
 	Errors    map[string]error
 	Delay     time.Duration
+	// ImageCloudInit is reported by every capture.
+	ImageCloudInit bool
 }
 
 // New returns an empty fake backend.
 func New() *Infra {
-	return &Infra{machines: make(map[string][]infra.Machine), instances: make(map[string]infra.Instance), Errors: make(map[string]error)}
+	return &Infra{machines: make(map[string][]infra.Machine), instances: make(map[string]infra.Instance), images: make(map[string]bool), Errors: make(map[string]error)}
 }
 
 func (f *Infra) record(ctx context.Context, c Call) error {
@@ -251,4 +255,41 @@ func (f *Infra) SetDashboard(ctx context.Context, name, _ string, enabled bool) 
 		method = "InstallDashboard"
 	}
 	return f.record(ctx, Call{Method: method, Cluster: name})
+}
+
+// CaptureImage stores the image name and reports a fixed size.
+func (f *Infra) CaptureImage(ctx context.Context, spec infra.ImageSpec) (infra.CapturedImage, error) {
+	if err := f.record(ctx, Call{Method: "CaptureImage", Image: spec}); err != nil {
+		return infra.CapturedImage{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.images[spec.Name] = true
+	return infra.CapturedImage{Bytes: 1 << 20, CloudInit: f.ImageCloudInit}, nil
+}
+
+// DeleteImage removes an image; an absent one is already deleted.
+func (f *Infra) DeleteImage(ctx context.Context, name string) error {
+	if err := f.record(ctx, Call{Method: "DeleteImage", Image: infra.ImageSpec{Name: name}}); err != nil {
+		return err
+	}
+	f.ForgetImage(name)
+	return nil
+}
+
+// ImageExists reports whether a capture stored the image.
+func (f *Infra) ImageExists(ctx context.Context, name string) (bool, error) {
+	if err := f.record(ctx, Call{Method: "ImageExists", Image: infra.ImageSpec{Name: name}}); err != nil {
+		return false, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.images[name], nil
+}
+
+// ForgetImage drops an image without a call, as a runtime prune would.
+func (f *Infra) ForgetImage(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.images, name)
 }
