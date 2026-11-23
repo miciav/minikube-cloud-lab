@@ -1,6 +1,6 @@
 # Golden images
 
-Start the cloud using the [course setup](../../../README.md#prepare-the-environment). Finish [Standalone Linux instances](instances-and-disks.md) first. This exercise needs room for five instances and uses the lab independently of Kubernetes. It also installs the optional instance autoscaling module for the last step.
+Start the cloud using the [course setup](../../../README.md#prepare-the-environment). Finish [Standalone Linux instances](instances-and-disks.md) first. This exercise needs room for five instances at a time, counting stopped instances and group members, and uses the lab independently of Kubernetes. It also installs the optional instance autoscaling module for the last step.
 
 A *golden image* is a machine you configure once and then copy. You build one instance by hand, stop it, capture it as a personal image and launch any number of copies that already contain the work. Compare it with the two ways you have seen so far to configure a machine:
 
@@ -36,7 +36,7 @@ cloud images list
 cloud images describe web-golden
 ```
 
-`cloud images list` shows the source, the built-in image it derives from (`BASE`), its status and its size in bytes. While the capture runs, add `--async` to get the operation ID back immediately; the source cannot be started or deleted until the image is `AVAILABLE`. You can delete `web-src` afterwards, or keep it to change the image later: capture again under a new name.
+`cloud images list` shows the source, the built-in image it derives from (`BASE`), its status and its size in bytes. While the capture runs, add `--async` to get the operation ID back immediately; the source cannot be started or deleted until the capture finishes. You can delete `web-src` afterwards, or keep it to change the image later: capture again under a new name.
 
 ## Launch copies
 
@@ -99,9 +99,11 @@ Both instances end up with the same page, user and Docker image, but `create` re
 
 ## Use the image in a group
 
-A group launched from a personal image needs no bootstrap script because the application is already installed and starts at boot (`nginx` is enabled by `apt`). `--bootstrap` remains available and is still required for built-in images. Delete the comparison instances, install the module as in [Autoscale an HTTP service](../autoscaling/instance-groups.md) and create the group. This image serves on port 80, so override the group defaults:
+A group launched from a personal image needs no bootstrap script because the application is already installed and starts at boot (`nginx` is enabled by `apt`). `--bootstrap` remains available and is still required for built-in images. Delete the copies and the comparison instances, install the module as in [Autoscale an HTTP service](../autoscaling/instance-groups.md) and create the group. This image serves on port 80, so override the group defaults:
 
 ```sh
+cloud instances delete web1
+cloud instances delete web2
 cloud instances delete web3
 cloud instances delete web-ci
 lab install instance-autoscaling
@@ -143,8 +145,6 @@ Delete everything in this order: the group, the instances, then the image. An im
 cloud groups delete web
 cloud groups list
 cloud instances delete web4
-cloud instances delete web2
-cloud instances delete web1
 cloud instances delete web-src
 cloud images delete web-golden
 cloud images list
