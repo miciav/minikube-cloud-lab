@@ -71,7 +71,8 @@ docker run -d --restart=always --name web -p 8080:80 nginx:1.29-alpine \
     sh -c 'echo ok > /usr/share/nginx/html/health && exec nginx -g "daemon off;"' >/dev/null
 SCRIPT
 field "instances/$src/ssh" privateKey > "$scratch/source-key"
-field "instances/$src/ssh" hostKey > "$scratch/host-src"
+field "instances/$src/ssh" hostKey > "$scratch/api-src"
+guest "$src" cat /etc/ssh/ssh_host_ed25519_key.pub > "$scratch/host-src"
 guest "$src" cat /etc/machine-id > "$scratch/id-src"
 cloud instances stop "$src"
 
@@ -94,12 +95,13 @@ for vm in "$clone1" "$clone2"; do
     guest "$vm" 'test "$(docker image inspect -f {{.Id}} nginx:1.29-alpine)" = "$(cat /etc/golden-nginx-id)"'
     guest "$vm" docker run --pull=never --rm nginx:1.29-alpine nginx -v
     guest "$vm" curl -fsS localhost:8080/health | grep -Fx ok
-    field "instances/$vm/ssh" hostKey > "$scratch/host-$vm"
+    field "instances/$vm/ssh" hostKey > "$scratch/api-$vm"
+    guest "$vm" cat /etc/ssh/ssh_host_ed25519_key.pub > "$scratch/host-$vm"
     guest "$vm" cat /etc/machine-id > "$scratch/id-$vm"
     if ssh_as_docker "$vm" "$scratch/source-key" 2>/dev/null; then echo "The source key still logs in to $vm" >&2; exit 1; fi
     ssh_as_docker "$vm" "$scratch/student"
 done
-for kind in host id; do
+for kind in api host id; do
     test "$(sort -u "$scratch/$kind"-* | wc -l)" -eq 3 || { head "$scratch/$kind"-* >&2; exit 1; }
 done
 
@@ -110,6 +112,18 @@ if [[ $(field instance-autoscaling state) == active ]]; then
     wait_for group_gone
 else
     echo "SKIP: group from $image (run lab install instance-autoscaling first)"
+fi
+
+# Personal images are local: the cloud must never try to pull one.
+if [[ -n ${TEST_CLOUD_CONTAINER:-} ]]; then
+    "$runtime" logs "$TEST_CLOUD_CONTAINER" > "$scratch/cloud.log" 2>&1
+else
+    labcompose logs cloud > "$scratch/cloud.log" 2>&1 # podman-compose 1.5 has no --no-color
+fi
+grep -F "operation started" "$scratch/cloud.log" | grep -qF "target=$clone1"
+if grep -F "pulling instance image" "$scratch/cloud.log" | grep -F "image-$image:"; then
+    echo "The cloud pulled personal image $image" >&2
+    exit 1
 fi
 
 for vm in "$clone1" "$clone2"; do cloud instances delete "$vm"; done
