@@ -1,21 +1,41 @@
 package cli
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/miciav/minikube-cloud-lab/internal/api"
+	"github.com/miciav/minikube-cloud-lab/internal/cloud"
 	"github.com/miciav/minikube-cloud-lab/internal/infra/fake"
 )
 
 func TestImagesList(t *testing.T) {
-	_, url := setup(t, nil)
-	out, err := execute(t, url, "images", "list")
+	dir := t.TempDir()
+	state := `{"images":[{"name":"web","status":"AVAILABLE","source":"vm1","base":"debian-12","bytes":2048,"createdAt":"2026-01-02T03:04:05Z","description":"my web"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(state), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := cloud.NewService(fake.New(), dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"NAME", "SSH_USER", "ubuntu-26.04", "ubuntu", "debian-12", "docker"} {
+	server := httptest.NewServer(api.NewServer(s))
+	t.Cleanup(server.Close)
+	out, err := execute(t, server.URL, "images", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(out, "\n")
+	if strings.Join(strings.Fields(lines[0]), " ") != "NAME SOURCE BASE STATUS SIZE CREATED DESCRIPTION" {
+		t.Fatalf("header: %q", lines[0])
+	}
+	if f := strings.Fields(lines[1]); f[0] != "ubuntu-26.04" || f[1] != "built-in" || f[2] != "ubuntu-26.04" || f[3] != "AVAILABLE" || f[4] != "-" || f[5] != "-" {
+		t.Fatalf("builtin row: %q", lines[1])
+	}
+	for _, want := range []string{"debian-12", "web", "instance/vm1", "2048", "2026-", "my web"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}

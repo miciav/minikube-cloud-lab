@@ -23,11 +23,19 @@ import (
 // InstanceStatus describes a standalone instance lifecycle.
 type InstanceStatus string
 
-// Image is a catalog entry for standalone instances.
+// Image is a catalog entry for standalone instances: built-in or captured from an instance.
 type Image struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	SSHUser     string `json:"sshUser"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	SSHUser     string    `json:"sshUser"`
+	Source      string    `json:"source,omitempty"`
+	Base        string    `json:"base,omitempty"`
+	Status      string    `json:"status"`
+	CloudInit   bool      `json:"cloudInit"`
+	Bytes       int64     `json:"bytes,omitempty"`
+	CreatedBy   string    `json:"createdBy,omitempty"`
+	CreatedAt   time.Time `json:"createdAt,omitzero"`
+	Error       string    `json:"error,omitempty"`
 }
 
 // Instance is a standalone Linux machine outside the cluster.
@@ -61,22 +69,55 @@ func (e unavailable) Is(target error) bool { return target == ErrUnavailable }
 
 const errNoInstances = unavailable("standalone instances are not supported by this backend")
 
-// Images returns the fixed instance image catalog.
-func Images() []Image {
+func builtinImages() []Image {
 	return []Image{
-		{Name: "ubuntu-26.04", Description: "Ubuntu 26.04 LTS; install Docker yourself", SSHUser: "ubuntu"},
-		{Name: "debian-12", Description: "Debian 12 (minikube kicbase) with Docker Engine", SSHUser: "docker"},
+		{Name: "ubuntu-26.04", Description: "Ubuntu 26.04 LTS; install Docker yourself", SSHUser: "ubuntu", Status: "AVAILABLE", CloudInit: true, Base: "ubuntu-26.04"},
+		{Name: "debian-12", Description: "Debian 12 (minikube kicbase) with Docker Engine", SSHUser: "docker", Status: "AVAILABLE", CloudInit: true, Base: "debian-12"},
 	}
 }
 
-// LookupImage returns a catalog entry by name.
-func LookupImage(name string) (Image, error) {
-	for _, image := range Images() {
+// image finds a built-in or personal image in any status.
+func (st *snapshot) image(name string) (Image, error) {
+	for _, image := range builtinImages() {
 		if image.Name == name {
 			return image, nil
 		}
 	}
+	if p, err := st.personalImage(name); err == nil {
+		return *p, nil
+	}
 	return Image{}, fmt.Errorf("%w: unknown image %s", ErrInvalid, name)
+}
+
+// personalImage returns a pointer into st.Images for mutation.
+func (st *snapshot) personalImage(name string) (*Image, error) {
+	for i := range st.Images {
+		if st.Images[i].Name == name {
+			return &st.Images[i], nil
+		}
+	}
+	return nil, fmt.Errorf("%w: image %s", ErrNotFound, name)
+}
+
+// lookupImage returns an image that instances may launch from.
+func (st *snapshot) lookupImage(name string) (Image, error) {
+	image, err := st.image(name)
+	if err != nil {
+		return Image{}, err
+	}
+	if image.Status != "AVAILABLE" {
+		return Image{}, fmt.Errorf("%w: image %s is %s", ErrFailedPrecondition, name, image.Status)
+	}
+	return image, nil
+}
+
+// Images returns the built-in images followed by personal images sorted by name.
+func (s *Service) Images() []Image {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	personal := slices.Clone(s.state.Images)
+	slices.SortFunc(personal, func(a, b Image) int { return strings.Compare(a.Name, b.Name) })
+	return append(builtinImages(), personal...)
 }
 
 func (st *snapshot) instance(name string) (*Instance, error) {
@@ -130,7 +171,7 @@ func (s *Service) createInstanceLocked(ctx context.Context, name, image, kind, r
 	if len(validation.IsDNS1123Label(name)) > 0 {
 		return Operation{}, fmt.Errorf("%w: instance name must be a DNS-1123 label", ErrInvalid)
 	}
-	img, err := LookupImage(image)
+	img, err := s.state.lookupImage(image)
 	if err != nil {
 		return Operation{}, err
 	}

@@ -164,7 +164,7 @@ func NewServer(svc *cloud.Service) http.Handler {
 		machines, err := svc.Machines(r.URL.Query().Get("cluster"))
 		respond(w, 200, machines, err)
 	})
-	mux.HandleFunc("GET /v1/images", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, cloud.Images(), nil) })
+	mux.HandleFunc("GET /v1/images", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Images(), nil) })
 	mux.HandleFunc("GET /v1/instances", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Instances(), nil) })
 	mux.HandleFunc("POST /v1/instances", func(w http.ResponseWriter, r *http.Request) {
 		var request instanceRequest

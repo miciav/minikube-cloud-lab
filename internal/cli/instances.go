@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"text/tabwriter"
 	"time"
 
@@ -21,9 +22,19 @@ func addImageCommands(root *cobra.Command) {
 			return err
 		}
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintln(w, "NAME\tSSH_USER\tDESCRIPTION")
+		_, _ = fmt.Fprintln(w, "NAME\tSOURCE\tBASE\tSTATUS\tSIZE\tCREATED\tDESCRIPTION")
 		for _, image := range images {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", image.Name, image.SSHUser, image.Description)
+			source, size, created := "built-in", "-", "-"
+			if image.Source != "" {
+				source = "instance/" + image.Source
+			}
+			if image.Bytes > 0 {
+				size = strconv.FormatInt(image.Bytes, 10)
+			}
+			if !image.CreatedAt.IsZero() {
+				created = image.CreatedAt.Local().Format(time.RFC3339)
+			}
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", image.Name, source, image.Base, image.Status, size, created, image.Description)
 		}
 		return w.Flush()
 	}})

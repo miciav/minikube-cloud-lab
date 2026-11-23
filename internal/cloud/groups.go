@@ -85,11 +85,11 @@ func (s *Service) ActivateInstanceAutoscaling() error {
 	}
 }
 
-func (spec GroupSpec) validate() error {
+func (spec GroupSpec) validate(st *snapshot) error {
 	if len(validation.IsDNS1123Label(spec.Name)) > 0 || strings.HasPrefix(spec.Name, "asg-") {
 		return fmt.Errorf("%w: group name must be a DNS-1123 label outside the asg- namespace", ErrInvalid)
 	}
-	if _, err := LookupImage(spec.Image); err != nil {
+	if _, err := st.lookupImage(spec.Image); err != nil {
 		return err
 	}
 	if _, err := LookupMachineType(spec.MachineType); err != nil {
@@ -125,7 +125,7 @@ func (s *Service) CreateGroup(spec GroupSpec) (Group, error) {
 	if err := s.state.requireAutoscaling(); err != nil {
 		return Group{}, err
 	}
-	if err := spec.validate(); err != nil {
+	if err := spec.validate(&s.state); err != nil {
 		return Group{}, err
 	}
 	if _, err := s.state.group(spec.Name); err == nil {

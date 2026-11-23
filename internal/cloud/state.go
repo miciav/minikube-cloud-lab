@@ -115,6 +115,7 @@ type snapshot struct {
 	Groups      []Group           `json:"instanceGroups,omitempty"`
 	DiskOwners  map[string]string `json:"diskOwners,omitempty"`
 	Instances   []Instance        `json:"instances,omitempty"`
+	Images      []Image           `json:"images,omitempty"`
 	Volumes     []Volume          `json:"volumes,omitempty"`
 	Clusters    []Cluster         `json:"clusters"`
 	Machines    []Machine         `json:"machines"`
@@ -122,7 +123,7 @@ type snapshot struct {
 }
 
 func (st snapshot) clone() snapshot {
-	return snapshot{Autoscaling: st.Autoscaling, Groups: slices.Clone(st.Groups), DiskOwners: maps.Clone(st.DiskOwners), Instances: slices.Clone(st.Instances), Volumes: slices.Clone(st.Volumes), Clusters: slices.Clone(st.Clusters), Machines: slices.Clone(st.Machines), Operations: slices.Clone(st.Operations)}
+	return snapshot{Autoscaling: st.Autoscaling, Groups: slices.Clone(st.Groups), DiskOwners: maps.Clone(st.DiskOwners), Instances: slices.Clone(st.Instances), Images: slices.Clone(st.Images), Volumes: slices.Clone(st.Volumes), Clusters: slices.Clone(st.Clusters), Machines: slices.Clone(st.Machines), Operations: slices.Clone(st.Operations)}
 }
 
 func save(dir string, st snapshot) error {

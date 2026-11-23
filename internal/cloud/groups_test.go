@@ -297,3 +297,17 @@ func TestGroupRejectsInvalidTemplatesAndHTTPConfiguration(t *testing.T) {
 		t.Fatal("a rejected template was stored")
 	}
 }
+
+func TestGroupValidateAcceptsPersonalImage(t *testing.T) {
+	s := seedImages(t, cloud.Image{Name: "web", Status: "AVAILABLE", SSHUser: "ubuntu"})
+	if err := s.ActivateInstanceAutoscaling(); err != nil {
+		t.Fatal(err)
+	}
+	spec := cloud.GroupSpec{
+		Name: "web", Image: "web", MachineType: "lab-small",
+		Bootstrap: "#!/bin/sh\ntrue", Min: 1, Desired: 1, Max: 2, Port: 8080, HealthPath: "/health", TargetRPS: 40,
+	}
+	if _, err := s.CreateGroup(spec); err != nil {
+		t.Fatalf("personal image: %v", err)
+	}
+}
