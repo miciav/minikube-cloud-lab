@@ -74,12 +74,16 @@ func TestCreateImageCapturesStoppedInstance(t *testing.T) {
 		t.Fatalf("image: %+v %v", got, err)
 	}
 	var spec infra.ImageSpec
+	var sourceKey string
 	for _, call := range f.Calls() {
-		if call.Method == "CaptureImage" {
+		switch {
+		case call.Method == "CaptureImage":
 			spec = call.Image
+		case call.Method == "CreateInstance" && call.Instance.Name == "src":
+			sourceKey = call.Instance.AuthorizedKey
 		}
 	}
-	if spec.Name != "web" || spec.Instance != "src" || spec.SSHUser != "ubuntu" || !strings.HasPrefix(spec.SourceKey, "ssh-ed25519 ") {
+	if spec.Name != "web" || spec.Instance != "src" || spec.SSHUser != "ubuntu" || sourceKey == "" || spec.SourceKey != sourceKey {
 		t.Fatalf("capture spec: %+v", spec)
 	}
 	if builtin, err := s.Image("debian-12"); err != nil || builtin.Name != "debian-12" {
