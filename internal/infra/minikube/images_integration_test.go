@@ -11,8 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	imagetypes "github.com/docker/docker/api/types/image"
+	dockerclient "github.com/docker/docker/client"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/miciav/minikube-cloud-lab/internal/infra"
@@ -29,6 +31,29 @@ func authorizedKey(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
+}
+
+// assertVarCounted checks that the size includes the /var copy whenever the runtime reports it.
+func assertVarCounted(t *testing.T, client *dockerclient.Client, name string, bytes int64) {
+	t.Helper()
+	image, err := client.ImageInspect(context.Background(), imageRef(name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := client.DiskUsage(context.Background(), types.DiskUsageOptions{Types: []types.DiskUsageObject{types.VolumeObject}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range usage.Volumes {
+		if v.Name == imageVolume(name) && v.UsageData != nil && v.UsageData.Size > 0 {
+			t.Logf("image %d bytes, /var %d bytes", image.Size, v.UsageData.Size)
+			if bytes != image.Size+v.UsageData.Size || bytes <= image.Size {
+				t.Fatalf("bytes %d, want image %d + /var %d", bytes, image.Size, v.UsageData.Size)
+			}
+			return
+		}
+	}
+	t.Logf("runtime reports no size for %s; bytes %d = image %d", imageVolume(name), bytes, image.Size)
 }
 
 // TestGoldenImageRoundTrip captures an Ubuntu instance and launches a clone from it. It runs in a
@@ -74,6 +99,7 @@ rm /var/log/bootstrap.log && echo "$KEY" >> /home/ubuntu/.ssh/authorized_keys`);
 		t.Fatal(err)
 	}
 	t.Logf("captured %+v", captured)
+	assertVarCounted(t, client, "gimg", captured.Bytes)
 	if !captured.CloudInit || captured.Bytes <= 0 {
 		t.Fatalf("captured: %+v", captured)
 	}
@@ -187,6 +213,7 @@ docker image inspect -f '{{.Id}}' nginx:1.29-alpine > /etc/golden-nginx-id`}, 5*
 		t.Fatal(err)
 	}
 	t.Logf("captured %+v", captured)
+	assertVarCounted(t, client, "gdimg", captured.Bytes)
 	assertNoLeftovers(t, i, client)
 	if _, err := i.CreateInstance(ctx, infra.InstanceSpec{Name: "gdclone", Image: "gdimg", Custom: true, Shape: shape, SSHUser: "docker", AuthorizedKey: authorizedKey(t)}); err != nil {
 		t.Fatal(err)

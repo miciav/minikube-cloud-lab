@@ -10,6 +10,7 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	imagetypes "github.com/docker/docker/api/types/image"
@@ -235,7 +236,9 @@ func (i *Infra) CaptureImage(ctx context.Context, spec infra.ImageSpec) (capture
 	cleanup := context.WithoutCancel(ctx)
 	defer func() {
 		if err != nil {
-			_ = i.DeleteImage(cleanup, spec.Name)
+			if err := i.DeleteImage(cleanup, spec.Name); err != nil {
+				slog.Warn("remove failed image capture", "image", spec.Name, "error", err)
+			}
 		}
 	}()
 	// The commit holds the system without /var, which is a volume.
@@ -284,17 +287,25 @@ func (i *Infra) finishImage(ctx context.Context, client *dockerclient.Client, he
 	return cloudInit, nil
 }
 
-// imageBytes is the image size, plus the volume's when the runtime reports it (rarely).
+// imageBytes is the image size plus the /var volume's, which only DiskUsage reports.
+// Size accounting never fails a capture: without a volume size it is the image's alone.
 func imageBytes(ctx context.Context, client *dockerclient.Client, name string) (int64, error) {
 	observed, err := client.ImageInspect(ctx, imageRef(name))
 	if err != nil {
 		return 0, fmt.Errorf("inspect image: %w", err)
 	}
-	size := observed.Size
-	if disk, err := client.VolumeInspect(ctx, imageVolume(name)); err == nil && disk.UsageData != nil && disk.UsageData.Size > 0 {
-		size += disk.UsageData.Size
+	usage, err := client.DiskUsage(ctx, types.DiskUsageOptions{Types: []types.DiskUsageObject{types.VolumeObject}})
+	if err != nil {
+		slog.Warn("image volume size unavailable", "image", name, "error", err)
+		return observed.Size, nil
 	}
-	return size, nil
+	for _, v := range usage.Volumes {
+		if v != nil && v.Name == imageVolume(name) && v.UsageData != nil && v.UsageData.Size >= 0 {
+			return observed.Size + v.UsageData.Size, nil
+		}
+	}
+	slog.Debug("image volume size not reported", "image", name)
+	return observed.Size, nil
 }
 
 // DeleteImage removes a personal image and its /var volume; absent parts are success.

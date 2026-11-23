@@ -209,3 +209,29 @@ func TestCleanupSkipsClonesAndTaggedImages(t *testing.T) {
 		t.Fatal("dangling image not selected")
 	}
 }
+
+func TestImageBytesAddsTheVarVolume(t *testing.T) {
+	for _, tc := range []struct {
+		df   string
+		want int64
+	}{
+		{`{"Volumes": [{"Name": "other", "UsageData": {"Size": 7}}, {"Name": "mcl-image-web-var", "UsageData": {"Size": 50, "RefCount": 0}}]}`, 150},
+		{`{"Volumes": [{"Name": "mcl-image-web-var", "UsageData": {"Size": -1, "RefCount": -1}}]}`, 100},
+		{`{"Volumes": [{"Name": "mcl-image-web-var"}]}`, 100},
+		{"", 100},
+	} {
+		routes := map[string]string{"image-web:latest/json": `{"Size": 100}`}
+		if tc.df != "" {
+			routes["/system/df"] = tc.df
+		}
+		fakeDocker(t, routes)
+		client, err := dockerClient()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := imageBytes(context.Background(), client, "web"); err != nil || got != tc.want {
+			t.Fatalf("df %q: %d %v, want %d", tc.df, got, err, tc.want)
+		}
+		_ = client.Close()
+	}
+}
