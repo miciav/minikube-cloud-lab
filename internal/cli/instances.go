@@ -38,7 +38,63 @@ func addImageCommands(root *cobra.Command) {
 		}
 		return w.Flush()
 	}})
+	var from, description string
+	var async bool
+	create := &cobra.Command{Use: "create NAME", Short: "Capture a stopped instance as a personal image", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		c := client(cmd)
+		op, err := c.CreateImage(cmd.Context(), args[0], from, description)
+		if err != nil {
+			return err
+		}
+		if async {
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), op.ID)
+			return err
+		}
+		if err := waitOperation(cmd, c, op.ID); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Created image %s\n", args[0])
+		return err
+	}}
+	create.Flags().StringVar(&from, "from", "", "Stopped instance to capture")
+	_ = create.MarkFlagRequired("from")
+	create.Flags().StringVar(&description, "description", "", "Image description")
+	create.Flags().BoolVar(&async, "async", false, "Return the operation ID immediately")
+	describe := &cobra.Command{Use: "describe NAME", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		image, err := client(cmd).Image(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		return describeImage(cmd, image)
+	}}
+	remove := instanceAction("delete", "Deleted", "image", func(c *api.Client, cmd *cobra.Command, name string) (cloud.Operation, error) {
+		return c.DeleteImage(cmd.Context(), name)
+	})
+	parent.AddCommand(create, describe, remove)
 	root.AddCommand(parent)
+}
+
+func describeImage(cmd *cobra.Command, image cloud.Image) error {
+	source, size, created, cloudInit := "built-in", "-", "-", "no"
+	if image.Source != "" {
+		source = "instance/" + image.Source
+	}
+	if image.Bytes > 0 {
+		size = strconv.FormatInt(image.Bytes, 10)
+	}
+	if !image.CreatedAt.IsZero() {
+		created = image.CreatedAt.Local().Format(time.RFC3339)
+	}
+	if image.CloudInit {
+		cloudInit = "yes"
+	}
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintf(w, "Name:\t%s\nStatus:\t%s\nSource:\t%s\nBase:\t%s\nSSH user:\t%s\nCloud-init:\t%s\nSize:\t%s\nCreated:\t%s\nDescription:\t%s\n",
+		image.Name, image.Status, source, image.Base, image.SSHUser, cloudInit, size, created, image.Description)
+	if image.Error != "" {
+		_, _ = fmt.Fprintf(w, "Error:\t%s\n", image.Error)
+	}
+	return w.Flush()
 }
 
 func instanceTable(cmd *cobra.Command, instances []cloud.Instance) error {
@@ -51,7 +107,7 @@ func instanceTable(cmd *cobra.Command, instances []cloud.Instance) error {
 }
 
 // instanceAction runs one asynchronous lifecycle request and reports its outcome.
-func instanceAction(use, done string, request func(*api.Client, *cobra.Command, string) (cloud.Operation, error)) *cobra.Command {
+func instanceAction(use, done, noun string, request func(*api.Client, *cobra.Command, string) (cloud.Operation, error)) *cobra.Command {
 	var async bool
 	command := &cobra.Command{Use: use + " NAME", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		c := client(cmd)
@@ -66,7 +122,7 @@ func instanceAction(use, done string, request func(*api.Client, *cobra.Command, 
 		if err := waitOperation(cmd, c, op.ID); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s instance %s\n", done, args[0])
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s %s\n", done, noun, args[0])
 		return err
 	}}
 	command.Flags().BoolVar(&async, "async", false, "Return the operation ID immediately")
@@ -136,13 +192,13 @@ func addInstanceCommands(root *cobra.Command) *cobra.Command {
 		}
 		return instanceTable(cmd, []cloud.Instance{item})
 	}}
-	start := instanceAction("start", "Started", func(c *api.Client, cmd *cobra.Command, name string) (cloud.Operation, error) {
+	start := instanceAction("start", "Started", "instance", func(c *api.Client, cmd *cobra.Command, name string) (cloud.Operation, error) {
 		return c.StartInstance(cmd.Context(), name)
 	})
-	stop := instanceAction("stop", "Stopped", func(c *api.Client, cmd *cobra.Command, name string) (cloud.Operation, error) {
+	stop := instanceAction("stop", "Stopped", "instance", func(c *api.Client, cmd *cobra.Command, name string) (cloud.Operation, error) {
 		return c.StopInstance(cmd.Context(), name)
 	})
-	remove := instanceAction("delete", "Deleted", func(c *api.Client, cmd *cobra.Command, name string) (cloud.Operation, error) {
+	remove := instanceAction("delete", "Deleted", "instance", func(c *api.Client, cmd *cobra.Command, name string) (cloud.Operation, error) {
 		return c.DeleteInstance(cmd.Context(), name)
 	})
 	parent.AddCommand(create, list, describe, start, stop, remove, sshCommand())

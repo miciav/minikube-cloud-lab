@@ -165,6 +165,23 @@ func NewServer(svc *cloud.Service) http.Handler {
 		respond(w, 200, machines, err)
 	})
 	mux.HandleFunc("GET /v1/images", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Images(), nil) })
+	mux.HandleFunc("POST /v1/images", func(w http.ResponseWriter, r *http.Request) {
+		var request imageRequest
+		if err := decodeLimitedJSON(w, r, &request, 4096); err != nil {
+			respond(w, 400, nil, cloud.ErrInvalid)
+			return
+		}
+		op, err := svc.CreateImage(request.Name, request.From, request.Description, "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		respond(w, http.StatusAccepted, op, err)
+	})
+	mux.HandleFunc("GET /v1/images/{name}", func(w http.ResponseWriter, r *http.Request) {
+		image, err := svc.Image(r.PathValue("name"))
+		respond(w, 200, image, err)
+	})
+	mux.HandleFunc("DELETE /v1/images/{name}", func(w http.ResponseWriter, r *http.Request) {
+		op, err := svc.DeleteImage(r.PathValue("name"), "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		respond(w, http.StatusAccepted, op, err)
+	})
 	mux.HandleFunc("GET /v1/instances", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Instances(), nil) })
 	mux.HandleFunc("POST /v1/instances", func(w http.ResponseWriter, r *http.Request) {
 		var request instanceRequest
