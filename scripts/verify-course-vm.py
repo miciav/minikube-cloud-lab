@@ -43,8 +43,13 @@ def verify(run):
     for image in ("ubuntu-26.04", "debian-12"):
         run("Cloud-init and SSH: " + image, ["env", "RUNTIME=podman", "TEST_CLOUD_CONTAINER=",
                                              "bash", "tests/instance-cloud-init.sh", image])
-    run("Golden image capture and launch", ["env", "RUNTIME=podman", "TEST_CLOUD_CONTAINER=",
-                                            "bash", "tests/instance-golden-image.sh"])
+    # The golden stage covers groups only while the module is active; the autoscaling suite needs it disabled.
+    run("Install instance autoscaling for golden images", SHELL + ["lab", "install", "instance-autoscaling"])
+    try:
+        run("Golden image capture and launch", ["env", "RUNTIME=podman", "TEST_CLOUD_CONTAINER=",
+                                                "bash", "tests/instance-golden-image.sh"])
+    finally:
+        run("Remove instance autoscaling after golden images", SHELL + ["lab", "uninstall", "instance-autoscaling"])
     run("Persistent disk across instances", [sys.executable, "tests/rootless-disk-console.py"])
     run("Traffic scaling, replacement and module removal", ["bash", "tests/instance-autoscaling.sh"])
     check_empty()

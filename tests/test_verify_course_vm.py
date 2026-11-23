@@ -32,6 +32,22 @@ class CourseVMAcceptanceTest(unittest.TestCase):
                          ["ubuntu-26.04", "debian-12"])
         self.assertIn(["bash", "tests/managed-services.sh"], commands)
         self.assertIn(["env", "RUNTIME=podman", "TEST_CLOUD_CONTAINER=", "bash", "tests/instance-golden-image.sh"], commands)
+        golden = commands.index(["env", "RUNTIME=podman", "TEST_CLOUD_CONTAINER=", "bash", "tests/instance-golden-image.sh"])
+        self.assertEqual(commands[golden - 1], course_vm.SHELL + ["lab", "install", "instance-autoscaling"])
+        self.assertEqual(commands[golden + 1], course_vm.SHELL + ["lab", "uninstall", "instance-autoscaling"])
         self.assertLess(commands.index(["bash", "tests/monitoring.sh"]), commands.index(["bash", "tests/capstone.sh"]))
         self.assertIn("scripts/verify-lab.py", commands[-1])
         self.assertTrue(any("scripts/verify-lecture03.py" in cmd for cmd in commands))
+
+    def test_golden_stage_failure_still_removes_the_module(self):
+        commands = []
+
+        def run(_, cmd):
+            commands.append(cmd)
+            if "tests/instance-golden-image.sh" in cmd:
+                raise RuntimeError("golden failed")
+
+        with patch.object(course_vm, "api", side_effect=self.inventory.__getitem__), \
+                self.assertRaisesRegex(RuntimeError, "golden failed"):
+            course_vm.verify(run)
+        self.assertEqual(commands[-1], course_vm.SHELL + ["lab", "uninstall", "instance-autoscaling"])
