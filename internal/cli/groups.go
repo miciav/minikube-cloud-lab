@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -32,7 +33,9 @@ func addGroupCommands(root *cobra.Command) {
 	var bootstrap string
 	create := &cobra.Command{Use: "create NAME", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		reader := cmd.InOrStdin()
-		if bootstrap != "-" {
+		if bootstrap == "" {
+			reader = strings.NewReader("")
+		} else if bootstrap != "-" {
 			file, err := os.Open(bootstrap) // #nosec G304 -- explicitly supplied by the CLI user.
 			if err != nil {
 				return err
@@ -53,7 +56,7 @@ func addGroupCommands(root *cobra.Command) {
 	}}
 	create.Flags().StringVar(&spec.Image, "image", "ubuntu-26.04", "Instance image")
 	create.Flags().StringVar(&spec.MachineType, "machine-type", "lab-small", "Machine type")
-	create.Flags().StringVar(&bootstrap, "bootstrap", "", "Bootstrap script file or - for stdin")
+	create.Flags().StringVar(&bootstrap, "bootstrap", "", "Bootstrap script file or - for stdin (required for built-in images)")
 	create.Flags().IntVar(&spec.Min, "min", 1, "Minimum capacity")
 	create.Flags().IntVar(&spec.Desired, "desired", 1, "Initial desired capacity")
 	create.Flags().IntVar(&spec.Max, "max", 3, "Maximum capacity")
@@ -61,7 +64,6 @@ func addGroupCommands(root *cobra.Command) {
 	create.Flags().IntVar(&spec.Port, "port", 8080, "Application HTTP port")
 	create.Flags().StringVar(&spec.HealthPath, "health-path", "/health", "HTTP health check path")
 	create.Flags().Float64Var(&spec.TargetRPS, "target-rps", 40, "Target requests per second per healthy instance")
-	_ = create.MarkFlagRequired("bootstrap")
 
 	var desired int
 	resize := &cobra.Command{Use: "resize NAME", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {

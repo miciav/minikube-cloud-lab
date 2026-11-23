@@ -31,6 +31,7 @@ type InstanceSpec struct {
 	Bootstrap     string
 	SSHUser       string
 	UserData      string
+	Custom        bool   // Image names a personal image.
 	AuthorizedKey string // One authorized_keys line.
 }
 

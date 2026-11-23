@@ -100,3 +100,11 @@ func TestUninstallWaitsWhileDrainProgresses(t *testing.T) {
 		})
 	}
 }
+
+func TestGroupsCreateDoesNotRequireBootstrapFlag(t *testing.T) {
+	_, url := setup(t, nil)
+	_, err := execute(t, url, "groups", "create", "g", "--image", "web")
+	if err == nil || strings.Contains(err.Error(), "required flag") || strings.Contains(err.Error(), "no such file") {
+		t.Fatalf("err = %v", err)
+	}
+}

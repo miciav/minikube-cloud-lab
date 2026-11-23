@@ -178,6 +178,9 @@ func (s *Service) createInstanceLocked(ctx context.Context, name, image, kind, r
 	if userData != "" && (len(userData) > MaxUserDataBytes || strings.TrimSpace(strings.SplitN(userData, "\n", 2)[0]) != "#cloud-config") {
 		return Operation{}, fmt.Errorf("%w: user-data requires a #cloud-config file of at most 64 KiB", ErrInvalid)
 	}
+	if userData != "" && !img.CloudInit {
+		return Operation{}, fmt.Errorf("%w: image %s has no cloud-init; capture it from an instance created with cloud-init", ErrInvalid, image)
+	}
 	shape, err := LookupMachineType(kind)
 	if err != nil {
 		return Operation{}, err
@@ -206,7 +209,7 @@ func (s *Service) createInstanceLocked(ctx context.Context, name, image, kind, r
 		_ = os.RemoveAll(dir)
 		return Operation{}, err
 	}
-	spec := infra.InstanceSpec{UserData: userData, Name: name, GroupID: groupID, Bootstrap: bootstrap, Image: image, Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, SSHUser: img.SSHUser, AuthorizedKey: authorized}
+	spec := infra.InstanceSpec{UserData: userData, Name: name, GroupID: groupID, Bootstrap: bootstrap, Image: image, Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, SSHUser: img.SSHUser, Custom: img.Source != "", AuthorizedKey: authorized}
 	var observed infra.Instance
 	s.launch(op.ID, func() error {
 		var err error

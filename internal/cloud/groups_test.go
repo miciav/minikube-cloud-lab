@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -309,5 +310,24 @@ func TestGroupValidateAcceptsPersonalImage(t *testing.T) {
 	}
 	if _, err := s.CreateGroup(spec); err != nil {
 		t.Fatalf("personal image: %v", err)
+	}
+}
+
+func TestGroupBootstrapOptionalForPersonalImage(t *testing.T) {
+	s := seedImages(t, cloud.Image{Name: "web", Source: "vm", Status: "AVAILABLE", SSHUser: "ubuntu"})
+	if err := s.ActivateInstanceAutoscaling(); err != nil {
+		t.Fatal(err)
+	}
+	spec := cloud.GroupSpec{Name: "web", Image: "web", MachineType: "lab-small", Min: 1, Desired: 1, Max: 2, Port: 8080, HealthPath: "/health", TargetRPS: 40}
+	if _, err := s.CreateGroup(spec); err != nil {
+		t.Fatalf("personal image without bootstrap: %v", err)
+	}
+	spec.Name, spec.Image = "base", "ubuntu-26.04"
+	if _, err := s.CreateGroup(spec); !errors.Is(err, cloud.ErrInvalid) || !strings.Contains(err.Error(), "bootstrap must contain 1") {
+		t.Fatalf("built-in without bootstrap: %v", err)
+	}
+	spec.Name, spec.Image, spec.Bootstrap = "nul", "web", "a\x00b"
+	if _, err := s.CreateGroup(spec); !errors.Is(err, cloud.ErrInvalid) {
+		t.Fatalf("NUL bootstrap on personal image: %v", err)
 	}
 }

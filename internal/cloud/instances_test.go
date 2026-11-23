@@ -35,6 +35,12 @@ func createInstance(t *testing.T, s *cloud.Service, name string) {
 // seedImages starts a service whose state already holds personal images.
 func seedImages(t *testing.T, images ...cloud.Image) *cloud.Service {
 	t.Helper()
+	s, _ := seedImagesFake(t, images...)
+	return s
+}
+
+func seedImagesFake(t *testing.T, images ...cloud.Image) (*cloud.Service, *fake.Infra) {
+	t.Helper()
 	dir := t.TempDir()
 	data, err := json.Marshal(map[string]any{"images": images})
 	if err != nil {
@@ -53,7 +59,7 @@ func seedImages(t *testing.T, images ...cloud.Image) *cloud.Service {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return s
+	return s, f
 }
 
 func TestImagesListsBuiltinsThenPersonal(t *testing.T) {
@@ -474,5 +480,33 @@ func TestReconcileLogsStrayInstancesWhenNoneRecorded(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "ignoring unregistered instance container") || !strings.Contains(logs.String(), "instance=stray") {
 		t.Fatalf("logs: %s", logs.String())
+	}
+}
+
+func TestCreateInstanceMarksCustomImage(t *testing.T) {
+	s, f := seedImagesFake(t, cloud.Image{Name: "web", Source: "vm", Status: "AVAILABLE", SSHUser: "ubuntu", CloudInit: true})
+	for image, want := range map[string]bool{"web": true, "ubuntu-26.04": false} {
+		op, err := s.CreateInstance("vm-"+strings.ReplaceAll(image, ".", ""), image, "lab-small", "student", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		wait(t, s, op)
+		var got *bool
+		for _, c := range f.Calls() {
+			if c.Method == "CreateInstance" && c.Instance.Image == image {
+				got = &c.Instance.Custom
+			}
+		}
+		if got == nil || *got != want {
+			t.Fatalf("%s custom = %v, want %v", image, got, want)
+		}
+	}
+}
+
+func TestCreateInstanceRejectsUserDataWithoutCloudInit(t *testing.T) {
+	s := seedImages(t, cloud.Image{Name: "web", Source: "vm", Status: "AVAILABLE", SSHUser: "ubuntu"})
+	_, err := s.CreateInstance("vm", "web", "lab-small", "student", "#cloud-config\n")
+	if !errors.Is(err, cloud.ErrInvalid) || !strings.Contains(err.Error(), "cloud-init") {
+		t.Fatalf("err = %v", err)
 	}
 }
