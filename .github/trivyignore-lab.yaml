@@ -1,0 +1,29 @@
+# OpenTofu 1.13.9 is the newest release and still embeds these modules.
+# The lab only runs tofu against the local course provider mirror.
+# Each entry expires so the scan fails again; drop them when the image
+# moves to an OpenTofu release built with the fixed versions.
+vulnerabilities:
+  - id: CVE-2026-116587
+    paths: [usr/local/bin/tofu]
+    expired_at: 2026-12-23
+    statement: go-jose/v4 v4.1.4 JWK parsing; fixed in 4.1.6, not yet in an OpenTofu release
+  - id: CVE-2026-56864
+    paths: [usr/local/bin/tofu]
+    expired_at: 2026-12-23
+    statement: x/mod v0.39.0 sumdb; fixed in 0.40.0, not yet in an OpenTofu release
+  - id: CVE-2026-56865
+    paths: [usr/local/bin/tofu]
+    expired_at: 2026-12-23
+    statement: x/mod v0.39.0 sumdb/tlog; fixed in 0.40.0, not yet in an OpenTofu release
+  - id: CVE-2026-78661
+    paths: [usr/local/bin/tofu]
+    expired_at: 2026-12-23
+    statement: x/net v0.57.0 html; fixed in 0.62.0, not yet in an OpenTofu release
+  - id: CVE-2026-78669
+    paths: [usr/local/bin/tofu]
+    expired_at: 2026-12-23
+    statement: x/net v0.57.0 http2; fixed in 0.60.0, not yet in an OpenTofu release
+  - id: CVE-2026-84445
+    paths: [usr/local/bin/tofu]
+    expired_at: 2026-12-23
+    statement: grpc v1.83.1; fixed in 1.83.2, not yet in an OpenTofu release

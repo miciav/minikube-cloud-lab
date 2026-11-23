@@ -61,6 +61,7 @@ FROM python:3.13-slim-bookworm AS lab
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends nano openssh-client libnss-wrapper && \
     rm -rf /var/lib/apt/lists/* && pip install --no-cache-dir ansible-core==2.21.6 && \
+    pip uninstall -y pip && \
     ln -s /usr/lib/*/libnss_wrapper.so /opt/libnss_wrapper.so
 ENV KUBE_EDITOR=nano KUBECONFIG=/kube/config HOME=/tmp USER=student TF_CLI_CONFIG_FILE=/etc/course-tofurc
 LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-lab"
