@@ -57,7 +57,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 
 FROM ghcr.io/opentofu/opentofu:1.13.9-minimal@sha256:84af0049634b7a7c455ab79c485818a8ef7f775cad3b2d42ce1c98ade720b5d1 AS tofu-cli
 
-FROM python:3.13-slim-bookworm AS lab
+FROM python:3.15-slim-bookworm AS lab
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends nano openssh-client libnss-wrapper && \
     rm -rf /var/lib/apt/lists/* && pip install --no-cache-dir ansible-core==2.21.6 && \
