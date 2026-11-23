@@ -43,6 +43,8 @@ def verify(run):
     for image in ("ubuntu-26.04", "debian-12"):
         run("Cloud-init and SSH: " + image, ["env", "RUNTIME=podman", "TEST_CLOUD_CONTAINER=",
                                              "bash", "tests/instance-cloud-init.sh", image])
+    run("Golden image capture and launch", ["env", "RUNTIME=podman", "TEST_CLOUD_CONTAINER=",
+                                            "bash", "tests/instance-golden-image.sh"])
     run("Persistent disk across instances", [sys.executable, "tests/rootless-disk-console.py"])
     run("Traffic scaling, replacement and module removal", ["bash", "tests/instance-autoscaling.sh"])
     check_empty()

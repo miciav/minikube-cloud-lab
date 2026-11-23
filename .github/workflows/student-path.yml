@@ -159,6 +159,7 @@ jobs:
           bash tests/service-exposure.sh deleted
           bash tests/storage.sh recover
           TEST_RESTART_CLOUD=1 bash tests/instance-disks.sh
+          bash tests/instance-golden-image.sh
       - name: Diagnostics
         if: failure() || cancelled()
         run: |

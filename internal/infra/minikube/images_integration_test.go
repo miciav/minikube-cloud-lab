@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/docker/docker/api/types/container"
 	imagetypes "github.com/docker/docker/api/types/image"
@@ -139,5 +140,60 @@ func assertNoLeftovers(t *testing.T, i *Infra, client interface {
 	dangling, err := client.ImageList(context.Background(), imagetypes.ListOptions{Filters: images})
 	if err != nil || len(dangling) != 0 {
 		t.Errorf("dangling images left: %+v %v", dangling, err)
+	}
+}
+
+// TestGoldenImageInnerDocker captures a debian-12 (kicbase) source whose inner Docker holds an image
+// and a container, then checks that a clone runs that image without pulling. Same setup as above,
+// in an image with the Docker CLI (such as the cloud image), which minikube uses to find kicbase.
+func TestGoldenImageInnerDocker(t *testing.T) {
+	network := os.Getenv("MCL_IMAGE_IT_NETWORK")
+	if network == "" {
+		t.Skip("MCL_IMAGE_IT_NETWORK is not set")
+	}
+	ctx := context.Background()
+	i := &Infra{network: network}
+	client, err := dockerClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for _, name := range []string{"gdclone", "gdsrc"} {
+			if err := i.DeleteInstance(ctx, name); err != nil {
+				t.Error(err)
+			}
+		}
+		if err := i.DeleteImage(ctx, "gdimg"); err != nil {
+			t.Error(err)
+		}
+		_ = client.Close()
+	})
+	sourceKey := authorizedKey(t)
+	shape := infra.MachineShape{CPUs: 1, MemoryMiB: 1024}
+	if _, err := i.CreateInstance(ctx, infra.InstanceSpec{Name: "gdsrc", Image: "debian-12", Shape: shape, SSHUser: "docker", AuthorizedKey: sourceKey}); err != nil {
+		t.Fatal(err)
+	}
+	// The pull needs the network; the ID goes to the rootfs so the clone can compare it.
+	if err := execRootWithin(ctx, client, "mcl-vm-gdsrc", nil, []string{"sh", "-c", `until docker info >/dev/null 2>&1; do sleep 1; done
+docker pull -q nginx:1.29-alpine && docker create --name web nginx:1.29-alpine &&
+docker image inspect -f '{{.Id}}' nginx:1.29-alpine > /etc/golden-nginx-id`}, 5*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.StopInstance(ctx, "gdsrc"); err != nil {
+		t.Fatal(err)
+	}
+	captured, err := i.CaptureImage(ctx, infra.ImageSpec{Name: "gdimg", Instance: "gdsrc", SSHUser: "docker", SourceKey: sourceKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("captured %+v", captured)
+	assertNoLeftovers(t, i, client)
+	if _, err := i.CreateInstance(ctx, infra.InstanceSpec{Name: "gdclone", Image: "gdimg", Custom: true, Shape: shape, SSHUser: "docker", AuthorizedKey: authorizedKey(t)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := execRootWithin(ctx, client, "mcl-vm-gdclone", nil, []string{"sh", "-c", `until docker info >/dev/null 2>&1; do sleep 1; done
+test "$(docker image inspect -f '{{.Id}}' nginx:1.29-alpine)" = "$(cat /etc/golden-nginx-id)" &&
+docker container inspect web >/dev/null && docker run --pull=never --rm nginx:1.29-alpine nginx -v`}, 2*time.Minute); err != nil {
+		t.Fatalf("inner Docker data in clone: %v", err)
 	}
 }
