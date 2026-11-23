@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/docker/docker/api/types/container"
+	imagetypes "github.com/docker/docker/api/types/image"
 
 	"github.com/miciav/minikube-cloud-lab/internal/infra"
 )
@@ -190,5 +191,21 @@ func TestInstancesSkipImageHelpers(t *testing.T) {
 	got, err := (&Infra{network: "lab"}).Instances(context.Background())
 	if err != nil || !reflect.DeepEqual(got, []infra.Instance{{Name: "src"}}) {
 		t.Fatalf("instances: %+v %v", got, err)
+	}
+}
+
+func TestCleanupSkipsClonesAndTaggedImages(t *testing.T) {
+	owned := map[string]string{imageLabel: "web", instanceNetLabel: "lab"}
+	if isImageHelper(container.Summary{Names: []string{"/mcl-vm-x"}, Labels: owned}) {
+		t.Fatal("clone selected as helper")
+	}
+	if !isImageHelper(container.Summary{Names: []string{"/mcl-imgbuild-web"}, Labels: owned}) || !isImageHelper(container.Summary{Names: []string{"mcl-imgbuild-web"}}) {
+		t.Fatal("helper not selected")
+	}
+	if isUntaggedImage(imagetypes.Summary{RepoTags: []string{"localhost/minikube-cloud-lab/image-web:latest"}, Labels: owned}) {
+		t.Fatal("tagged personal image selected")
+	}
+	if !isUntaggedImage(imagetypes.Summary{Labels: owned}) || !isUntaggedImage(imagetypes.Summary{RepoTags: []string{"<none>:<none>"}}) {
+		t.Fatal("dangling image not selected")
 	}
 }

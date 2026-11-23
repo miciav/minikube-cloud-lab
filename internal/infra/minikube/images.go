@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -84,6 +85,26 @@ func cleanupFilters(network string) (helpers, images filters.Args) {
 	return helpers, images
 }
 
+// isImageHelper double-checks the runtime filter: clones carry the same labels.
+func isImageHelper(c container.Summary) bool {
+	for _, name := range c.Names {
+		if strings.HasPrefix(strings.TrimPrefix(name, "/"), imageHelperPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// isUntaggedImage double-checks the dangling filter, so a personal image is never removed.
+func isUntaggedImage(image imagetypes.Summary) bool {
+	for _, tag := range image.RepoTags {
+		if tag != "<none>:<none>" {
+			return false
+		}
+	}
+	return true
+}
+
 // cleanupImageHelpers removes what an interrupted capture or launch left behind.
 func (i *Infra) cleanupImageHelpers(ctx context.Context, client *dockerclient.Client) error {
 	helpers, images := cleanupFilters(i.network)
@@ -93,6 +114,9 @@ func (i *Infra) cleanupImageHelpers(ctx context.Context, client *dockerclient.Cl
 	}
 	var failures []error
 	for _, c := range rows {
+		if !isImageHelper(c) {
+			continue
+		}
 		if err := client.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			failures = append(failures, err)
 		}
@@ -102,6 +126,9 @@ func (i *Infra) cleanupImageHelpers(ctx context.Context, client *dockerclient.Cl
 		return errors.Join(append(failures, fmt.Errorf("list dangling images: %w", err))...)
 	}
 	for _, image := range dangling {
+		if !isUntaggedImage(image) {
+			continue
+		}
 		// A conflict is a parent of a personal image; it goes when that image is deleted.
 		if _, err := client.ImageRemove(ctx, image.ID, imagetypes.RemoveOptions{PruneChildren: true}); err != nil && !cerrdefs.IsNotFound(err) && !cerrdefs.IsConflict(err) {
 			failures = append(failures, err)
