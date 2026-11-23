@@ -118,15 +118,17 @@ func TestSanitizeScriptRemovesOnlyTheSourceKey(t *testing.T) {
 	if got := read("home/ubuntu/.ssh/authorized_keys"); got != "\nssh-ed25519 AAAAstudent me@laptop\nssh-ed25519 AAAAsource-prefix\n" {
 		t.Fatalf("authorized_keys: %q", got)
 	}
-	for _, gone := range []string{"var/lib/mcl-disk-images/disk-1.img", "etc/ssh/ssh_host_ed25519_key", "etc/cloud/mcl-seed/user-data", "etc/cloud/cloud.cfg.d/99-mcl.cfg", "etc/cloud/ds-identify.cfg"} {
+	for _, gone := range []string{"var/lib/mcl-disk-images/disk-1.img", "etc/ssh/ssh_host_ed25519_key", "etc/cloud/mcl-seed/user-data", "etc/cloud/cloud.cfg.d/99-mcl.cfg"} {
 		if read(gone) != "<absent>" {
 			t.Errorf("%s survived", gone)
 		}
 	}
 	for path, want := range map[string]string{
-		"etc/ssh/sshd_config":                                "keep",
-		"etc/cloud/cloud.cfg.d/90-lab-user.cfg":              "keep",
-		"etc/machine-id":                                     "",
+		"etc/ssh/sshd_config":                   "keep",
+		"etc/cloud/cloud.cfg.d/90-lab-user.cfg": "keep",
+		"etc/machine-id":                        "",
+		// The seed's policy goes back to the base image's, so clones without user-data skip cloud-init.
+		"etc/cloud/ds-identify.cfg":                          "policy: disabled\n",
 		"cloud-init-called":                                  "clean --logs\n",
 		"etc/systemd/system/ssh.service.d/10-host-keys.conf": "[Service]\nExecStartPre=\nExecStartPre=/usr/bin/ssh-keygen -A\nExecStartPre=/usr/sbin/sshd -t\n",
 	} {
@@ -138,12 +140,20 @@ func TestSanitizeScriptRemovesOnlyTheSourceKey(t *testing.T) {
 		t.Errorf("disk mount point removed: %v", err)
 	}
 
-	// The image's own ds-identify policy and an existing drop-in stay untouched.
-	write("etc/cloud/ds-identify.cfg", "policy: disabled\n")
+	// A ds-identify policy and a drop-in the seed did not write stay untouched.
+	write("etc/cloud/ds-identify.cfg", "policy: search,found=all\n")
 	write("etc/systemd/system/ssh.service.d/10-host-keys.conf", "custom")
 	sanitize()
-	if read("etc/cloud/ds-identify.cfg") != "policy: disabled\n" || read("etc/systemd/system/ssh.service.d/10-host-keys.conf") != "custom" {
+	if read("etc/cloud/ds-identify.cfg") != "policy: search,found=all\n" || read("etc/systemd/system/ssh.service.d/10-host-keys.conf") != "custom" {
 		t.Fatal("sanitize overwrote files the seed did not write")
+	}
+	// An image without the file does not get one.
+	if err := os.Remove(filepath.Join(root, "etc/cloud/ds-identify.cfg")); err != nil {
+		t.Fatal(err)
+	}
+	sanitize()
+	if read("etc/cloud/ds-identify.cfg") != "<absent>" {
+		t.Fatal("sanitize created ds-identify.cfg")
 	}
 }
 

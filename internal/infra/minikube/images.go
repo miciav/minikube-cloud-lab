@@ -24,14 +24,15 @@ const (
 	// copyVar runs in a helper with the source /var read-only at /mnt/from-var and the
 	// target volume at /var; cp -a keeps owners, modes, links, xattrs and device nodes.
 	copyVar = "cp -a /mnt/from-var/. /var/"
-	// sanitizeImage strips per-instance identity from a captured system. ROOT prefixes every
-	// path for tests and is empty in production.
+	// sanitizeImage strips per-instance identity from a captured system and puts the seed's
+	// ds-identify policy back to the base image's (seedCloudInit enables it again for user-data).
+	// ROOT prefixes every path for tests and is empty in production.
 	sanitizeImage = `set -eu
 R=${ROOT:-}
 disks="$R/var/lib/mcl-disk-images"
 [ ! -d "$disks" ] || find "$disks" -mindepth 1 -delete
 rm -rf "$R"/etc/ssh/ssh_host_* "$R"/etc/cloud/mcl-seed/* "$R/etc/cloud/cloud.cfg.d/99-mcl.cfg"
-if [ "$(cat "$R/etc/cloud/ds-identify.cfg" 2>/dev/null)" = "policy: enabled" ]; then rm -f "$R/etc/cloud/ds-identify.cfg"; fi
+if [ "$(cat "$R/etc/cloud/ds-identify.cfg" 2>/dev/null)" = "policy: enabled" ]; then printf 'policy: disabled\n' > "$R/etc/cloud/ds-identify.cfg"; fi
 keys="$R/home/$SSH_USER/.ssh/authorized_keys"
 if [ -f "$keys" ]; then
 	grep -vxF -e "$SOURCE_KEY" "$keys" > "$keys.mcl" || [ $? -eq 1 ]

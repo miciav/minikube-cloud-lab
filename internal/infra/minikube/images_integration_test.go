@@ -101,10 +101,11 @@ rm /var/log/bootstrap.log && echo "$KEY" >> /home/ubuntu/.ssh/authorized_keys`);
 		"system file": "test -f /etc/golden-marker",
 		"/var file":   "test -f /var/lib/golden-marker",
 		"deleted /var file stays deleted (no copy-up)": "test ! -e /var/log/bootstrap.log",
-		"student key kept": `grep -qxF "$STUDENT" /home/ubuntu/.ssh/authorized_keys`,
-		"clone key added":  `grep -qxF "$CLONE" /home/ubuntu/.ssh/authorized_keys`,
-		"source key gone":  `! grep -qF "$SOURCE" /home/ubuntu/.ssh/authorized_keys`,
-		"fresh machine-id": `test -s /etc/machine-id`,
+		"student key kept":  `grep -qxF "$STUDENT" /home/ubuntu/.ssh/authorized_keys`,
+		"clone key added":   `grep -qxF "$CLONE" /home/ubuntu/.ssh/authorized_keys`,
+		"source key gone":   `! grep -qF "$SOURCE" /home/ubuntu/.ssh/authorized_keys`,
+		"fresh machine-id":  `test -s /etc/machine-id`,
+		"seed policy reset": `test "$(cat /etc/cloud/ds-identify.cfg)" = "policy: disabled"`,
 	} {
 		if err := execRoot(ctx, client, "mcl-vm-gclone", []string{"STUDENT=" + studentKey, "CLONE=" + cloneKey, "SOURCE=" + sourceKey}, script); err != nil {
 			t.Errorf("%s: %v", check, err)
