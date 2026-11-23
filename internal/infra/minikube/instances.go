@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -84,10 +85,10 @@ func reservedAddresses(rows []container.Summary, name string) (map[string]bool, 
 
 // instanceContainer mirrors the settings minikube uses for its node containers.
 func instanceContainer(spec infra.InstanceSpec, image, networkName string, ip netip.Addr, podman bool) (*container.Config, *container.HostConfig, *network.NetworkingConfig) {
-	runtime, security, volume := "docker", []string{"seccomp=unconfined", "apparmor=unconfined"}, instancePrefix+spec.Name+":/var"
+	runtime, security, volume := "docker", instanceSecurity(podman), instancePrefix+spec.Name+":/var"
 	if podman {
-		// Podman mounts volumes noexec by default and has no AppArmor profile to lift.
-		runtime, security, volume = "podman", []string{"seccomp=unconfined"}, volume+":exec"
+		// Podman mounts volumes noexec by default.
+		runtime, volume = "podman", volume+":exec"
 	}
 	memory := int64(spec.Shape.MemoryMiB) * 1024 * 1024
 	pids := int64(instancePIDs)
@@ -108,6 +109,14 @@ func instanceContainer(spec infra.InstanceSpec, image, networkName string, ip ne
 	return cfg, host, net
 }
 
+// instanceSecurity lifts seccomp, and AppArmor where it exists (Podman has no profile to lift).
+func instanceSecurity(podman bool) []string {
+	if podman {
+		return []string{"seccomp=unconfined"}
+	}
+	return []string{"seccomp=unconfined", "apparmor=unconfined"}
+}
+
 var _ infra.Instances = (*Infra)(nil)
 
 // prepareInstance gives each instance its own machine-id (kicbase ships one), restarts journald so
@@ -124,10 +133,13 @@ func instanceRootless() bool { return os.Getenv("CLOUD_ROOTLESS") == "true" }
 const defaultUbuntuImage = "ghcr.io/miciav/minikube-cloud-lab/instance-ubuntu:26.04"
 
 // instanceImageRef maps a catalog name to an image; kicbase images come through minikube's cache.
-func instanceImageRef(name string, cloudInit bool) (ref string, kicbase bool, err error) {
-	switch name {
+func instanceImageRef(spec infra.InstanceSpec) (ref string, kicbase bool, err error) {
+	if spec.Custom {
+		return imageRef(spec.Image), false, nil
+	}
+	switch spec.Image {
 	case "debian-12":
-		if cloudInit {
+		if spec.UserData != "" {
 			if ref := os.Getenv("CLOUD_DEBIAN_IMAGE"); ref != "" {
 				return ref, false, nil
 			}
@@ -140,7 +152,7 @@ func instanceImageRef(name string, cloudInit bool) (ref string, kicbase bool, er
 		}
 		return defaultUbuntuImage, false, nil
 	}
-	return "", false, fmt.Errorf("unknown instance image %s", name)
+	return "", false, fmt.Errorf("unknown instance image %s", spec.Image)
 }
 
 // ensureImage pulls ref unless the daemon already has it, reporting registry errors.
@@ -185,9 +197,18 @@ func ensureImage(ctx context.Context, client *dockerclient.Client, ref string) e
 }
 
 func instanceImage(ctx context.Context, client *dockerclient.Client, spec infra.InstanceSpec) (string, error) {
-	ref, kicbase, err := instanceImageRef(spec.Image, spec.UserData != "")
+	ref, kicbase, err := instanceImageRef(spec)
 	if err != nil {
 		return "", err
+	}
+	if spec.Custom {
+		// Personal images exist only locally; a pull could only fail or fetch a stranger's image.
+		if _, err := client.ImageInspect(ctx, ref); cerrdefs.IsNotFound(err) {
+			return "", fmt.Errorf("image %s is missing from the container runtime; recreate it", spec.Image)
+		} else if err != nil {
+			return "", fmt.Errorf("inspect image %s: %w", ref, err)
+		}
+		return ref, nil
 	}
 	if kicbase {
 		libraryMu.Lock()
@@ -199,7 +220,12 @@ func instanceImage(ctx context.Context, client *dockerclient.Client, spec infra.
 
 func (i *Infra) instanceContainers(ctx context.Context, client *dockerclient.Client) ([]container.Summary, error) {
 	args := filters.NewArgs(filters.Arg("label", instanceLabel), filters.Arg("label", instanceNetLabel+"="+i.network))
-	return client.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
+	rows, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
+	// Image helpers inherit the source's instance label from its committed image; only
+	// mcl-vm-<label> is the instance.
+	return slices.DeleteFunc(rows, func(c container.Summary) bool {
+		return !slices.ContainsFunc(c.Names, func(n string) bool { return strings.TrimPrefix(n, "/") == instancePrefix+c.Labels[instanceLabel] })
+	}), err
 }
 
 // CreateInstance starts a system container and returns once SSH accepts the student key.
@@ -231,6 +257,11 @@ func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (in
 	}
 	if spec.GroupID != "" && disk.Labels[instanceGroupLabel] != spec.GroupID {
 		return infra.Instance{}, fmt.Errorf("volume %s ownership mismatch", name)
+	}
+	if spec.Custom {
+		if err := i.seedVar(ctx, client, spec.Image, name); err != nil {
+			return infra.Instance{}, fmt.Errorf("copy image /var: %w", err)
+		}
 	}
 	cfg, host, endpoints := instanceContainer(spec, image, i.network, ip, instanceRootless())
 	if err := i.mountDiskSlot(host, spec.Name); err != nil {
