@@ -12,3 +12,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # v1.23.1 is a stray tag; kicbase releases are v0.0.N.
+      - dependency-name: k8s-minikube/kicbase
+        versions: [">= 1.0.0"]

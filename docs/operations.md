@@ -5,7 +5,7 @@ Use this guide to inspect a running lab, reach its endpoints or recover state. F
 ## Docker host and credentials
 
 You need Docker Engine on Linux or Docker Desktop on macOS, Compose v2, access
-to the local Docker socket. The lab image includes `kubectl` v1.35.10.
+to the local Docker socket. The lab image includes `kubectl` v1.37.3.
 The `cloud` and `lab` tools run in containers on both platforms; no Go install
 or native project binaries are needed. For the default experiment, provide
 at least 6 CPUs and 6 GiB of available memory. The images support Linux amd64
@@ -40,6 +40,10 @@ images, including workers added by the autoscaler. If an image is not cached,
 Docker falls back to Docker Hub and its rate limits still apply. The setting is
 applied when nodes are created; delete and recreate an existing cluster to use it.
 The Docker daemon on your computer is not configured by this project.
+
+New clusters run Kubernetes v1.37.3. A cluster keeps the version it was created with,
+workers added later included, so clusters from before the upgrade stay on v1.35.6.
+Run `cloud clusters delete` and `cloud clusters create` to move one to v1.37.3.
 
 Wait until `cloud machine-types list` responds before creating the cluster.
 The first start downloads node images and Kubernetes components and may take

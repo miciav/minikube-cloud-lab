@@ -18,7 +18,7 @@ kubectl get crd
 cd kubernetes/lecture03/vpa
 ```
 
-Check for two Ready nodes, available metrics, no previous workload and no installed `verticalpodautoscalers.autoscaling.k8s.io` CRD. This exercise uses VPA 1.7.1 and was tested on Kubernetes 1.35.6.
+Check for two Ready nodes, available metrics, no previous workload and no installed `verticalpodautoscalers.autoscaling.k8s.io` CRD. This exercise uses VPA 1.7.1 and was tested on Kubernetes 1.35.6; the lab now creates 1.37.3 clusters.
 
 ## 2. Install VPA
 
