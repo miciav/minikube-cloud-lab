@@ -1,4 +1,4 @@
-# Source: official externalgrpc example from cluster-autoscaler v1.35.0.
+# Source: official externalgrpc example from cluster-autoscaler v1.37.0.
 ---
 apiVersion: v1
 kind: ServiceAccount

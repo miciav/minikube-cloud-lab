@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY tools/kubectl/main.go ./
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -mod=readonly -trimpath \
-    -ldflags="-s -w -X k8s.io/client-go/pkg/version.gitVersion=v1.35.10 -X k8s.io/component-base/version.gitVersion=v1.35.10" -o /out/kubectl .
+    -ldflags="-s -w -X k8s.io/client-go/pkg/version.gitVersion=v1.37.3 -X k8s.io/component-base/version.gitVersion=v1.37.3" -o /out/kubectl .
 
 FROM docker:29.9.2-cli AS docker-cli
 

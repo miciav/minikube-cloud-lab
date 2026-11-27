@@ -12,7 +12,7 @@ Watch **0 → 2 → 0 replicas** on a single node. Opening and closing a time wi
 
 The exercise names the workload keda-http, pins the ARM64-verified HTTP echo image to 1.0.0 and adds requests, limits and a readiness probe. Observing replicas requires no Service. A UTC Cron trigger, two-replica maximum, five-second polling and 20-second cooldown keep the demonstration short. The full HTTP tutorial uses Prometheus and application metrics.
 
-Upstream tested KEDA 2.21 with Kubernetes 1.34–1.36. The lab uses Kubernetes 1.35.6 and pinned release images. [Compatibility](https://keda.sh/docs/2.21/operate/cluster/#kubernetes-compatibility).
+Upstream tested KEDA 2.21 with Kubernetes 1.34–1.36. The lab uses Kubernetes 1.37.3, outside that range, and pinned release images; recheck the exercise after upgrades. [Compatibility](https://keda.sh/docs/2.21/operate/cluster/#kubernetes-compatibility).
 
 ## 1. Prepare the cluster and install KEDA
 

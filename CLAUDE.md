@@ -44,8 +44,8 @@ Live tests require Docker with at least 6 CPUs and 6 GiB available. On macOS and
 - Record the requester as `student` for CLI/API calls, `cluster-autoscaler` for externalgrpc and `cloud` for reconciliation events. Both transports share the same Service.
 - Serialize infrastructure mutations and persist each operation before starting it. Client Ctrl-C leaves server work running. Only one service may use a state directory at a time.
 - Embed certificates in kubeconfig and preserve other contexts.
-- The visible manifests are the sources embedded by `lab`. Keep Kubernetes at v1.35.x, Cluster Autoscaler at v1.35.0 and the protocol on the same minor version.
-- `proto/externalgrpc.proto` comes from upstream tag `cluster-autoscaler-1.35.0` via the reference project. Regenerate bindings with `proto/generate.sh`, which checks exact protoc and plugin versions first.
+- The visible manifests are the sources embedded by `lab`. Keep Kubernetes at v1.37.x, Cluster Autoscaler at v1.37.0 and the protocol on the same minor version.
+- `proto/externalgrpc.proto` comes from upstream tag `cluster-autoscaler-1.37.0` (kubernetes/autoscaler). Regenerate bindings with `proto/generate.sh`, which checks exact protoc and plugin versions first.
 - Treat `~/Documents/minikube-cluster-autoscaler` as a read-only reference.
 - Keep `docs/superpowers/` and `.superpowers/` ignored. Exclude local specifications, plans, logs, credentials, .env and reports from commits.
 - Keep the repository and GHCR packages public for HTTPS cloning and anonymous image pulls. CI runs on amd64 and uses QEMU for multiarch builds.

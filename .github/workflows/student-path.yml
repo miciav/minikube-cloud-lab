@@ -35,7 +35,7 @@ env:
   NFS_IMAGE: minikube-cloud-lab/nfs:dev
   UBUNTU_IMAGE: minikube-cloud-lab/instance-ubuntu:dev
   DEBIAN_IMAGE: minikube-cloud-lab/instance-debian:dev
-  KUBECTL_VERSION: v1.35.6
+  KUBECTL_VERSION: v1.37.3
 jobs:
   managed-services:
     runs-on: ubuntu-24.04

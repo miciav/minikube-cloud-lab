@@ -76,7 +76,7 @@ from removal.
 | `lab-small` (default) | 2 | 2 GiB |
 | `lab-medium` | 4 | 8 GiB |
 
-Kubernetes is pinned to **v1.35.6**, Cluster Autoscaler to **v1.35.0**, and the
+Kubernetes is pinned to **v1.37.3**, Cluster Autoscaler to **v1.37.0**, and the
 minikube library to **v1.39.0**. Nodes expose the standard instance-type label,
 region `lab-region-1`, and zone `lab-region-1-a`.
 
