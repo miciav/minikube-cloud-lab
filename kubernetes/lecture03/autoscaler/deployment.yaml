@@ -20,7 +20,7 @@ spec:
       containers:
         - name: cluster-autoscaler
           # Pin the demo to the matching externalgrpc protocol release.
-          image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.35.0
+          image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.37.0
           imagePullPolicy: IfNotPresent
           resources:
             requests:
