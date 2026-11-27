@@ -261,6 +261,7 @@ func TestInstanceBusyRejected(t *testing.T) {
 func TestDeleteInstanceRemovesRecordAndKey(t *testing.T) {
 	s, f, dir := newService(t)
 	createInstance(t, s, "vm1")
+	f.Delay = 200 * time.Millisecond // keep the delete running while checking DELETING
 	op, err := s.DeleteInstance("vm1", "student")
 	if got, _ := s.Instance("vm1"); got.Status != "DELETING" || op.Type != "DELETE_INSTANCE" {
 		t.Fatalf("accepted: %+v %+v", got, op)
