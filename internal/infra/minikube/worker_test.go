@@ -43,3 +43,14 @@ func TestFailedProvisioningForgetsOnlyAbsentWorker(t *testing.T) {
 		})
 	}
 }
+
+func TestNextWorkerKeepsClusterKubernetesVersion(t *testing.T) {
+	cc := &config.ClusterConfig{
+		KubernetesConfig: config.KubernetesConfig{KubernetesVersion: "v1.35.6", ContainerRuntime: "docker"},
+		Nodes:            []config.Node{{ControlPlane: true}, {Name: "m02", Worker: true}},
+	}
+	n := nextWorker(cc)
+	if n.Name != "m03" || n.KubernetesVersion != "v1.35.6" || n.ContainerRuntime != "docker" || !n.Worker || n.ControlPlane {
+		t.Fatalf("worker %+v", n)
+	}
+}

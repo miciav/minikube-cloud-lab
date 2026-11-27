@@ -288,6 +288,16 @@ func removeMachine(ctx context.Context, api libmachine.API, name string) error {
 	return api.Remove(name)
 }
 
+// nextWorker names the first free mNN slot and keeps the Kubernetes version the cluster was
+// created with, so clusters made before an upgrade stay on one version.
+func nextWorker(cc *config.ClusterConfig) config.Node {
+	index := 2
+	for slices.ContainsFunc(cc.Nodes, func(x config.Node) bool { return x.Name == fmt.Sprintf("m%02d", index) }) {
+		index++
+	}
+	return config.Node{Name: fmt.Sprintf("m%02d", index), KubernetesVersion: cc.KubernetesConfig.KubernetesVersion, ContainerRuntime: cc.KubernetesConfig.ContainerRuntime, Worker: true}
+}
+
 // AddMachine joins a worker using the cluster shape.
 func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, error) {
 	libraryMu.Lock()
@@ -303,11 +313,7 @@ func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, err
 		return infra.Machine{}, err
 	}
 	cc := p.Config
-	index := 2
-	for slices.ContainsFunc(cc.Nodes, func(x config.Node) bool { return x.Name == fmt.Sprintf("m%02d", index) }) {
-		index++
-	}
-	n := config.Node{Name: fmt.Sprintf("m%02d", index), KubernetesVersion: cc.KubernetesConfig.KubernetesVersion, ContainerRuntime: cc.KubernetesConfig.ContainerRuntime, Worker: true}
+	n := nextWorker(cc)
 	m, h, r, err := provisionNode(ctx, cc, &n)
 	if m != nil {
 		defer func() { _ = m.Close() }()
