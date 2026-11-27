@@ -168,7 +168,7 @@ func (s *Service) CreateCluster(name, kind string, minM, maxM int, requester str
 	}
 	var observed []infra.Machine
 	s.launch(op.ID, func() error {
-		if err := s.inf.CreateCluster(context.Background(), infra.ClusterSpec{Name: name, KubernetesVersion: "v1.35.6", Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, NodeLabels: NodeLabels(kind)}); err != nil {
+		if err := s.inf.CreateCluster(context.Background(), infra.ClusterSpec{Name: name, KubernetesVersion: "v1.37.3", Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, NodeLabels: NodeLabels(kind)}); err != nil {
 			return err
 		}
 		for n := 1; n < minM; n++ {

@@ -71,7 +71,7 @@ func (failedStartupRunner) RunCmd(*exec.Cmd) (*command.RunResult, error) {
 }
 
 func TestStartupFailureReturnsError(t *testing.T) {
-	_, err := configureRuntime(context.Background(), config.ClusterConfig{KubernetesConfig: config.KubernetesConfig{KubernetesVersion: "v1.35.6", ContainerRuntime: "docker", NetworkPlugin: "cni"}}, failedStartupRunner{command.NewFakeCommandRunner()})
+	_, err := configureRuntime(context.Background(), config.ClusterConfig{KubernetesConfig: config.KubernetesConfig{KubernetesVersion: "v1.37.3", ContainerRuntime: "docker", NetworkPlugin: "cni"}}, failedStartupRunner{command.NewFakeCommandRunner()})
 	if err == nil || !strings.Contains(err.Error(), "startup transport unavailable") {
 		t.Fatalf("startup failure not returned: %v", err)
 	}

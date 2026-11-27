@@ -59,7 +59,7 @@ func TestClusterLifecycle(t *testing.T) {
 		"topology.kubernetes.io/region":    "lab-region-1",
 		"topology.kubernetes.io/zone":      "lab-region-1-a",
 	}
-	if err := inf.CreateCluster(ctx, infra.ClusterSpec{Name: name, KubernetesVersion: "v1.35.6", Shape: infra.MachineShape{CPUs: 2, MemoryMiB: 2048}, NodeLabels: labels}); err != nil {
+	if err := inf.CreateCluster(ctx, infra.ClusterSpec{Name: name, KubernetesVersion: "v1.37.3", Shape: infra.MachineShape{CPUs: 2, MemoryMiB: 2048}, NodeLabels: labels}); err != nil {
 		t.Fatal(err)
 	}
 	machines, err := inf.Machines(ctx, name)

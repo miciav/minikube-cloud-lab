@@ -35,7 +35,7 @@ env:
   NFS_IMAGE: minikube-cloud-lab/nfs:dev
   UBUNTU_IMAGE: minikube-cloud-lab/instance-ubuntu:dev
   DEBIAN_IMAGE: minikube-cloud-lab/instance-debian:dev
-  KUBECTL_VERSION: v1.35.6
+  KUBECTL_VERSION: v1.37.3
 jobs:
   managed-services:
     runs-on: ubuntu-24.04
@@ -110,7 +110,9 @@ jobs:
           # The cloud image must work without either host Kubernetes CLI binary.
           docker compose exec -T cloud sh -c '! command -v minikube && ! command -v kubectl'
           # Verify real runtime quotas as well as what Kubernetes can schedule.
-          test "$(docker inspect demo --format '{{.HostConfig.NanoCpus}}')" = 2000000000
+          # The cloud keeps minikube's NanoCpus or applies an equivalent quota on cgroup v2.
+          cpu_limit=$(docker inspect demo --format '{{.HostConfig.NanoCpus}} {{.HostConfig.CpuQuota}} {{.HostConfig.CpuPeriod}}')
+          [[ $cpu_limit == "2000000000 "* || $cpu_limit == "0 200000 100000" ]]
           test "$(docker inspect demo --format '{{.HostConfig.Memory}}')" = 2147483648
           test "$(kubectl get node demo -o jsonpath='{.status.allocatable.cpu}')" = 2
           lab install autoscaler
