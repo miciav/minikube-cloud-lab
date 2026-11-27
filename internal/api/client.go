@@ -253,3 +253,14 @@ func (c *Client) SetDashboard(ctx context.Context, name, uid, action string) (cl
 	_, err := c.request(ctx, http.MethodPost, "/v1/clusters/"+url.PathEscape(name)+"/dashboard/"+url.PathEscape(action), map[string]string{"uid": uid}, &op)
 	return op, err
 }
+
+// Billing reports usage costs; since is a duration, an RFC3339 time or empty for the last reset.
+func (c *Client) Billing(ctx context.Context, since string) (cloud.BillingReport, error) {
+	path := "/v1/billing"
+	if since != "" {
+		path += "?since=" + url.QueryEscape(since)
+	}
+	var result cloud.BillingReport
+	_, err := c.request(ctx, http.MethodGet, path, nil, &result)
+	return result, err
+}

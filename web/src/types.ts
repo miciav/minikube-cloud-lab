@@ -6,7 +6,7 @@ export type Cluster = {
   status: string;
   createdAt: string;
 };
-export type MachineType = { name: string; cpus: number; memoryMiB: number };
+export type MachineType = { name: string; cpus: number; memoryMiB: number; pricePerHour: number };
 export type Machine = {
   name: string;
   cluster: string;
@@ -36,4 +36,22 @@ export type StorageCapacity = {
   total: string;
   allocated: string;
   available: string;
+};
+export type BillingItem = {
+  kind: string;
+  name: string;
+  cluster?: string;
+  type?: string;
+  bytes?: number;
+  running: boolean;
+  seconds: number;
+  cost: number;
+};
+export type BillingReport = {
+  resetAt: string;
+  since: string;
+  until: string;
+  currency: string;
+  total: number;
+  items: BillingItem[];
 };

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -85,7 +86,11 @@ func (s *Service) ChangeDisk(ctx context.Context, action, name, size, instance s
 	images := filepath.Join(s.diskRoot(), "images")
 	image := filepath.Join(images, name)
 	if action == "create" {
-		return createDiskImage(images, name, size)
+		d, err := createDiskImage(images, name, size)
+		if err == nil && s.billing.start(usageResource{Kind: "disk", Name: name, Bytes: d.Bytes}, time.Now().UTC()) {
+			s.saveBilling()
+		}
+		return d, err
 	}
 	d, err := s.disk(name)
 	if err != nil {
@@ -97,6 +102,9 @@ func (s *Service) ChangeDisk(ctx context.Context, action, name, size, instance s
 		}
 		if err := os.Remove(image); err != nil {
 			return Disk{}, err
+		}
+		if s.billing.stop("disk", name, time.Now().UTC()) {
+			s.saveBilling()
 		}
 		return d, syncDiskDir(images)
 	}

@@ -14,6 +14,7 @@ services:
       CLOUD_INSTANCE_METRICS_URL: http://instance-metrics:9090
       CLOUD_INSTANCE_AUTOSCALER_URL: http://127.0.0.1:8085
       CLOUD_DISK_VOLUME: minikube-cloud-lab-rootless-disks
+      CLOUD_BILLING_DIR: /data/billing
       CLOUD_ROOTLESS: 'true'
       CLOUD_STORAGE_VOLUME: minikube-cloud-lab-rootless-storage
       CLOUD_STORAGE_CAPACITY: ${CLOUD_STORAGE_CAPACITY:-20Gi}
@@ -30,6 +31,7 @@ services:
       - state:/data
       - autoscaling:/data/autoscaling
       - instance-disks:/data/instance-disks
+      - billing:/data/billing
       - kube:/kube
       - storage:/data/storage
   portal:
@@ -120,6 +122,8 @@ volumes:
     labels:
       io.course.monitoring.scope: ${CLOUD_COURSE_PROJECT:-mcl}
   autoscaling:
+  billing:
+    name: minikube-cloud-lab-rootless-billing
   instance-disks:
     name: minikube-cloud-lab-rootless-disks
   state:
