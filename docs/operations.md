@@ -44,6 +44,9 @@ The Docker daemon on your computer is not configured by this project.
 New clusters run Kubernetes v1.37.3. A cluster keeps the version it was created with,
 workers added later included, so clusters from before the upgrade stay on v1.35.6.
 Run `cloud clusters delete` and `cloud clusters create` to move one to v1.37.3.
+Recreate such clusters before using the lab images: `kubectl` v1.37.3 and Cluster
+Autoscaler v1.37.0 are two minor versions ahead of v1.35, outside the supported skew.
+`kubectl get nodes` shows the version of each node.
 
 Wait until `cloud machine-types list` responds before creating the cluster.
 The first start downloads node images and Kubernetes components and may take
