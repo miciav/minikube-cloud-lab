@@ -115,35 +115,54 @@ func finishRegistry(st *snapshot, name string, observed infra.RegistryInfo, err 
 	if lookup != nil {
 		return
 	}
-	r.Status = "ERROR"
+	r.Status, r.IP = "ERROR", observed.IP // a failed create reports no address
 	if err == nil {
-		r.Status, r.IP = "RUNNING", observed.IP
+		r.Status = "RUNNING"
 	}
+}
+
+// registryListTimeout bounds the image listing a non-forced delete waits for.
+const registryListTimeout = 10 * time.Second
+
+// deletableRegistry returns the spec of a registry no operation is working on.
+func (st *snapshot) deletableRegistry(name string) (infra.RegistrySpec, error) {
+	current, err := st.registry(name)
+	if err != nil {
+		return infra.RegistrySpec{}, err
+	}
+	if st.registryBusy(name) {
+		return infra.RegistrySpec{}, fmt.Errorf("%w: an operation is running on registry %s", ErrFailedPrecondition, name)
+	}
+	return current.spec(), nil
 }
 
 // DeleteRegistry removes a registry and its data; one holding images needs force.
 func (s *Service) DeleteRegistry(name string, force bool, requester string) (Operation, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.registries == nil {
 		return Operation{}, errNoRegistries
 	}
-	current, err := s.state.registry(name)
-	if err != nil {
-		return Operation{}, err
-	}
-	if s.state.registryBusy(name) {
-		return Operation{}, fmt.Errorf("%w: an operation is running on registry %s", ErrFailedPrecondition, name)
-	}
 	if !force {
-		// ponytail: lists under s.mu; one small catalog call per delete, move it out if registries grow large.
-		images, err := s.registries.RegistryImages(context.Background(), current.spec())
+		// The listing is an HTTP call to the registry: readers must not wait for it.
+		s.mu.Lock()
+		spec, err := s.state.deletableRegistry(name)
+		s.mu.Unlock()
+		if err != nil {
+			return Operation{}, err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), registryListTimeout)
+		images, err := s.registries.RegistryImages(ctx, spec)
+		cancel()
 		if err != nil {
 			return Operation{}, fmt.Errorf("%w: cannot list images of registry %s (%w); delete with force", ErrFailedPrecondition, name, err)
 		}
 		if len(images) > 0 {
 			return Operation{}, fmt.Errorf("%w: registry %s holds %d images; delete with force", ErrFailedPrecondition, name, len(images))
 		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.state.deletableRegistry(name); err != nil {
+		return Operation{}, err
 	}
 	next := s.state.clone()
 	r, _ := next.registry(name)
@@ -233,16 +252,25 @@ func (s *Service) StartRegistries(ctx context.Context) error {
 		}
 	}
 	type outcome struct {
-		info infra.RegistryInfo
-		err  error
+		info    infra.RegistryInfo
+		deleted bool
+		err     error
 	}
 	outcomes := make(map[string]outcome, len(records))
 	for _, r := range records {
+		if r.Status == "DELETING" { // a delete accepted before a crash
+			err := s.registries.DeleteRegistry(ctx, r.Name)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("finish deleting registry %s: %w", r.Name, err))
+			}
+			outcomes[r.Name] = outcome{deleted: err == nil, err: err}
+			continue
+		}
 		info, err := s.registries.CreateRegistry(ctx, r.spec())
 		if err != nil {
 			errs = append(errs, fmt.Errorf("start registry %s: %w", r.Name, err))
 		}
-		outcomes[r.Name] = outcome{info, err}
+		outcomes[r.Name] = outcome{info: info, err: err}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -250,6 +278,7 @@ func (s *Service) StartRegistries(ctx context.Context) error {
 	for name, o := range outcomes {
 		finishRegistry(&next, name, o.info, o.err)
 	}
+	next.Registries = slices.DeleteFunc(next.Registries, func(r registryRecord) bool { return outcomes[r.Name].deleted })
 	if err := s.store(next); err != nil {
 		errs = append(errs, err)
 	}

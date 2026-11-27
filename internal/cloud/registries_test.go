@@ -275,3 +275,73 @@ func TestRegistriesUnavailableWithoutBackend(t *testing.T) {
 		t.Fatal("start/stop without backend must be no-ops")
 	}
 }
+
+// blockingImages holds every image listing until release is closed.
+type blockingImages struct {
+	*fake.Infra
+	listing, release chan struct{}
+}
+
+func (b blockingImages) RegistryImages(ctx context.Context, spec infra.RegistrySpec) ([]infra.RegistryImage, error) {
+	close(b.listing)
+	<-b.release
+	return b.Infra.RegistryImages(ctx, spec)
+}
+
+func TestDeleteRegistryListsImagesWithoutTheServiceLock(t *testing.T) {
+	f := fake.New()
+	b := blockingImages{Infra: f, listing: make(chan struct{}), release: make(chan struct{})}
+	s, err := cloud.NewService(b, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	createRegistry(t, s, "corso")
+	done := make(chan error, 1)
+	go func() {
+		op, err := s.DeleteRegistry("corso", false, "student")
+		if err == nil {
+			wait(t, s, op)
+		}
+		done <- err
+	}()
+	<-b.listing
+	if got := s.Registries(); len(got) != 1 || len(s.Operations()) != 1 {
+		t.Fatalf("readers during listing: %+v", got)
+	}
+	close(b.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Registries(); len(got) != 0 {
+		t.Fatalf("registries %+v", got)
+	}
+}
+
+func TestStartRegistriesFinishesInterruptedDelete(t *testing.T) {
+	f := fake.New()
+	if _, err := f.CreateRegistry(context.Background(), infra.RegistrySpec{Name: "corso"}); err != nil {
+		t.Fatal(err)
+	}
+	s := seedRegistries(t, f, map[string]string{"name": "corso", "status": "DELETING"}, map[string]string{"name": "nuovo", "status": "CREATING"})
+	if err := s.StartRegistries(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Registries(); len(got) != 1 || got[0].Name != "nuovo" || got[0].Status != "RUNNING" {
+		t.Fatalf("registries %+v", got)
+	}
+	if observed, _ := f.Registries(context.Background()); len(observed) != 1 || observed[0].Name != "nuovo" || f.RegistryData("corso") {
+		t.Fatalf("containers %+v", observed)
+	}
+}
+
+func TestStartRegistriesInterruptedDeleteFailure(t *testing.T) {
+	f := fake.New()
+	s := seedRegistries(t, f, map[string]string{"name": "corso", "status": "DELETING"})
+	f.Errors["DeleteRegistry"] = errors.New("docker down")
+	if err := s.StartRegistries(context.Background()); err == nil || !strings.Contains(err.Error(), "docker down") {
+		t.Fatalf("err %v", err)
+	}
+	if got := s.Registries(); len(got) != 1 || got[0].Status != "ERROR" {
+		t.Fatalf("registries %+v", got)
+	}
+}
