@@ -18,7 +18,7 @@ on:
       - 'tests/managed-services.sh'
       - 'tools/instance-autoscaler/**'
       - 'tests/instance-*.sh'
-      - 'tests/registry-*.sh'
+      - 'tests/registry*.sh'
       - 'tests/service-exposure.sh'
       - '.github/workflows/student-path.yml'
 permissions:
@@ -44,7 +44,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash tests/managed-services.sh
-      - run: bash tests/registry-feasibility.sh
   student-path:
     runs-on: ubuntu-24.04
     timeout-minutes: 55
@@ -160,6 +159,9 @@ jobs:
           kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
           curl --retry 30 --retry-delay 2 --retry-all-errors -fsS http://127.0.0.1:8080/v1/clusters/demo/dashboard
           lab uninstall instance-autoscaling
+          # Recreates the cloud on the way.
+          bash tests/registry.sh
+          TEST_CLOUD_CONTAINER=$(docker compose ps -q cloud)
           bash tests/storage-capacity.sh
           bash tests/storage.sh prepare
           cloud clusters delete demo
