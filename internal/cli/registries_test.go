@@ -94,9 +94,9 @@ func TestServeStartsAndStopsRegistries(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- root.ExecuteContext(ctx) }()
 	deadline := time.Now().Add(3 * time.Second)
-	for !slices.Contains(methods(f), "CreateRegistry") {
+	for !slices.Contains(methods(f), "CreateRegistry") || !strings.Contains(logs.String(), "cloud ready") {
 		if time.Now().After(deadline) {
-			t.Fatalf("registries not started: %v", methods(f))
+			t.Fatalf("serve not ready: calls %v logs %s", methods(f), logs.String())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
