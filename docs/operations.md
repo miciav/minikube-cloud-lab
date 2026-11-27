@@ -192,6 +192,14 @@ uses it; the cloud does not automatically delete historical orphan volumes.
 `cloud images create` stores each personal image in the local container runtime: an image plus a volume holding a copy of `/var`. Each clone launched from it receives another copy, so disk usage grows with the size of `/var` and with the number of instances. The cloud allows at most 8 personal images. `docker image prune -a` or `docker volume prune` (`podman` on Podman) can remove them behind the cloud's back; the next start then marks the image `ERROR`. Delete it with `cloud images delete NAME`, never with the runtime, and capture it again. See the [golden images tutorial](tutorials/compute/golden-images.md).
 Downgrading the cloud to a version without personal images drops the image catalog from the state on its first save and orphans the `localhost/minikube-cloud-lab/image-*` images and `mcl-image-*-var` volumes. Delete personal images through the cloud before downgrading.
 
+## Container registries
+
+Each registry is a small container on the lab network, reachable as `NAME.registry:5000` from instances and cluster nodes, and serves plain HTTP only (no TLS): keep it to course images on a trusted host. A registry lives with the cloud: stopping the cloud removes its registry containers, and starting it recreates every registry on its existing data. While the cloud is down, pulls fail and the kubelet retries. A registry container left without a record in `state.json` is removed at startup.
+
+Registry data lives in the `minikube-cloud-lab-registries` volume (`minikube-cloud-lab-rootless-registries` on Podman). `docker compose down` keeps it; `docker compose down -v` deletes all registry data. `state.json` survives in `~/.minikube-cloud-lab`, so the registries come back empty with the same names and credentials. On rootful Docker each registry mounts its directory as a volume subpath, which needs Docker Engine 26 (API 1.45) or later, like instance data disks.
+
+Docker-runtime nodes trust the whole lab subnet for HTTP pulls, but only nodes created after this feature: delete and recreate older clusters. Clusters on rootless Podman run containerd, which the cloud configures with one entry per registry on every node; that path is not verified in CI. Instances are not nodes: students add the subnet to `insecure-registries` in the instance's `/etc/docker/daemon.json`, as the [registry tutorial](tutorials/compute/container-registry.md) shows.
+
 ## Cloud storage
 
 The cloud automatically installs storage classes for dynamically provisioned NFS volumes. `cloud-standard` deletes released volumes; `cloud-retain` preserves them for recovery. Deleting a cluster conservatively retains its remaining volumes, which can be removed explicitly. `cloud volumes list` displays their state. See the [storage tutorial](tutorials/storage/persistent-volumes.md) for creation and recovery across clusters.

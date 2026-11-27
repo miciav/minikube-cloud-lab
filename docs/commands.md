@@ -36,6 +36,9 @@ Run the commands from a checkout after `source scripts/configure.sh`. `cloud` ma
 | `cloud disks create NAME` / `attach NAME` / `detach NAME` / `delete NAME` | Manage a standalone instance data disk |
 | `cloud disks list` / `cloud disks shell INSTANCE DISK` | Inspect disks or open the rootless disk console |
 | `cloud storage status` | Inspect the Kubernetes volume allocation budget |
+| `cloud registries create NAME` / `delete NAME [--force]` | Create a container registry at `NAME.registry:5000` (at most 3), or delete it; a registry that holds images needs `--force`; see the [registry tutorial](tutorials/compute/container-registry.md) |
+| `cloud registries list` / `images NAME` | List registries, or the repositories and tags in one with size in bytes |
+| `cloud registries credentials NAME --push\|--pull` | Print the endpoint, user name and password of the read/write or read-only account |
 
 ## Growing an existing cluster
 
