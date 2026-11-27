@@ -37,3 +37,21 @@ export type StorageCapacity = {
   allocated: string;
   available: string;
 };
+export type BillingItem = {
+  kind: string;
+  name: string;
+  cluster?: string;
+  type?: string;
+  bytes?: number;
+  running: boolean;
+  seconds: number;
+  cost: number;
+};
+export type BillingReport = {
+  resetAt: string;
+  since: string;
+  until: string;
+  currency: string;
+  total: number;
+  items: BillingItem[];
+};

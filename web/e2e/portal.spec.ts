@@ -45,6 +45,25 @@ async function fixture(page: Page) {
     } else if (path === "/v1/machine-types")
       data = [{ name: "lab-small", cpus: 2, memoryMiB: 2048 }];
     else if (path === "/v1/machines") data = [];
+    else if (path === "/v1/billing")
+      data = {
+        resetAt: "2026-11-27T08:00:00Z",
+        since: "2026-11-27T08:00:00Z",
+        until: "2026-11-27T09:00:00Z",
+        currency: "EUR",
+        total: 0.25,
+        items: [
+          {
+            kind: "machine",
+            name: "demo-control-plane",
+            cluster: "demo",
+            type: "lab-small",
+            running: true,
+            seconds: 3600,
+            cost: 0.25,
+          },
+        ],
+      };
     else if (path === "/v1/operations") data = state.operations;
     else if (path === "/v1/storage")
       data = { total: "20Gi", allocated: "1Gi", available: "19Gi" };
@@ -258,4 +277,15 @@ test("removes obsolete cluster view after external deletion", async ({
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(page.getByText("Cluster unavailable or deleted.")).toBeVisible();
   await expect(page.getByText("node-one")).toHaveCount(0);
+});
+
+test("costs section shows the total and billed resources", async ({ page }) => {
+  await fixture(page);
+  await page.goto("/#/costs");
+  await expect(page.getByRole("heading", { name: "0.2500 EUR" })).toBeVisible();
+  await expect(page.getByText(/Since reset at/)).toBeVisible();
+  const row = page.getByRole("row", { name: /demo-control-plane/ });
+  await expect(row).toContainText("lab-small");
+  await expect(row).toContainText("Running");
+  await expect(row).toContainText("1.00");
 });
