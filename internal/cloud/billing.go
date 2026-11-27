@@ -2,8 +2,15 @@ package cloud
 
 import (
 	"cmp"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"time"
+
+	"github.com/miciav/minikube-cloud-lab/internal/atomicfile"
 )
 
 // UsageEntry is one accrual interval of a billable resource; End is nil while it accrues.
@@ -178,4 +185,62 @@ func (l usageLedger) report(since, until time.Time) BillingReport {
 		return cmp.Compare(a.Kind+"/"+a.Name, b.Kind+"/"+b.Name)
 	})
 	return r
+}
+
+// openBilling loads the usage ledger, or starts a fresh one, and reconciles it with the loaded state.
+func (s *Service) openBilling(now time.Time) {
+	s.billingDir = os.Getenv("CLOUD_BILLING_DIR")
+	if s.billingDir == "" {
+		s.billingDir = filepath.Join(s.dir, "billing")
+	}
+	data, err := os.ReadFile(filepath.Join(s.billingDir, "usage.json")) // #nosec G304 -- the ledger lives in the operator-selected billing directory.
+	if err == nil {
+		err = json.Unmarshal(data, &s.billing)
+	}
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			s.logger.Warn("usage ledger unreadable; starting a fresh one", "error", err)
+		}
+		s.billing = usageLedger{ResetAt: now}
+	}
+	current := billableResources(s.state)
+	kinds := []string{"machine", "instance", "volume"}
+	if disks, err := s.InstanceDisks(); err == nil {
+		kinds = append(kinds, "disk")
+		for _, d := range disks {
+			current["disk/"+d.Name] = usageResource{Kind: "disk", Name: d.Name, Bytes: d.Bytes}
+		}
+	} else if s.disksEnabled() {
+		s.logger.Warn("cannot list disks for the usage ledger", "error", err) // open disk entries stay open
+	}
+	s.billing.reconcile(current, kinds, now)
+	s.saveBilling()
+}
+
+// saveBilling persists the ledger; callers hold s.mu. Failures only log: the ledger is derived data.
+func (s *Service) saveBilling() {
+	data, err := json.Marshal(s.billing)
+	if err == nil {
+		err = os.MkdirAll(s.billingDir, 0o700)
+	}
+	if err == nil {
+		err = atomicfile.Write(filepath.Join(s.billingDir, "usage.json"), data)
+	}
+	if err != nil {
+		s.logger.Warn("cannot save the usage ledger", "error", err)
+	}
+}
+
+// Billing reports costs from since (clamped to the ledger reset) until now.
+func (s *Service) Billing(since time.Time) (BillingReport, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	if since.After(now) {
+		return BillingReport{}, fmt.Errorf("%w: since %s is in the future", ErrInvalid, since.Format(time.RFC3339))
+	}
+	if since.Before(s.billing.ResetAt) {
+		since = s.billing.ResetAt // also covers the zero time
+	}
+	return s.billing.report(since, now), nil
 }

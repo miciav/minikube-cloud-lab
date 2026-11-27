@@ -88,15 +88,16 @@ func TestReportCosts(t *testing.T) {
 		{Kind: "machine", Name: "demo", Type: "lab-small", Start: t0, End: ended(t0.Add(time.Hour))},
 		{Kind: "instance", Name: "web", Type: "lab-medium", Start: t0, End: ended(t0.Add(30 * time.Minute))},
 		{Kind: "volume", Name: "pvc-1", Bytes: 10 << 30, Start: t0},
+		{Kind: "disk", Name: "data", Bytes: 10 << 30, Start: t0, End: ended(t0.Add(73 * time.Hour))},
 	}}
 	r := l.report(t0, t0.Add(73*time.Hour))
-	if r.Currency != "EUR" || !near(r.Total, 0.40) || len(r.Items) != 3 {
+	if r.Currency != "EUR" || !near(r.Total, 0.50) || len(r.Items) != 4 {
 		t.Fatalf("report: %+v", r)
 	}
 	want := []struct {
 		name string
 		cost float64
-	}{{"pvc-1", 0.10}, {"web", 0.20}, {"demo", 0.10}}
+	}{{"pvc-1", 0.10}, {"web", 0.20}, {"data", 0.10}, {"demo", 0.10}}
 	for i, w := range want {
 		if it := r.Items[i]; it.Name != w.name || !near(it.Cost, w.cost) {
 			t.Fatalf("item %d: %+v", i, it)
@@ -105,7 +106,7 @@ func TestReportCosts(t *testing.T) {
 	if !r.Items[0].Running || r.Items[1].Running {
 		t.Fatalf("running: %+v", r.Items)
 	}
-	if len(l.Entries) != 3 || l.Entries[2].End != nil {
+	if len(l.Entries) != 4 || l.Entries[2].End != nil {
 		t.Fatal("report mutated ledger")
 	}
 }
