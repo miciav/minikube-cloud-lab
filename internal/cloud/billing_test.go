@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -113,15 +114,23 @@ func TestBillingInstanceStopStart(t *testing.T) {
 		}
 	}
 	l := readLedger(t, filepath.Join(dir, "billing", "usage.json"))
-	n := 0
+	r, err := s.Billing(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, want := 0, 0.0
 	for _, e := range l.Entries {
 		if e.Kind == "instance" && e.Name == "vm1" {
+			end := r.Until
+			if e.End != nil {
+				end = *e.End
+			}
 			n++
+			want += end.Sub(e.Start).Seconds()
 		}
 	}
-	r, err := s.Billing(time.Time{})
-	if n != 2 || err != nil || len(r.Items) != 1 || !r.Items[0].Running {
-		t.Fatalf("entries=%d report=%+v %v", n, r, err)
+	if n != 2 || len(r.Items) != 1 || !r.Items[0].Running || math.Abs(r.Items[0].Seconds-want) > 1e-6 {
+		t.Fatalf("entries=%d want %vs report=%+v", n, want, r)
 	}
 }
 
@@ -158,17 +167,21 @@ func TestBillingResetWhenLedgerMissing(t *testing.T) {
 }
 
 func TestBillingCorruptLedgerStartsFresh(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "billing"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "billing", "usage.json"), []byte("{"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	before := time.Now()
-	s := reopen(t, fake.New(), dir)
-	if r, err := s.Billing(time.Time{}); err != nil || r.ResetAt.Before(before) {
-		t.Fatalf("report: %+v %v", r, err)
+	for _, content := range []string{"{", "{}", "null"} {
+		t.Run(content, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "billing"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "billing", "usage.json"), []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := time.Now()
+			s := reopen(t, fake.New(), dir)
+			if r, err := s.Billing(time.Time{}); err != nil || r.ResetAt.Before(before) {
+				t.Fatalf("report: %+v %v", r, err)
+			}
+		})
 	}
 }
 
@@ -212,7 +225,11 @@ func TestBillingDisks(t *testing.T) {
 		t.Fatalf("after create: %+v %v", it, ok)
 	}
 	path := filepath.Join(dir, "billing", "usage.json")
-	start := openEntry(readLedger(t, path), "disk", "data").Start
+	created := openEntry(readLedger(t, path), "disk", "data")
+	if created == nil {
+		t.Fatal("no open disk entry after create")
+	}
+	start := created.Start
 	s = reopen(t, f, dir)
 	if e := openEntry(readLedger(t, path), "disk", "data"); e == nil || !e.Start.Equal(start) {
 		t.Fatalf("after restart: %+v", e)

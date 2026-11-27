@@ -197,6 +197,9 @@ func (s *Service) openBilling(now time.Time) {
 	if err == nil {
 		err = json.Unmarshal(data, &s.billing)
 	}
+	if err == nil && s.billing.ResetAt.IsZero() {
+		err = errors.New("missing resetAt") // {} or null
+	}
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			s.logger.Warn("usage ledger unreadable; starting a fresh one", "error", err)
