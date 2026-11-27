@@ -296,3 +296,47 @@ func TestCreateRegistryNeedsVolumeAndNetwork(t *testing.T) {
 		t.Fatalf("no volume: %v", err)
 	}
 }
+
+func TestRegistryBackendRejectsUnsafeNames(t *testing.T) {
+	data := t.TempDir()
+	root := filepath.Join(data, "registries")
+	for _, name := range []string{"corso", "other"} {
+		if err := os.MkdirAll(filepath.Join(root, name, "web"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name, "web", "blob"), []byte("data"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Any Docker call fails the test: a refused name must touch nothing.
+	fakeDockerAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected Docker call %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	t.Setenv("CLOUD_REGISTRY_VOLUME", "registries-volume")
+	i := &Infra{network: "lab", home: filepath.Join(data, "minikube")}
+	for _, name := range []string{"", ".", "..", "a/b", "../x"} {
+		spec := registrySpec
+		spec.Name = name
+		if err := i.DeleteRegistry(context.Background(), name); err == nil {
+			t.Errorf("delete %q accepted", name)
+		}
+		if _, err := i.CreateRegistry(context.Background(), spec); err == nil {
+			t.Errorf("create %q accepted", name)
+		}
+		if _, err := i.RegistryBytes(context.Background(), name); err == nil {
+			t.Errorf("bytes %q accepted", name)
+		}
+		if _, err := i.RegistryImages(context.Background(), spec); err == nil {
+			t.Errorf("images %q accepted", name)
+		}
+	}
+	for _, name := range []string{"corso", "other"} {
+		if _, err := os.Stat(filepath.Join(root, name, "web", "blob")); err != nil {
+			t.Fatalf("%s data removed: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(data, "x")); !os.IsNotExist(err) {
+		t.Fatalf("created outside the registries root: %v", err)
+	}
+}

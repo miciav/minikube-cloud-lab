@@ -24,6 +24,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	dockerclient "github.com/docker/docker/client"
 	"golang.org/x/crypto/bcrypt"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/miciav/minikube-cloud-lab/internal/infra"
@@ -102,9 +103,13 @@ func registryConfig(spec infra.RegistrySpec, root string) (config, htpasswd []by
 	return config, users.Bytes(), err
 }
 
-// registryDir is the registry's data directory as mounted in the cloud container.
-func (i *Infra) registryDir(name string) string {
-	return filepath.Join(filepath.Dir(i.home), "registries", name)
+// registryDir is the registry's data directory as mounted in the cloud container. Only a
+// DNS-1123 label becomes a path, so no name can reach the registries root or outside it.
+func (i *Infra) registryDir(name string) (string, error) {
+	if len(validation.IsDNS1123Label(name)) != 0 {
+		return "", fmt.Errorf("registry name %q must be a DNS-1123 label", name)
+	}
+	return filepath.Join(filepath.Dir(i.home), "registries", name), nil
 }
 
 func (i *Infra) registryContainers(ctx context.Context, client *dockerclient.Client) ([]container.Summary, error) {
@@ -118,6 +123,10 @@ func (i *Infra) CreateRegistry(ctx context.Context, spec infra.RegistrySpec) (in
 	if i.network == "" || volumeName == "" {
 		return infra.RegistryInfo{}, errors.New("registries require CLOUD_DOCKER_NETWORK and CLOUD_REGISTRY_VOLUME")
 	}
+	dir, err := i.registryDir(spec.Name)
+	if err != nil {
+		return infra.RegistryInfo{}, err
+	}
 	client, err := dockerClient()
 	if err != nil {
 		return infra.RegistryInfo{}, err
@@ -128,7 +137,7 @@ func (i *Infra) CreateRegistry(ctx context.Context, spec infra.RegistrySpec) (in
 		return infra.RegistryInfo{}, fmt.Errorf("remove old container: %w", err)
 	}
 	// Docker mounts only an existing subpath.
-	if err := os.MkdirAll(i.registryDir(spec.Name), 0o700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return infra.RegistryInfo{}, err
 	}
 	ip, err := i.registryAddress(ctx, client)
@@ -221,6 +230,10 @@ func waitRegistry(ctx context.Context, url string, alive func(context.Context) e
 
 // DeleteRegistry removes the container, then the data.
 func (i *Infra) DeleteRegistry(ctx context.Context, name string) error {
+	dir, err := i.registryDir(name)
+	if err != nil {
+		return err
+	}
 	client, err := dockerClient()
 	if err != nil {
 		return err
@@ -229,7 +242,7 @@ func (i *Infra) DeleteRegistry(ctx context.Context, name string) error {
 	if err := client.ContainerRemove(ctx, registryPrefix+name, container.RemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("remove container: %w", err)
 	}
-	return os.RemoveAll(i.registryDir(name))
+	return os.RemoveAll(dir)
 }
 
 // StopRegistries removes every registry container on the lab network and keeps the data.
@@ -272,6 +285,10 @@ func (i *Infra) Registries(ctx context.Context) ([]infra.RegistryInfo, error) {
 
 // RegistryImages lists tags through the registry API with the pull credential.
 func (i *Infra) RegistryImages(ctx context.Context, spec infra.RegistrySpec) ([]infra.RegistryImage, error) {
+	dir, err := i.registryDir(spec.Name)
+	if err != nil {
+		return nil, err
+	}
 	client, err := dockerClient()
 	if err != nil {
 		return nil, err
@@ -281,7 +298,7 @@ func (i *Infra) RegistryImages(ctx context.Context, spec infra.RegistrySpec) ([]
 	if err != nil {
 		return nil, fmt.Errorf("inspect registry: %w", err)
 	}
-	return registryImages(ctx, "http://"+observed.Config.Labels[instanceIPLabel]+":5000", spec, i.registryDir(spec.Name))
+	return registryImages(ctx, "http://"+observed.Config.Labels[instanceIPLabel]+":5000", spec, dir)
 }
 
 type registryManifest struct {
@@ -368,8 +385,12 @@ func registryGet(ctx context.Context, base, path string, spec infra.RegistrySpec
 
 // RegistryBytes sums file sizes under the registry's data directory; no directory is 0.
 func (i *Infra) RegistryBytes(_ context.Context, name string) (int64, error) {
+	dir, err := i.registryDir(name)
+	if err != nil {
+		return 0, err
+	}
 	var total int64
-	err := filepath.WalkDir(i.registryDir(name), func(_ string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
 		if err == nil && d.Type().IsRegular() {
 			var info fs.FileInfo
 			if info, err = d.Info(); err == nil {
