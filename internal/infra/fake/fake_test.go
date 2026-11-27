@@ -161,3 +161,28 @@ func TestImageLifecycle(t *testing.T) {
 		t.Fatal("configured errors ignored")
 	}
 }
+
+func TestRegistryDataOutlivesContainers(t *testing.T) {
+	f := fake.New()
+	ctx := context.Background()
+	if _, err := f.CreateRegistry(ctx, infra.RegistrySpec{Name: "corso"}); err != nil {
+		t.Fatal(err)
+	}
+	f.SetRegistryImages("corso", infra.RegistryImage{Bytes: 3}, infra.RegistryImage{Bytes: 4})
+	if err := f.StopRegistries(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.CreateRegistry(ctx, infra.RegistrySpec{Name: "corso"}); err != nil {
+		t.Fatal(err)
+	}
+	if total, err := f.RegistryBytes(ctx, "corso"); err != nil || total != 7 {
+		t.Fatalf("bytes %d %v", total, err)
+	}
+	if err := f.DeleteRegistry(ctx, "corso"); err != nil || f.RegistryData("corso") {
+		t.Fatalf("delete %v", err)
+	}
+	f.Errors["RegistryBytes"] = errors.New("down")
+	if _, err := f.RegistryBytes(ctx, "corso"); err == nil {
+		t.Fatal("error ignored")
+	}
+}

@@ -30,6 +30,7 @@ type Service struct {
 	inf             infra.Infra
 	instances       infra.Instances
 	images          infra.Images
+	registries      infra.Registries
 	dir             string
 	logger          *slog.Logger
 	changed         chan struct{}
@@ -52,6 +53,7 @@ func NewService(inf infra.Infra, dataDir string, logger *slog.Logger) (*Service,
 	s := &Service{inf: inf, dir: dataDir, logger: logger, changed: make(chan struct{}), state: snapshot{Clusters: []Cluster{}, Machines: []Machine{}, Operations: []Operation{}}}
 	s.instances, _ = inf.(infra.Instances)
 	s.images, _ = inf.(infra.Images)
+	s.registries, _ = inf.(infra.Registries)
 	data, err := os.ReadFile(filepath.Join(dataDir, "state.json")) // #nosec G304 -- state lives in the operator-selected data directory.
 	if os.IsNotExist(err) {
 		s.openBilling(time.Now().UTC())

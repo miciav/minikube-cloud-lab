@@ -4,6 +4,7 @@ package infra
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 type (
@@ -73,6 +74,36 @@ type Images interface {
 	CaptureImage(context.Context, ImageSpec) (CapturedImage, error)
 	DeleteImage(context.Context, string) error         // An absent image is success.
 	ImageExists(context.Context, string) (bool, error) // Both the image and its /var volume.
+}
+
+// RegistrySpec describes a container registry and its two accounts.
+type RegistrySpec struct {
+	Name                   string
+	PushUser, PushPassword string // read/write
+	PullUser, PullPassword string // read-only
+}
+
+// RegistryInfo is the observed state of a registry container.
+type RegistryInfo struct {
+	Name, IP string
+	Running  bool
+}
+
+// RegistryImage is one tag stored in a registry.
+type RegistryImage struct {
+	Repository, Tag string
+	Bytes           int64
+	Pushed          time.Time
+}
+
+// Registries manages container registries whose data outlives their containers.
+type Registries interface {
+	CreateRegistry(context.Context, RegistrySpec) (RegistryInfo, error) // Creates or replaces the container on existing data.
+	DeleteRegistry(context.Context, string) error                       // Removes container and data; an absent registry is success.
+	StopRegistries(context.Context) error                               // Removes every registry container and keeps the data.
+	Registries(context.Context) ([]RegistryInfo, error)
+	RegistryImages(context.Context, RegistrySpec) ([]RegistryImage, error)
+	RegistryBytes(context.Context, string) (int64, error)
 }
 
 // Infra manages cluster and machine lifecycles.
