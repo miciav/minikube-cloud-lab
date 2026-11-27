@@ -52,7 +52,7 @@ fail() { echo "FAIL $1${2:+: $2}"; failed=1; }
 # check NAME CMD...: runs CMD, prints its output only on failure.
 check() {
     local name=$1 out; shift
-    if out=$("$@" 2>&1); then pass "$name"; else fail "$name" "$(tail -n 5 <<<"$out")"; fi
+    if out=$("$@" 2>&1); then pass "$name"; grep '^INFO' <<<"$out" || true; else fail "$name" "$(tail -n 5 <<<"$out")"; fi
 }
 ex() { local n=$1; shift; $RUNTIME exec "mcl-vm-r$n" "$@"; }
 exi() { local n=$1; shift; $RUNTIME exec -i "mcl-vm-r$n" "$@"; }
@@ -137,10 +137,12 @@ check "inner Docker trusts $FEAS_SUBNET in a" trust a
 check "inner Docker trusts $FEAS_SUBNET in b" trust b
 
 login() { exi "$1" docker login -u "$2" --password-stdin "$host" <<<"$3"; }
+build() { # VM REPO
+    ex "$1" sh -c "mkdir -p /tmp/img && printf 'FROM %s\nCMD [\"echo\", \"probe\"]\n' '$BUSYBOX_IMAGE' >/tmp/img/Dockerfile &&
+        docker build -q -t '$host/$2:1' /tmp/img"
+}
 push_image() { # VM USER PASSWORD REPO
-    login "$1" "$2" "$3" &&
-        ex "$1" sh -c "mkdir -p /tmp/img && printf 'FROM %s\nCMD [\"echo\", \"probe\"]\n' '$BUSYBOX_IMAGE' >/tmp/img/Dockerfile &&
-            docker build -q -t '$host/$4:1' /tmp/img && docker push '$host/$4:1'"
+    login "$1" "$2" "$3" && build "$1" "$4" && ex "$1" docker push "$host/$4:1"
 }
 probe_server() { # LABEL
     check "$1: login and push with push user over HTTP" push_image a push "$push_pw" probe/hello
@@ -152,7 +154,15 @@ probe_server zot
 pull() { login b pull "$pull_pw" && ex b docker pull "$host/probe/hello:1"; }
 check "zot: pull with pull user from a second kicbase container" pull
 # Login succeeds (pull is a valid user); only the push itself must be refused.
-denied() { login b pull "$pull_pw" && ! push_image b pull "$pull_pw" probe/denied; }
+# The build must succeed on its own so a failed build cannot pass as a denied push.
+denied() {
+    local out
+    login b pull "$pull_pw" && build b probe/denied || return 1
+    if out=$(ex b docker push "$host/probe/denied:1" 2>&1); then echo "push succeeded"; return 1; fi
+    local line
+    line=$(grep -iE -m1 'denied|unauthorized|forbidden' <<<"$out") || { echo "$out"; return 1; }
+    echo "INFO push error: $line"
+}
 check "zot: push with pull user is denied" denied
 listing() {
     ex b curl -fsS -u "pull:$pull_pw" "http://$host/v2/_catalog" | jq -e '.repositories | index("probe/hello") != null and index("probe/denied") == null' &&
@@ -161,7 +171,7 @@ listing() {
 check "zot: catalog and tags listed over HTTP with pull user" listing
 size() {
     local kib
-    kib=$($RUNTIME run --rm -v "$data:/data:ro" "$BUSYBOX_IMAGE" du -sk /data | cut -f1)
+    kib=$($RUNTIME run --rm -v "$data:/data:ro" "$BUSYBOX_IMAGE" du -sk /data 2>/dev/null | cut -f1)
     echo "INFO data directory: $kib KiB"
     [ "$kib" -gt 0 ]
 }
