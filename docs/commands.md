@@ -9,7 +9,7 @@ Run the commands from a checkout after `source scripts/configure.sh`. `cloud` ma
 | `lab purge monitoring --yes` | Erase the disabled module’s history. |
 | `cloud serve` | Starts the management API and externalgrpc service; `--data-dir`, `--api` (loopback), `--grpc` |
 | `cloud machine-types list` | Displays the catalog with `PRICE_EUR_HOUR` |
-| `cloud billing [--since 30m\|RFC3339]` | Shows the cost since the last reset or since a Go duration or RFC3339 time, per resource with a `TOTAL` line; see [costs](tutorials/billing/costs.md) |
+| `cloud billing [--since 30m\|RFC3339]` | Shows the cost since the last reset or since a Go duration or RFC3339 time, per resource (`STATUS` `accruing` or `ended`, costs with six decimals) with a `TOTAL` line; see [costs](tutorials/billing/costs.md) |
 | `cloud clusters create NAME` | `--machine-type lab-small`, `--min-nodes 1`, `--max-nodes 3`, `--async` |
 | `cloud clusters list` | Lists the managed cluster |
 | `cloud clusters describe NAME` | Displays machine type, size limits, and status |

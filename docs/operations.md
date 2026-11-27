@@ -209,4 +209,4 @@ The cloud meters fictitious costs: `lab-small` 0.10 EUR per hour, `lab-medium` 0
 
 The ledger is `usage.json` in `CLOUD_BILLING_DIR`. Compose sets it to `/data/billing`, on the `minikube-cloud-lab-billing` volume (`minikube-cloud-lab-rootless-billing` with Podman). `docker compose down` keeps it and time keeps accruing for running resources. `labcompose down -v` removes the volume, so the count restarts from zero; resources that survive start accruing again from the reset. A corrupt ledger is replaced by a fresh one. The meter never limits or blocks anything.
 
-`cloud billing` and `GET /v1/billing?since=` read it. `since` is a Go duration (`30m`) or an RFC3339 time; future, negative or unparsable values return 400, and a time before the reset is clamped to the reset.
+`cloud billing` and `GET /v1/billing?since=` read it. The CLI and portal show costs with six decimals and mark each resource `accruing` (Accruing) while billed or `ended` (Ended) otherwise. `since` is a Go duration (`30m`) or an RFC3339 time; future, negative or unparsable values return 400, and a time before the reset is clamped to the reset.

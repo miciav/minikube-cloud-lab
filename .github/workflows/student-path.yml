@@ -162,6 +162,7 @@ jobs:
           # Retained volumes in state.json may survive down -v and accrue again, so check resetAt, not an empty list.
           before=$(curl -fsS http://127.0.0.1:8080/v1/billing)
           echo "$before" | jq -e '.total > 0 and any(.items[]; .kind == "machine")'
+          docker compose logs --no-color cloud > cloud-before-reset.log 2>&1 || true
           docker compose down -v
           if docker volume inspect minikube-cloud-lab-billing >/dev/null 2>&1; then echo 'billing volume survived down -v'; exit 1; fi
           docker compose up -d cloud
@@ -190,6 +191,7 @@ jobs:
           name: student-path-diagnostics
           path: |
             cloud.log
+            cloud-before-reset.log
             events.txt
             autoscaler.log
             containers.txt

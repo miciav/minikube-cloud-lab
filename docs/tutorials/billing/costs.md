@@ -7,7 +7,7 @@ cloud machine-types list
 cloud billing
 ```
 
-The output has a `Since ... (reset ...)` header, one row per resource (`KIND NAME TYPE/SIZE STATUS HOURS COST_EUR`) and a final `TOTAL` line.
+The output has a `Since ... (reset ...)` header, one row per resource (`KIND NAME TYPE/SIZE STATUS HOURS COST_EUR`) and a final `TOTAL` line. Costs have six decimals, so a few minutes of a small resource are visible. `STATUS` is `accruing` while a resource is billed and `ended` once it stops.
 
 ## After creating a cluster
 
@@ -16,7 +16,7 @@ cloud clusters create demo --machine-type lab-small
 cloud billing
 ```
 
-The control plane and each worker appear as `machine` rows with `running` status. Run `cloud billing` again a few minutes later: HOURS and COST_EUR grow while the cluster exists.
+The control plane and each worker appear as `machine` rows with `accruing` status. Run `cloud billing` again a few minutes later: HOURS and COST_EUR grow while the cluster exists.
 
 ## After autoscaling
 
@@ -26,7 +26,7 @@ Run the [Pod-to-machine exercise](../autoscaling/kubernetes-nodes.md) or `cloud 
 cloud billing
 ```
 
-More workers mean more rows and a higher cost per hour. When the autoscaler removes a worker its row stops growing but stays in the total, so the cost of the period is kept.
+More workers mean more rows and a higher cost per hour. When the autoscaler removes a worker its row reads `ended` and stops growing but stays in the total, so the cost of the period is kept.
 
 ## After stopping an instance
 
@@ -38,7 +38,7 @@ cloud instances stop vm1
 cloud billing
 ```
 
-The `instance` row changes to `stopped` and stops accruing compute. The `disk` row and any Kubernetes `volume` rows keep costing until deleted, even if retained or detached.
+The `instance` row changes to `ended`: a stopped instance accrues no compute. Its disks are billed separately, so the `disk` row and any Kubernetes `volume` rows stay `accruing` until deleted, even if retained or detached.
 
 ## Compare periods
 
@@ -47,7 +47,7 @@ cloud billing --since 30m
 cloud billing
 ```
 
-`--since` takes a duration such as `30m` or `1h`, or an RFC3339 time. Only usage inside the window is counted, so the first total is lower than the second. A time before the last reset is clamped to the reset; a future or malformed value is rejected.
+`--since` takes a duration such as `30m` or `1h`, or an RFC3339 time. Only usage inside the window is counted, so the first total is lower than the second, or equal if the last reset was less than 30 minutes ago. A time before the last reset is clamped to the reset; a future or malformed value is rejected.
 
 ## Cleanup
 
@@ -58,4 +58,4 @@ cloud clusters delete demo
 cloud billing
 ```
 
-Deleted resources stop accruing, but their cost stays in the total. To restart the count run `labcompose down -v`, which removes the billing volume (and all other lab data).
+Deleted resources read `ended` and stop accruing, but their cost stays in the total. To restart the count run `labcompose down -v`, which removes the billing volume (and all other lab data).
