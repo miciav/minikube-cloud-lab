@@ -77,6 +77,9 @@ jobs:
               jq -e 'map(rtrimstr("/")) | index("https://mirror.gcr.io") != null'
           }
           check_node_mirror demo
+          lab_subnet="$(docker network inspect minikube-cloud-lab --format '{{(index .IPAM.Config 0).Subnet}}')"
+          docker exec demo docker info --format '{{json .RegistryConfig.InsecureRegistryCIDRs}}' |
+            jq -e --arg subnet "$lab_subnet" 'index($subnet) != null'
           [[ "$(command kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')" == https://127.0.0.1:* ]]
           kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
           export TEST_CLUSTER=demo TEST_NETWORK=minikube-cloud-lab
