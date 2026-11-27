@@ -70,12 +70,13 @@ func instanceAddress(n network.Inspect, reserved map[string]bool) (netip.Addr, e
 	return netip.Addr{}, fmt.Errorf("no free instance address in .200-.252 of the lab network")
 }
 
-// reservedAddresses keeps every instance's IP, including stopped ones that left the
-// network view but take their address back on start.
+// reservedAddresses keeps every instance's and registry's IP, including stopped instances that
+// left the network view but take their address back on start. A non-empty name must be a new
+// instance.
 func reservedAddresses(rows []container.Summary, name string) (map[string]bool, error) {
 	reserved := map[string]bool{}
 	for _, c := range rows {
-		if c.Labels[instanceLabel] == name {
+		if name != "" && c.Labels[instanceLabel] == name {
 			return nil, fmt.Errorf("container %s already exists", instancePrefix+name)
 		}
 		reserved[c.Labels[instanceIPLabel]] = true
@@ -228,6 +229,19 @@ func (i *Infra) instanceContainers(ctx context.Context, client *dockerclient.Cli
 	}), err
 }
 
+// labContainers lists the instances and registries that hold .200–.252 addresses.
+func (i *Infra) labContainers(ctx context.Context, client *dockerclient.Client) ([]container.Summary, error) {
+	instances, err := i.instanceContainers(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("list instances: %w", err)
+	}
+	registries, err := i.registryContainers(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("list registries: %w", err)
+	}
+	return append(instances, registries...), nil
+}
+
 // CreateInstance starts a system container and returns once SSH accepts the student key.
 func (i *Infra) CreateInstance(ctx context.Context, spec infra.InstanceSpec) (infra.Instance, error) {
 	if i.network == "" {
@@ -351,9 +365,9 @@ func (i *Infra) instanceSlot(ctx context.Context, client *dockerclient.Client, s
 	if spec.Shape.CPUs > info.NCPU || int64(spec.Shape.MemoryMiB)*1024*1024 > info.MemTotal {
 		return netip.Addr{}, errors.New("machine shape exceeds Docker host resources")
 	}
-	existing, err := i.instanceContainers(ctx, client)
+	existing, err := i.labContainers(ctx, client)
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("list instances: %w", err)
+		return netip.Addr{}, err
 	}
 	reserved, err := reservedAddresses(existing, spec.Name)
 	if err != nil {
