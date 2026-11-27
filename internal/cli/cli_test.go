@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -532,5 +533,30 @@ func TestFailedProvisioningFromCLI(t *testing.T) {
 	vm, err := s.Instance("vm")
 	if err != nil || vm.Status != "ERROR" {
 		t.Fatalf("failed instance: %+v, error %v", vm, err)
+	}
+}
+
+func TestBillingCommand(t *testing.T) {
+	s, _ := setup(t, nil)
+	var query string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.RequestURI()
+		api.NewServer(s).ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	out, err := execute(t, server.URL, "billing")
+	if err != nil || query != "/v1/billing" {
+		t.Fatalf("%q %q %v", query, out, err)
+	}
+	for _, want := range []string{"Since ", "(reset ", "KIND", "NAME", "TYPE/SIZE", "STATUS", "HOURS", "COST_EUR", "TOTAL"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	if !regexp.MustCompile(`TOTAL\s+\d+\.\d{4}\n`).MatchString(out) {
+		t.Fatalf("total format:\n%s", out)
+	}
+	if _, err := execute(t, server.URL, "billing", "--since", "1h"); err != nil || query != "/v1/billing?since=1h" {
+		t.Fatalf("%q %v", query, err)
 	}
 }
