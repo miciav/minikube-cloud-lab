@@ -8,10 +8,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/miciav/minikube-cloud-lab/internal/cloud"
+	"github.com/miciav/minikube-cloud-lab/internal/infra"
 )
 
 // Error preserves the server's status and human-readable failure.
@@ -291,5 +293,42 @@ func (c *Client) Billing(ctx context.Context, since string) (cloud.BillingReport
 	}
 	var result cloud.BillingReport
 	_, err := c.request(ctx, http.MethodGet, path, nil, &result)
+	return result, err
+}
+
+func registryPath(name string) string { return "/v1/registries/" + url.PathEscape(name) }
+
+// Registries lists the managed container registries without credentials.
+func (c *Client) Registries(ctx context.Context) ([]cloud.Registry, error) {
+	var result []cloud.Registry
+	_, err := c.request(ctx, http.MethodGet, "/v1/registries", nil, &result)
+	return result, err
+}
+
+// CreateRegistry requests a registry asynchronously.
+func (c *Client) CreateRegistry(ctx context.Context, name string) (cloud.Operation, error) {
+	var result cloud.Operation
+	_, err := c.request(ctx, http.MethodPost, "/v1/registries", map[string]string{"name": name}, &result)
+	return result, err
+}
+
+// DeleteRegistry requests removal asynchronously; force deletes a registry holding images.
+func (c *Client) DeleteRegistry(ctx context.Context, name string, force bool) (cloud.Operation, error) {
+	var result cloud.Operation
+	_, err := c.request(ctx, http.MethodDelete, registryPath(name)+"?force="+strconv.FormatBool(force), nil, &result)
+	return result, err
+}
+
+// RegistryCredentials downloads the push or pull account of a registry.
+func (c *Client) RegistryCredentials(ctx context.Context, name, access string) (cloud.RegistryCredential, error) {
+	var result cloud.RegistryCredential
+	_, err := c.request(ctx, http.MethodGet, registryPath(name)+"/credentials?access="+url.QueryEscape(access), nil, &result)
+	return result, err
+}
+
+// RegistryImages lists the images stored in a registry.
+func (c *Client) RegistryImages(ctx context.Context, name string) ([]infra.RegistryImage, error) {
+	var result []infra.RegistryImage
+	_, err := c.request(ctx, http.MethodGet, registryPath(name)+"/images", nil, &result)
 	return result, err
 }

@@ -91,9 +91,10 @@ type RegistryInfo struct {
 
 // RegistryImage is one tag stored in a registry.
 type RegistryImage struct {
-	Repository, Tag string
-	Bytes           int64
-	Pushed          time.Time
+	Repository string    `json:"repository"`
+	Tag        string    `json:"tag"`
+	Bytes      int64     `json:"bytes"`
+	Pushed     time.Time `json:"pushed"`
 }
 
 // Registries manages container registries whose data outlives their containers.

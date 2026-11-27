@@ -178,3 +178,49 @@ func (b *syncBuffer) String() string {
 	defer b.mu.Unlock()
 	return b.buf.String()
 }
+
+func TestRegistryCommands(t *testing.T) {
+	f := fake.New()
+	s, url := setup(t, f)
+	out, err := execute(t, url, "registries", "create", "corso")
+	if err != nil || !strings.Contains(out, "corso.registry:5000") || !strings.Contains(out, "cloud registries credentials corso --push") || !strings.Contains(out, "cloud registries credentials corso --pull") {
+		t.Fatalf("create: %q %v", out, err)
+	}
+	out, err = execute(t, url, "registries", "list")
+	if err != nil || !regexp.MustCompile(`NAME\s+ENDPOINT\s+STATUS\ncorso\s+corso\.registry:5000\s+RUNNING\n`).MatchString(out) {
+		t.Fatalf("list: %q %v", out, err)
+	}
+	push, _ := s.RegistryCredentials("corso", true)
+	out, err = execute(t, url, "registries", "credentials", "corso", "--push")
+	if want := "endpoint corso.registry:5000\nusername push\npassword " + push.Password + "\n"; err != nil || out != want {
+		t.Fatalf("push credentials: %q %v", out, err)
+	}
+	if out, err := execute(t, url, "registries", "credentials", "corso", "--pull"); err != nil || !strings.Contains(out, "username pull\n") {
+		t.Fatalf("pull credentials: %q %v", out, err)
+	}
+	for _, flags := range [][]string{{}, {"--push", "--pull"}} {
+		if _, err := execute(t, url, append([]string{"registries", "credentials", "corso"}, flags...)...); err == nil || !strings.Contains(err.Error(), "--push or --pull") {
+			t.Fatalf("credentials %v: %v", flags, err)
+		}
+	}
+	pushed := time.Date(2026, 11, 27, 10, 0, 0, 0, time.UTC)
+	f.SetRegistryImages("corso", infra.RegistryImage{Repository: "web", Tag: "v1", Bytes: 42, Pushed: pushed}, infra.RegistryImage{Repository: "web", Tag: "old"})
+	out, err = execute(t, url, "registries", "images", "corso")
+	if err != nil || !regexp.MustCompile(`REPOSITORY\s+TAG\s+SIZE\s+PUSHED\nweb\s+v1\s+42\s+`+regexp.QuoteMeta(pushed.Local().Format(time.RFC3339))+`\nweb\s+old\s+0\s+-\n`).MatchString(out) {
+		t.Fatalf("images: %q %v", out, err)
+	}
+	if _, err := execute(t, url, "registries", "delete", "corso"); err == nil || !strings.Contains(err.Error(), "force") {
+		t.Fatalf("non-empty delete: %v", err)
+	}
+	if out, err := execute(t, url, "registries", "delete", "corso", "--force"); err != nil || !strings.Contains(out, "Deleted registry corso") {
+		t.Fatalf("delete: %q %v", out, err)
+	}
+	if len(s.Registries()) != 0 {
+		t.Fatalf("registry kept: %+v", s.Registries())
+	}
+	for _, args := range [][]string{{"create", "Bad_Name"}, {"list", "--api-url", "http://127.0.0.1:1"}, {"images", "missing"}, {"credentials", "missing", "--pull"}} {
+		if _, err := execute(t, url, append([]string{"registries"}, args...)...); err == nil {
+			t.Fatalf("%v accepted", args)
+		}
+	}
+}
