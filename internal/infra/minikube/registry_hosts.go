@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
 
 	dockerclient "github.com/docker/docker/client"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/minikube/pkg/minikube/config"
 )
 
@@ -42,10 +42,11 @@ func writeRegistryHosts(ctx context.Context, client *dockerclient.Client, node s
 }
 
 // containerdNodes lists the node containers of clusters running containerd. Docker-runtime
-// nodes already trust the lab subnet. The cloud serializes infrastructure mutations, so no
-// profile is written meanwhile.
+// nodes already trust the lab subnet. Profiles live in minikube's store under MINIKUBE_HOME,
+// which New set to i.home. The cloud serializes infrastructure mutations, so no profile is
+// written meanwhile.
 func (i *Infra) containerdNodes() []string {
-	entries, err := os.ReadDir(filepath.Join(i.home, "profiles"))
+	entries, err := os.ReadDir(config.ProfileFolderPath(""))
 	if err != nil && !os.IsNotExist(err) {
 		slog.Warn("cannot list clusters for registry hosts", "error", err)
 	}
@@ -54,7 +55,7 @@ func (i *Infra) containerdNodes() []string {
 		if !entry.IsDir() {
 			continue
 		}
-		p, err := config.LoadProfile(entry.Name(), i.home)
+		p, err := config.LoadProfile(entry.Name())
 		if err != nil {
 			slog.Warn("cannot load cluster for registry hosts", "cluster", entry.Name(), "error", err)
 			continue
@@ -104,8 +105,9 @@ func (i *Infra) trustRegistries(ctx context.Context, cc *config.ClusterConfig, n
 	}
 	var names []string
 	for _, c := range rows {
-		if c.State == "running" {
-			names = append(names, c.Labels[registryLabel])
+		// Only this code sets the label; a stray value never becomes a path.
+		if name := c.Labels[registryLabel]; c.State == "running" && len(validation.IsDNS1123Label(name)) == 0 {
+			names = append(names, name)
 		}
 	}
 	if len(names) > 0 {
