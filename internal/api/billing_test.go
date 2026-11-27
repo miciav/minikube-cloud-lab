@@ -35,3 +35,24 @@ func TestBillingEndpointRejects(t *testing.T) {
 		_ = resp.Body.Close()
 	}
 }
+
+func TestBillingSinceRFC3339(t *testing.T) {
+	c, _, _, _ := setup(t)
+	base, err := c.Billing(t.Context(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// earlier than resetAt: clamped
+	early := base.ResetAt.Add(-time.Hour).UTC().Format(time.RFC3339)
+	r, err := c.Billing(t.Context(), early)
+	if err != nil || !r.Since.Equal(base.ResetAt) {
+		t.Fatalf("clamp: %+v %v", r, err)
+	}
+	// a "+" offset must survive URL escaping; the instant is just after resetAt and in the past
+	at := base.ResetAt.Add(time.Millisecond).In(time.FixedZone("", 2*3600))
+	time.Sleep(10 * time.Millisecond)
+	r, err = c.Billing(t.Context(), at.Format(time.RFC3339Nano))
+	if err != nil || !r.Since.Equal(at) {
+		t.Fatalf("offset: %v want %v err %v", r.Since, at, err)
+	}
+}

@@ -560,3 +560,25 @@ func TestBillingCommand(t *testing.T) {
 		t.Fatalf("%q %v", query, err)
 	}
 }
+
+func TestBillingRows(t *testing.T) {
+	s, url := setup(t, nil)
+	if _, err := execute(t, url, "instances", "create", "vm1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateVolume("pvc-bill", "demo", "default/data", "1Gi", "Retain"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execute(t, url, "billing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, re := range []string{
+		`instance\s+vm1\s+lab-small\s+running\s+\d+\.\d{2}\s+\d+\.\d{4}\n`,
+		`volume\s+pvc-bill\s+1\.0Gi\s+running\s+\d+\.\d{2}\s+\d+\.\d{4}\n`,
+	} {
+		if !regexp.MustCompile(re).MatchString(out) {
+			t.Fatalf("no match for %s in:\n%s", re, out)
+		}
+	}
+}
