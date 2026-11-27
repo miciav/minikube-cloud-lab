@@ -4,7 +4,7 @@ import { Table } from "./sections";
 import type { BillingReport } from "./types";
 import { useResource } from "./useResource";
 
-const eur = (v: number) => v.toFixed(4) + " EUR";
+const eur = (v: number) => v.toFixed(6) + " EUR";
 
 export function Costs({ refresh }: { refresh: number }) {
   const [since, setSince] = useState("");
@@ -26,7 +26,9 @@ export function Costs({ refresh }: { refresh: number }) {
       {data && (
         <>
           <h2>Total: {eur(data.total)}</h2>
-          <p>Since reset at {new Date(data.resetAt).toLocaleString()}</p>
+          <p>
+            {`Since ${new Date(data.since).toLocaleString()} (reset ${new Date(data.resetAt).toLocaleString()})`}
+          </p>
           {data.items.length ? (
             <Table
               columns={["Kind", "Name", "Type/Size", "Status", "Hours", "Cost"]}
@@ -43,7 +45,7 @@ export function Costs({ refresh }: { refresh: number }) {
                       appearance="tint"
                       color={i.running ? "success" : "informative"}
                     >
-                      {i.running ? "Running" : "Stopped"}
+                      {i.running ? "Accruing" : "Ended"}
                     </Badge>
                   </td>
                   <td>{(i.seconds / 3600).toFixed(2)}</td>

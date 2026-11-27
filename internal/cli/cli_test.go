@@ -553,7 +553,7 @@ func TestBillingCommand(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
 	}
-	if !regexp.MustCompile(`TOTAL\s+\d+\.\d{4}\n`).MatchString(out) {
+	if !regexp.MustCompile(`TOTAL\s+\d+\.\d{6}\n`).MatchString(out) {
 		t.Fatalf("total format:\n%s", out)
 	}
 	if _, err := execute(t, server.URL, "billing", "--since", "1h"); err != nil || query != "/v1/billing?since=1h" {
@@ -574,11 +574,20 @@ func TestBillingRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, re := range []string{
-		`instance\s+vm1\s+lab-small\s+running\s+\d+\.\d{2}\s+\d+\.\d{4}\n`,
-		`volume\s+pvc-bill\s+1\.0Gi\s+running\s+\d+\.\d{2}\s+\d+\.\d{4}\n`,
+		`instance\s+vm1\s+lab-small\s+accruing\s+\d+\.\d{2}\s+\d+\.\d{6}\n`,
+		`volume\s+pvc-bill\s+1\.0Gi\s+accruing\s+\d+\.\d{2}\s+\d+\.\d{6}\n`,
 	} {
 		if !regexp.MustCompile(re).MatchString(out) {
 			t.Fatalf("no match for %s in:\n%s", re, out)
 		}
+	}
+	if _, err := execute(t, url, "instances", "stop", "vm1"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err = execute(t, url, "billing"); err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`instance\s+vm1\s+lab-small\s+ended\s`).MatchString(out) {
+		t.Fatalf("stopped instance not ended:\n%s", out)
 	}
 }

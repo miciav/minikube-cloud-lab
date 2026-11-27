@@ -35,15 +35,16 @@ it("shows the total, statuses and requests each period", async () => {
   const fetch = vi.fn(async () => new Response(JSON.stringify(report)));
   vi.stubGlobal("fetch", fetch);
   render(<Costs refresh={0} />);
-  expect(await screen.findByText("Total: 0.4000 EUR")).toBeTruthy();
-  expect(screen.getByText(/Since reset at/)).toBeTruthy();
+  expect(await screen.findByText("Total: 0.400000 EUR")).toBeTruthy();
+  const local = new Date(report.since).toLocaleString();
+  expect(screen.getByText(`Since ${local} (reset ${local})`)).toBeTruthy();
   const demo = screen.getByRole("cell", { name: "demo" }).closest("tr")!;
-  expect(within(demo).getByText("Running")).toBeTruthy();
+  expect(within(demo).getByText("Accruing")).toBeTruthy();
   expect(within(demo).getByText("1.00")).toBeTruthy();
   const pvc = screen.getByRole("cell", { name: "pvc-1" }).closest("tr")!;
-  expect(within(pvc).getByText("Stopped")).toBeTruthy();
+  expect(within(pvc).getByText("Ended")).toBeTruthy();
   expect(within(pvc).getByText("2.0Gi")).toBeTruthy();
-  expect(within(pvc).getByText("0.3000 EUR")).toBeTruthy();
+  expect(within(pvc).getByText("0.300000 EUR")).toBeTruthy();
   expect(fetch).toHaveBeenLastCalledWith("/v1/billing", expect.anything());
   const period = screen.getByLabelText("Period");
   fireEvent.change(period, { target: { value: "1h" } });
@@ -89,11 +90,11 @@ it("hides the previous total while a new period loads", async () => {
     vi.fn(async () => new Response(JSON.stringify(report))),
   );
   render(<Costs refresh={0} />);
-  expect(await screen.findByText("Total: 0.4000 EUR")).toBeTruthy();
+  expect(await screen.findByText("Total: 0.400000 EUR")).toBeTruthy();
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
   fireEvent.change(screen.getByLabelText("Period"), {
     target: { value: "1h" },
   });
   expect(screen.getByText("Loading costs…")).toBeTruthy();
-  expect(screen.queryByText("Total: 0.4000 EUR")).toBeNull();
+  expect(screen.queryByText("Total: 0.400000 EUR")).toBeNull();
 });

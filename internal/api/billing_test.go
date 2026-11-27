@@ -18,8 +18,12 @@ func TestBillingEndpoint(t *testing.T) {
 			t.Fatalf("%q: since %v resetAt %v", since, report.Since, report.ResetAt)
 		}
 	}
-	resp, err := http.Get(url + "/v1/billing")
-	if err != nil || resp.StatusCode != 200 {
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url+"/v1/billing", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatal(resp, err)
 	}
 	_ = resp.Body.Close()
@@ -28,8 +32,12 @@ func TestBillingEndpoint(t *testing.T) {
 func TestBillingEndpointRejects(t *testing.T) {
 	_, _, _, url := setup(t)
 	for _, since := range []string{"tomorrow", "-5m", "2999-01-01T00:00:00Z"} {
-		resp, err := http.Get(url + "/v1/billing?since=" + since)
-		if err != nil || resp.StatusCode != 400 {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url+"/v1/billing?since="+since, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil || resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("%s: %v %v", since, resp, err)
 		}
 		_ = resp.Body.Close()
