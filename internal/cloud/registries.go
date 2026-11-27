@@ -286,11 +286,19 @@ func (s *Service) StartRegistries(ctx context.Context) error {
 }
 
 // StopRegistries removes the registry containers and keeps their records and data.
+// It waits for a running operation at most half of ctx's remaining time, then sweeps anyway
+// so the containers never outlive the cloud; startup removes or recreates any a late operation leaves.
 func (s *Service) StopRegistries(ctx context.Context) error {
 	if s.registries == nil {
 		return nil
 	}
-	s.workMu.Lock()
-	defer s.workMu.Unlock()
+	lockCtx, cancel := ctx, context.CancelFunc(func() {})
+	if deadline, ok := ctx.Deadline(); ok {
+		lockCtx, cancel = context.WithDeadline(ctx, time.Now().Add(time.Until(deadline)/2))
+	}
+	defer cancel()
+	if s.lockWork(lockCtx) == nil {
+		defer s.workMu.Unlock()
+	}
 	return s.registries.StopRegistries(ctx)
 }

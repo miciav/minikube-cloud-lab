@@ -345,3 +345,47 @@ func TestStartRegistriesInterruptedDeleteFailure(t *testing.T) {
 		t.Fatalf("registries %+v", got)
 	}
 }
+
+// heldRegistries blocks registry creates until release closes.
+type heldRegistries struct {
+	*fake.Infra
+	release chan struct{}
+}
+
+func (b heldRegistries) CreateRegistry(ctx context.Context, spec infra.RegistrySpec) (infra.RegistryInfo, error) {
+	<-b.release
+	return b.Infra.CreateRegistry(ctx, spec)
+}
+
+func TestStopRegistriesSweepsWhileAnOperationRuns(t *testing.T) {
+	f := fake.New()
+	if _, err := f.CreateRegistry(context.Background(), infra.RegistrySpec{Name: "corso"}); err != nil {
+		t.Fatal(err)
+	}
+	b := heldRegistries{Infra: f, release: make(chan struct{})}
+	s, err := cloud.NewService(b, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := s.CreateRegistry("web", "student") // holds the work lock
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	err = s.StopRegistries(ctx)
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("stop waited %v for the running operation", elapsed)
+	}
+	if observed, _ := f.Registries(context.Background()); len(observed) != 0 {
+		t.Fatalf("containers left %+v (err %v)", observed, err)
+	}
+	close(b.release)
+	if op = wait(t, s, op); op.Status != "DONE" {
+		t.Fatalf("held operation: %+v", op)
+	}
+	if err := s.StopRegistries(context.Background()); err != nil {
+		t.Fatalf("lock not released: %v", err)
+	}
+}

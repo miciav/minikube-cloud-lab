@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -26,6 +28,30 @@ type stuckRegistries struct {
 func (b stuckRegistries) CreateRegistry(ctx context.Context, spec infra.RegistrySpec) (infra.RegistryInfo, error) {
 	<-b.release
 	return b.Infra.CreateRegistry(ctx, spec)
+}
+
+// liveStop records whether the management API still answered when registries stopped.
+type liveStop struct {
+	*fake.Infra
+	logs   *syncBuffer
+	served chan bool
+}
+
+func (b liveStop) StopRegistries(ctx context.Context) error {
+	api := regexp.MustCompile(`api=(\S+)`).FindStringSubmatch(b.logs.String())
+	served := false
+	if api != nil {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+api[1]+"/", nil)
+		if err != nil {
+			panic(err)
+		}
+		if resp, err := http.DefaultClient.Do(req); err == nil { // #nosec G107,G704 -- loopback test server.
+			_ = resp.Body.Close()
+			served = true
+		}
+	}
+	b.served <- served
+	return b.Infra.StopRegistries(ctx)
 }
 
 func methods(f *fake.Infra) []string {
@@ -57,9 +83,11 @@ func TestServeStartsAndStopsRegistries(t *testing.T) {
 	}()
 
 	f := fake.New()
-	root := newRoot(func(string) (infra.Infra, error) { return f, nil })
+	var logs syncBuffer
+	backend := liveStop{Infra: f, logs: &logs, served: make(chan bool, 1)}
+	root := newRoot(func(string) (infra.Infra, error) { return backend, nil })
 	root.SetOut(io.Discard)
-	root.SetErr(io.Discard)
+	root.SetErr(&logs)
 	root.SetArgs([]string{"serve", "--data-dir", dir, "--api", "127.0.0.1:0", "--grpc", "127.0.0.1:0"})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -84,6 +112,9 @@ func TestServeStartsAndStopsRegistries(t *testing.T) {
 	calls := methods(f)
 	if calls[len(calls)-1] != "StopRegistries" {
 		t.Fatalf("registries not stopped: %v", calls)
+	}
+	if !<-backend.served {
+		t.Fatal("management API closed before registries stopped")
 	}
 	if observed, _ := f.Registries(context.Background()); len(observed) != 0 || !f.RegistryData("corso") {
 		t.Fatalf("containers %+v", observed)
