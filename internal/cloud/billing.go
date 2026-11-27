@@ -24,6 +24,7 @@ type UsageEntry struct {
 	End     *time.Time `json:"end,omitempty"`
 }
 
+// ponytail: the ledger grows without bound until `down -v`; aggregate old entries if autoscaling churn makes the file large.
 type usageLedger struct {
 	ResetAt time.Time    `json:"resetAt"`
 	Entries []UsageEntry `json:"entries"`

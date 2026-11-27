@@ -82,6 +82,7 @@ const StoragePricePerGiBMonth = 0.10
 const hoursPerMonth = 730
 
 // MachineTypes returns the fixed cloud catalog.
+// ponytail: fixed course prices; make them configurable if instructors ask.
 func MachineTypes() []MachineType {
 	return []MachineType{{Name: "lab-small", CPUs: 2, MemoryMiB: 2048, PricePerHour: 0.10}, {Name: "lab-medium", CPUs: 4, MemoryMiB: 8192, PricePerHour: 0.40}}
 }

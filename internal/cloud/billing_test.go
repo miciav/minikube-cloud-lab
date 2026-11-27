@@ -101,6 +101,32 @@ func TestBillingTracksClusterMachines(t *testing.T) {
 	}
 }
 
+func TestBillingTracksAutoscalerWorkers(t *testing.T) {
+	s, _, _ := newService(t)
+	create(t, s, 1)
+	ops, err := s.AddMachines("demo", 1, "cluster-autoscaler")
+	if err != nil || len(ops) != 1 {
+		t.Fatalf("add: %+v %v", ops, err)
+	}
+	op := wait(t, s, ops[0])
+	if op.Status != "DONE" {
+		t.Fatalf("add: %+v", op)
+	}
+	worker := op.Target
+	if it, ok := billingItem(t, s, "machine", worker); !ok || !it.Running || it.Type != "lab-small" || it.Cluster != "demo" {
+		t.Fatalf("after add %s: %+v %v", worker, it, ok)
+	}
+	if op, err = s.DeleteMachine("demo", worker, "cluster-autoscaler"); err != nil {
+		t.Fatal(err)
+	}
+	if op = wait(t, s, op); op.Status != "DONE" {
+		t.Fatalf("delete: %+v", op)
+	}
+	if it, ok := billingItem(t, s, "machine", worker); !ok || it.Running {
+		t.Fatalf("after delete %s: %+v %v", worker, it, ok)
+	}
+}
+
 func TestBillingInstanceStopStart(t *testing.T) {
 	s, _, dir := newService(t)
 	createInstance(t, s, "vm1")
