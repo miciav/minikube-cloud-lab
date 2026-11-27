@@ -7,6 +7,10 @@ Start with the [course environment](../../README.md#prepare-the-environment). Ea
 - [Standalone Linux instances and data disks](compute/instances-and-disks.md) — bootstrap an instance, connect to it and move its data disk to a second instance. Start with a running cloud.
 - [Golden images](compute/golden-images.md) — configure one Ubuntu instance, capture it as a personal image, launch copies that need no installation and compare with cloud-init. Start with a running cloud.
 
+## Costs
+
+- [Check usage and costs](billing/costs.md) — read `cloud billing` after creating a cluster, scaling it and stopping an instance. Start with a running cloud.
+
 ## Kubernetes workloads and scheduling
 
 - [Deployments, placement, rollouts and drain](../../kubernetes/lecture02/README.md#exercise-files) — use exercises 1–5 for replicas and placement, and 8–12 for updates, DaemonSets and node maintenance. Start with one node and add two workers before exercise 5.

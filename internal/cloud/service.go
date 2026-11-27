@@ -37,6 +37,8 @@ type Service struct {
 	groupMetrics    string
 	groupAutoscaler string
 	publishedPolicy string
+	billing         usageLedger
+	billingDir      string
 }
 
 // NewService loads state and reconciles requests interrupted by a previous process.
@@ -52,6 +54,7 @@ func NewService(inf infra.Infra, dataDir string, logger *slog.Logger) (*Service,
 	s.images, _ = inf.(infra.Images)
 	data, err := os.ReadFile(filepath.Join(dataDir, "state.json")) // #nosec G304 -- state lives in the operator-selected data directory.
 	if os.IsNotExist(err) {
+		s.openBilling(time.Now().UTC())
 		return s, nil
 	}
 	if err != nil {
@@ -63,6 +66,7 @@ func NewService(inf infra.Infra, dataDir string, logger *slog.Logger) (*Service,
 	if err := s.reconcile(); err != nil {
 		return nil, err
 	}
+	s.openBilling(time.Now().UTC()) // before retryVolumeDeletions, which stores
 	s.retryVolumeDeletions()
 	return s, nil
 }

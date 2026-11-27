@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -69,7 +70,7 @@ func TestCloudCommands(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
 		want string
-	}{{[]string{"machine-types", "list"}, "lab-medium"}, {[]string{"clusters", "list"}, "demo"}, {[]string{"clusters", "describe", "demo"}, "RUNNING"}, {[]string{"machines", "list", "--cluster", "demo"}, "student"}, {[]string{"operations", "list"}, "CREATE_CLUSTER"}, {[]string{"operations", "describe", s.Operations()[0].ID}, "student"}} {
+	}{{[]string{"machine-types", "list"}, "PRICE_EUR_HOUR"}, {[]string{"machine-types", "list"}, "0.4000"}, {[]string{"machine-types", "list"}, "lab-medium"}, {[]string{"clusters", "list"}, "demo"}, {[]string{"clusters", "describe", "demo"}, "RUNNING"}, {[]string{"machines", "list", "--cluster", "demo"}, "student"}, {[]string{"operations", "list"}, "CREATE_CLUSTER"}, {[]string{"operations", "describe", s.Operations()[0].ID}, "student"}} {
 		out, err := execute(t, url, tc.args...)
 		if err != nil || !strings.Contains(out, tc.want) {
 			t.Fatalf("%v: %q %v", tc.args, out, err)
@@ -532,5 +533,61 @@ func TestFailedProvisioningFromCLI(t *testing.T) {
 	vm, err := s.Instance("vm")
 	if err != nil || vm.Status != "ERROR" {
 		t.Fatalf("failed instance: %+v, error %v", vm, err)
+	}
+}
+
+func TestBillingCommand(t *testing.T) {
+	s, _ := setup(t, nil)
+	var query string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.RequestURI()
+		api.NewServer(s).ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	out, err := execute(t, server.URL, "billing")
+	if err != nil || query != "/v1/billing" {
+		t.Fatalf("%q %q %v", query, out, err)
+	}
+	for _, want := range []string{"Since ", "(reset ", "KIND", "NAME", "TYPE/SIZE", "STATUS", "HOURS", "COST_EUR", "TOTAL"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	if !regexp.MustCompile(`TOTAL\s+\d+\.\d{6}\n`).MatchString(out) {
+		t.Fatalf("total format:\n%s", out)
+	}
+	if _, err := execute(t, server.URL, "billing", "--since", "1h"); err != nil || query != "/v1/billing?since=1h" {
+		t.Fatalf("%q %v", query, err)
+	}
+}
+
+func TestBillingRows(t *testing.T) {
+	s, url := setup(t, nil)
+	if _, err := execute(t, url, "instances", "create", "vm1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateVolume("pvc-bill", "demo", "default/data", "1Gi", "Retain"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execute(t, url, "billing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, re := range []string{
+		`instance\s+vm1\s+lab-small\s+accruing\s+\d+\.\d{2}\s+\d+\.\d{6}\n`,
+		`volume\s+pvc-bill\s+1\.0Gi\s+accruing\s+\d+\.\d{2}\s+\d+\.\d{6}\n`,
+	} {
+		if !regexp.MustCompile(re).MatchString(out) {
+			t.Fatalf("no match for %s in:\n%s", re, out)
+		}
+	}
+	if _, err := execute(t, url, "instances", "stop", "vm1"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err = execute(t, url, "billing"); err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`instance\s+vm1\s+lab-small\s+ended\s`).MatchString(out) {
+		t.Fatalf("stopped instance not ended:\n%s", out)
 	}
 }

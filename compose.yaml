@@ -11,6 +11,7 @@ services:
       CLOUD_INSTANCE_METRICS_URL: http://instance-metrics:9090
       CLOUD_INSTANCE_AUTOSCALER_URL: http://127.0.0.1:8085
       CLOUD_DISK_VOLUME: minikube-cloud-lab-disks
+      CLOUD_BILLING_DIR: /data/billing
       CLOUD_NFS_IP: ${CLOUD_NFS_IP:-172.30.0.253}
       CLOUD_STORAGE_CAPACITY: ${CLOUD_STORAGE_CAPACITY:-20Gi}
       CLOUD_DOCKER_NETWORK: minikube-cloud-lab
@@ -31,6 +32,7 @@ services:
       - ${HOME}/.kube:/kube
       - storage:/data/storage
       - instance-disks:/data/instance-disks
+      - billing:/data/billing
     restart: unless-stopped
   nfs:
     image: ${NFS_IMAGE:-ghcr.io/miciav/minikube-cloud-lab/nfs:latest}
@@ -132,6 +134,8 @@ volumes:
   monitoring-history:
     labels:
       io.course.monitoring.scope: ${CLOUD_COURSE_PROJECT:-mcl}
+  billing:
+    name: minikube-cloud-lab-billing
   instance-disks:
     name: minikube-cloud-lab-disks
   storage:

@@ -22,6 +22,7 @@ import {
 import { request, downloadKubeconfig } from "./api";
 import { History } from "./History";
 import { Monitoring } from "./Monitoring";
+import { Costs } from "./Costs";
 import { Dashboard } from "./Dashboard";
 import { useResource } from "./useResource";
 import {
@@ -281,7 +282,7 @@ function CloudApp() {
       <div className="workspace">
         <nav aria-label="Cloud navigation">
           <div className="nav-caption">YOUR CLOUD</div>
-          {["Overview", "Clusters", "Machines", "Volumes", "Operations", "Monitoring"].map(
+          {["Overview", "Clusters", "Machines", "Volumes", "Operations", "Monitoring", "Costs"].map(
             (label) => (
               <a
                 key={label}
@@ -299,6 +300,7 @@ function CloudApp() {
                       Volumes: "▤",
                       Operations: "↻",
                       Monitoring: "∿",
+                      Costs: "€",
                     }[label as "Overview"]
                   }
                 </span>
@@ -354,6 +356,7 @@ function CloudApp() {
                       volumes: "Storage volumes",
                       operations: "Cloud operations",
                       monitoring: "Monitoring",
+                      costs: "Costs",
                     }[section] ?? "Cluster unavailable")}
               </Title1>
               <p className="subtitle">
@@ -370,6 +373,7 @@ function CloudApp() {
             </Button>
           </div>
           {section === "monitoring" && <History refresh={refresh} />}
+          {section === "costs" && <Costs refresh={refresh} />}
           {section === "overview" && (
             <OverviewSection
               clusters={clusters}

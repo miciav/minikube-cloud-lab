@@ -61,6 +61,7 @@ Use the [tutorials by topic](docs/tutorials/README.md) to select an exercise or 
 | Follow a PVC through allocation, release and recovery | [Persistent storage](docs/tutorials/storage/persistent-volumes.md) | Dedicated lab. The recovery exercise deletes and recreates a cluster. |
 | Bootstrap a Linux instance and move a persistent data disk | [Standalone instances and disks](docs/tutorials/compute/instances-and-disks.md) | Running cloud. Choose the disk procedure for your runtime. |
 | Capture a configured instance and launch ready-made copies | [Golden images](docs/tutorials/compute/golden-images.md) | Running cloud, room for five instances, counting stopped ones and group members. The last step installs the instance autoscaling module. |
+| Read the meter after creating, scaling and stopping resources | [Usage and costs](docs/tutorials/billing/costs.md) | Running cloud. Creates a cluster, an instance and a disk. |
 | Observe traffic-driven scaling, health checks and replacement | [Autoscale an HTTP service](docs/tutorials/autoscaling/instance-groups.md) | Running cloud, room for three instances. |
 | Deploy an application across a VM and Kubernetes | [OpenTofu, cloud-init, Ansible and kubectl](lab/capstone/README.md) | Dedicated cloud, bundled lab tools, Ubuntu image with cloud-init. |
 | Teach the Kubernetes exercise decks | [Lecture 02](kubernetes/lecture02/README.md) · [Lecture 03](kubernetes/lecture03/README.md) | Use the node counts and machine sizes in the selected lesson. Lecture 03 includes HPA, VPA, Cluster Autoscaler, KEDA and operators. |

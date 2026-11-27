@@ -4,6 +4,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -41,6 +42,24 @@ func respond(w http.ResponseWriter, status int, value any, err error) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+// parseSince reads a duration ("1h") or RFC3339 instant; empty means since the last reset.
+func parseSince(value string, now time.Time) (time.Time, error) {
+	if value == "" {
+		return time.Time{}, nil
+	}
+	if d, err := time.ParseDuration(value); err == nil {
+		if d < 0 {
+			return time.Time{}, fmt.Errorf("%w: since must not be negative", cloud.ErrInvalid)
+		}
+		return now.Add(-d), nil
+	}
+	t, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: since must be a duration or RFC3339 time", cloud.ErrInvalid)
+	}
+	return t, nil
+}
+
 // NewServer routes management requests to the shared cloud service.
 func NewServer(svc *cloud.Service) http.Handler {
 	mux := http.NewServeMux()
@@ -67,6 +86,15 @@ func NewServer(svc *cloud.Service) http.Handler {
 	})
 	mux.HandleFunc("GET /v1/clusters/{name}/monitoring", func(w http.ResponseWriter, r *http.Request) {
 		v, err := svc.Monitoring(r.Context(), r.PathValue("name"))
+		respond(w, 200, v, err)
+	})
+	mux.HandleFunc("GET /v1/billing", func(w http.ResponseWriter, r *http.Request) {
+		since, err := parseSince(r.URL.Query().Get("since"), time.Now())
+		if err != nil {
+			respond(w, 0, nil, err)
+			return
+		}
+		v, err := svc.Billing(since)
 		respond(w, 200, v, err)
 	})
 	mux.HandleFunc("GET /v1/storage", func(w http.ResponseWriter, _ *http.Request) { v, err := svc.StorageCapacity(); respond(w, 200, v, err) })
