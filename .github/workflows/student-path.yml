@@ -18,6 +18,7 @@ on:
       - 'tests/managed-services.sh'
       - 'tools/instance-autoscaler/**'
       - 'tests/instance-*.sh'
+      - 'tests/registry-*.sh'
       - 'tests/service-exposure.sh'
       - '.github/workflows/student-path.yml'
 permissions:
@@ -43,6 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash tests/managed-services.sh
+      - run: bash tests/registry-feasibility.sh
   student-path:
     runs-on: ubuntu-24.04
     timeout-minutes: 55
