@@ -159,6 +159,19 @@ jobs:
           bash tests/service-exposure.sh deleted
           bash tests/storage.sh recover
           TEST_RESTART_CLOUD=1 bash tests/instance-disks.sh
+          # Retained volumes in state.json may survive down -v and accrue again, so check resetAt, not an empty list.
+          before=$(curl -fsS http://127.0.0.1:8080/v1/billing)
+          echo "$before" | jq -e '.total > 0 and any(.items[]; .kind == "machine")'
+          docker compose down -v
+          if docker volume inspect minikube-cloud-lab-billing >/dev/null 2>&1; then echo 'billing volume survived down -v'; exit 1; fi
+          docker compose up -d cloud
+          for _ in $(seq 1 60); do
+            if cloud machine-types list; then break; fi
+            sleep 2
+          done
+          after=$(curl -fsS http://127.0.0.1:8080/v1/billing)
+          jq -ne --argjson b "$before" --argjson a "$after" '$a.resetAt != $b.resetAt and $a.total < $b.total and all($a.items[]; .kind != "machine")'
+          cloud billing
       - name: Diagnostics
         if: failure() || cancelled()
         run: |
