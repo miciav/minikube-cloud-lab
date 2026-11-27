@@ -171,6 +171,7 @@ func (i *Infra) CreateCluster(ctx context.Context, spec infra.ClusterSpec) error
 	if err != nil {
 		return err
 	}
+	i.trustRegistries(ctx, cc, config.MachineName(*cc, cc.Nodes[0]))
 	settings.EmbedCerts = true
 	settings.ClusterServerAddress, err = forwardedAPIServer(ctx, spec.Name)
 	if err != nil {
@@ -330,7 +331,7 @@ func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, err
 	if _, err := startNode(ctx, cc, &n, m, h, r, i.providerIP); err != nil {
 		return partial, err
 	}
-
+	i.trustRegistries(ctx, cc, partial.Name)
 	return infra.Machine{Name: partial.Name, Running: true}, nil
 }
 

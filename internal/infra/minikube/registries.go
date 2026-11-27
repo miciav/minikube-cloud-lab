@@ -166,6 +166,7 @@ func (i *Infra) CreateRegistry(ctx context.Context, spec infra.RegistrySpec) (in
 	if err := waitRegistry(ctx, "http://"+ip.String()+":5000/v2/", containerAlive(client, name)); err != nil {
 		return infra.RegistryInfo{}, err
 	}
+	i.addRegistryHosts(ctx, client, spec.Name)
 	return infra.RegistryInfo{Name: spec.Name, IP: ip.String(), Running: true}, nil
 }
 
@@ -242,6 +243,7 @@ func (i *Infra) DeleteRegistry(ctx context.Context, name string) error {
 	if err := client.ContainerRemove(ctx, registryPrefix+name, container.RemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("remove container: %w", err)
 	}
+	i.removeRegistryHosts(ctx, client, name)
 	return os.RemoveAll(dir)
 }
 
