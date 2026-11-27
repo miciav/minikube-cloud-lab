@@ -25,7 +25,7 @@ export function Costs({ refresh }: { refresh: number }) {
       {!data && !error && <p>Loading costs…</p>}
       {data && (
         <>
-          <h2>{eur(data.total)}</h2>
+          <h2>Total: {eur(data.total)}</h2>
           <p>Since reset at {new Date(data.resetAt).toLocaleString()}</p>
           {data.items.length ? (
             <Table

@@ -282,7 +282,7 @@ test("removes obsolete cluster view after external deletion", async ({
 test("costs section shows the total and billed resources", async ({ page }) => {
   await fixture(page);
   await page.goto("/#/costs");
-  await expect(page.getByRole("heading", { name: "0.2500 EUR" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Total: 0.2500 EUR" })).toBeVisible();
   await expect(page.getByText(/Since reset at/)).toBeVisible();
   const row = page.getByRole("row", { name: /demo-control-plane/ });
   await expect(row).toContainText("lab-small");

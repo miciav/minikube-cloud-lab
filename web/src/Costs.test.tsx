@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { Costs } from "./Costs";
+
+afterEach(() => vi.unstubAllGlobals());
 
 const report = {
   resetAt: "2026-11-27T08:00:00Z",
@@ -33,7 +35,7 @@ it("shows the total, statuses and requests each period", async () => {
   const fetch = vi.fn(async () => new Response(JSON.stringify(report)));
   vi.stubGlobal("fetch", fetch);
   render(<Costs refresh={0} />);
-  expect(await screen.findByText("0.4000 EUR")).toBeTruthy();
+  expect(await screen.findByText("Total: 0.4000 EUR")).toBeTruthy();
   expect(screen.getByText(/Since reset at/)).toBeTruthy();
   const demo = screen.getByRole("cell", { name: "demo" }).closest("tr")!;
   expect(within(demo).getByText("Running")).toBeTruthy();
@@ -79,4 +81,19 @@ it("reports an empty period and errors", async () => {
   );
   render(<Costs refresh={0} />);
   expect(await screen.findByText("billing unavailable")).toBeTruthy();
+});
+
+it("hides the previous total while a new period loads", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify(report))),
+  );
+  render(<Costs refresh={0} />);
+  expect(await screen.findByText("Total: 0.4000 EUR")).toBeTruthy();
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+  fireEvent.change(screen.getByLabelText("Period"), {
+    target: { value: "1h" },
+  });
+  expect(screen.getByText("Loading costs…")).toBeTruthy();
+  expect(screen.queryByText("Total: 0.4000 EUR")).toBeNull();
 });
