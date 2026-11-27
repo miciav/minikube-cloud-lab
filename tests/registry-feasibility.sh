@@ -157,15 +157,17 @@ check "zot: pull with pull user from a second kicbase container" pull
 # The build must succeed on its own so a failed build cannot pass as a denied push.
 denied() {
     local out
-    login b pull "$pull_pw" && build b probe/denied || return 1
-    if out=$(ex b docker push "$host/probe/denied:1" 2>&1); then echo "push succeeded"; return 1; fi
+    login b pull "$pull_pw" && build b probe/readonly || return 1
+    if out=$(ex b docker push "$host/probe/readonly:1" 2>&1); then echo "push succeeded"; return 1; fi
     local line
-    line=$(grep -iE -m1 'denied|unauthorized|forbidden' <<<"$out") || { echo "$out"; return 1; }
+    # Skip the line echoing the repository; match only the registry's authorization error.
+    line=$(grep -v '^The push refers to repository' <<<"$out" |
+        grep -iE -m1 'denied:|unauthorized|forbidden|requested access to the resource is denied') || { echo "$out"; return 1; }
     echo "INFO push error: $line"
 }
 check "zot: push with pull user is denied" denied
 listing() {
-    ex b curl -fsS -u "pull:$pull_pw" "http://$host/v2/_catalog" | jq -e '.repositories | index("probe/hello") != null and index("probe/denied") == null' &&
+    ex b curl -fsS -u "pull:$pull_pw" "http://$host/v2/_catalog" | jq -e '.repositories | index("probe/hello") != null and index("probe/readonly") == null' &&
         ex b curl -fsS -u "pull:$pull_pw" "http://$host/v2/probe/hello/tags/list" | jq -e '.tags | index("1") != null'
 }
 check "zot: catalog and tags listed over HTTP with pull user" listing
