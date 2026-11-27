@@ -52,6 +52,7 @@ func serveCommand(factory func(string) (infra.Infra, error)) *cobra.Command {
 		if err := configureStorage(svc, dataDir, storageIP); err != nil {
 			return err
 		}
+		logRegistries(logger, "started", svc.StartRegistries(cmd.Context()))
 
 		svc.ConfigureInstanceGroupRouting(os.Getenv("CLOUD_INSTANCE_LB_URL"), os.Getenv("CLOUD_INSTANCE_METRICS_URL"), os.Getenv("CLOUD_INSTANCE_AUTOSCALER_URL"))
 
@@ -92,6 +93,7 @@ func serveCommand(factory func(string) (infra.Infra, error)) *cobra.Command {
 		case <-cmd.Context().Done():
 		case serveErr = <-failures:
 		}
+		stopRegistries(svc, logger) // before the API closes, inside the Compose grace period
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		shutdownErr := management.Shutdown(shutdown)
@@ -105,6 +107,20 @@ func serveCommand(factory func(string) (infra.Infra, error)) *cobra.Command {
 	command.Flags().StringVar(&apiAddr, "api", "127.0.0.1:8080", "Management HTTP listen address")
 	command.Flags().StringVar(&grpcAddr, "grpc", "0.0.0.0:9090", "Cluster Autoscaler gRPC listen address")
 	return command
+}
+
+// stopRegistries removes registry containers with a fresh context, since the command's is already cancelled.
+func stopRegistries(svc *cloud.Service, logger *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	logRegistries(logger, "stopped", svc.StopRegistries(ctx))
+}
+
+// logRegistries reports a registry lifetime failure without stopping the cloud.
+func logRegistries(logger *slog.Logger, action string, err error) {
+	if err != nil {
+		logger.Error("registries not fully "+action, "error", err)
+	}
 }
 
 func configureStorage(svc *cloud.Service, dataDir, server string) error {

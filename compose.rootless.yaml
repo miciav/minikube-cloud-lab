@@ -1,5 +1,6 @@
 services:
   cloud:
+    stop_grace_period: 30s
     labels:
       io.course.console.project: ${COMPOSE_PROJECT_NAME}
     restart: always
@@ -15,6 +16,7 @@ services:
       CLOUD_INSTANCE_AUTOSCALER_URL: http://127.0.0.1:8085
       CLOUD_DISK_VOLUME: minikube-cloud-lab-rootless-disks
       CLOUD_BILLING_DIR: /data/billing
+      CLOUD_REGISTRY_VOLUME: minikube-cloud-lab-rootless-registries
       CLOUD_ROOTLESS: 'true'
       CLOUD_STORAGE_VOLUME: minikube-cloud-lab-rootless-storage
       CLOUD_STORAGE_CAPACITY: ${CLOUD_STORAGE_CAPACITY:-20Gi}
@@ -32,6 +34,7 @@ services:
       - autoscaling:/data/autoscaling
       - instance-disks:/data/instance-disks
       - billing:/data/billing
+      - registries:/data/registries
       - kube:/kube
       - storage:/data/storage
   portal:
@@ -122,6 +125,8 @@ volumes:
     labels:
       io.course.monitoring.scope: ${CLOUD_COURSE_PROJECT:-mcl}
   autoscaling:
+  registries:
+    name: minikube-cloud-lab-rootless-registries
   billing:
     name: minikube-cloud-lab-rootless-billing
   instance-disks:

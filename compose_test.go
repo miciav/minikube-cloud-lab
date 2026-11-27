@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -122,7 +123,7 @@ func TestComposeConfiguration(t *testing.T) {
 	if len(lab.Profiles) != 1 || lab.Profiles[0] != "tools" {
 		t.Fatalf("tools profile: %+v", lab)
 	}
-	expected := map[string]string{"/data": "/tmp/cloud-lab-home/.minikube-cloud-lab", "/kube": "/tmp/cloud-lab-home/.kube", "/var/run/docker.sock": "/var/run/docker.sock", "/data/storage": "storage", "/data/instance-disks": "instance-disks", "/data/billing": "billing"}
+	expected := map[string]string{"/data": "/tmp/cloud-lab-home/.minikube-cloud-lab", "/kube": "/tmp/cloud-lab-home/.kube", "/var/run/docker.sock": "/var/run/docker.sock", "/data/storage": "storage", "/data/instance-disks": "instance-disks", "/data/billing": "billing", "/data/registries": "registries"}
 	if len(cloud.Volumes) != len(expected) {
 		t.Fatalf("cloud volumes: %+v", cloud.Volumes)
 	}
@@ -195,9 +196,10 @@ func TestOptionalConsoleProfiles(t *testing.T) {
 			}
 			var conf struct {
 				Services map[string]struct {
-					NetworkMode string `json:"network_mode"`
-					Environment map[string]string
-					Ports       []struct {
+					NetworkMode     string `json:"network_mode"`
+					StopGracePeriod string `json:"stop_grace_period"`
+					Environment     map[string]string
+					Ports           []struct {
 						HostIP string `json:"host_ip"`
 					}
 					Volumes []struct {
@@ -219,6 +221,13 @@ func TestOptionalConsoleProfiles(t *testing.T) {
 			}
 			if cloud.Environment["CLOUD_BILLING_DIR"] != "/data/billing" || !mounted || conf.Volumes["billing"].Name != billing {
 				t.Fatalf("%s billing ledger: env=%v mounted=%v volume=%+v", file, cloud.Environment, mounted, conf.Volumes["billing"])
+			}
+			registries := map[string]string{"compose.yaml": "minikube-cloud-lab-registries", "compose.rootless.yaml": "minikube-cloud-lab-rootless-registries"}[file]
+			mounted = slices.ContainsFunc(cloud.Volumes, func(v struct{ Source, Target string }) bool {
+				return v.Target == "/data/registries" && v.Source == "registries"
+			})
+			if cloud.Environment["CLOUD_REGISTRY_VOLUME"] != registries || !mounted || conf.Volumes["registries"].Name != registries || cloud.StopGracePeriod != "30s" {
+				t.Fatalf("%s registry data: env=%v mounted=%v volume=%+v grace=%q", file, cloud.Environment, mounted, conf.Volumes["registries"], cloud.StopGracePeriod)
 			}
 			for _, name := range []string{"monitoring", "portal", "instance-metrics"} {
 				s, exists := conf.Services[name]
