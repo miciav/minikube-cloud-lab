@@ -97,6 +97,8 @@ measurements are labelled; the cluster tab works independently of the optional h
 
 Install `monitoring` to collect samples every 15 seconds. Select **Monitoring** in the main navigation and choose 15 minutes, one hour or 24 hours. Cluster usage is shown in cores and MiB. Queue gauges estimate available, in-flight and delayed messages. Bucket gauges show object count and logical bytes. A gap indicates a missed observation. A measured zero means the source actually returned zero. History survives closing the browser and `lab uninstall monitoring`. Reinstall to inspect retained samples within the retention period. To erase the owned volume, run `lab uninstall monitoring` followed by `lab purge monitoring --yes`.
 
+The **Costs** section shows the same figures as `cloud billing` for three periods: Since reset, Last hour and Last 30 minutes.
+
 The **Kubernetes** tab embeds the automatically installed YAKD dashboard using its
 existing localhost Service endpoint. YAKD provides workload details and logs; it is
 not rewritten or proxied under a different URL path. A separate link opens the same
@@ -200,3 +202,11 @@ restart NFS afterward with `docker compose restart nfs`. Keep backups; do not us
 Each managed service owns a separate Compose project and one named volume. Its private bootstrap settings live under `~/.minikube-cloud-lab/services/<runtime>/<project>-<module>/`. Preserve the volume and this directory together when moving a lab. Reuse the installed PostgreSQL major version when restoring its volume. The core project's Compose shutdown and cluster deletion leave these service projects independent. To release resources use `lab uninstall NAME`; use `lab status NAME` to see retained data.
 
 For diagnostics inspect the service container with the runtime's logs command. Filter container inventory by the `com.docker.compose.project` label. A failed first install can be retried after resolving image, port or filesystem errors. Keep the existing volume when credentials are missing and restore the matching private configuration.
+
+## Usage and cost ledger
+
+The cloud meters fictitious costs: `lab-small` 0.10 EUR per hour, `lab-medium` 0.40 EUR per hour, and storage 0.10 EUR per GiB per month (730 hours). Cluster machines (including the control plane) accrue from creation until removal. Instances accrue except while `STOPPED`; their root disk is free. Kubernetes volumes (bound or retained) and data disks accrue storage for their size until deleted. Managed services, load balancers and Pods are not billed.
+
+The ledger is `usage.json` in `CLOUD_BILLING_DIR`. Compose sets it to `/data/billing`, on the `minikube-cloud-lab-billing` volume (`minikube-cloud-lab-rootless-billing` with Podman). `docker compose down` keeps it and time keeps accruing for running resources. `labcompose down -v` removes the volume, so the count restarts from zero; resources that survive start accruing again from the reset. A corrupt ledger is replaced by a fresh one. The meter never limits or blocks anything.
+
+`cloud billing` and `GET /v1/billing?since=` read it. `since` is a Go duration (`30m`) or an RFC3339 time; future, negative or unparsable values return 400, and a time before the reset is clamped to the reset.
