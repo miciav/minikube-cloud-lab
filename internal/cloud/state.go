@@ -24,9 +24,10 @@ type OpStatus string
 
 // MachineType defines an available machine shape.
 type MachineType struct {
-	Name      string `json:"name"`
-	CPUs      int    `json:"cpus"`
-	MemoryMiB int    `json:"memoryMiB"`
+	Name         string  `json:"name"`
+	CPUs         int     `json:"cpus"`
+	MemoryMiB    int     `json:"memoryMiB"`
+	PricePerHour float64 `json:"pricePerHour"`
 }
 
 // Cluster is the student's managed Kubernetes cluster.
@@ -75,9 +76,14 @@ var (
 // ponytail: fixed lab ceiling; make it configurable if hosts outgrow it.
 const MaxMachines = 32
 
+// StoragePricePerGiBMonth is the EUR price of one GiB of volume capacity per month.
+const StoragePricePerGiBMonth = 0.10
+
+const hoursPerMonth = 730
+
 // MachineTypes returns the fixed cloud catalog.
 func MachineTypes() []MachineType {
-	return []MachineType{{Name: "lab-small", CPUs: 2, MemoryMiB: 2048}, {Name: "lab-medium", CPUs: 4, MemoryMiB: 8192}}
+	return []MachineType{{Name: "lab-small", CPUs: 2, MemoryMiB: 2048, PricePerHour: 0.10}, {Name: "lab-medium", CPUs: 4, MemoryMiB: 8192, PricePerHour: 0.40}}
 }
 
 // NodeLabels returns the standard labels applied during machine bootstrap.

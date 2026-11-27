@@ -69,7 +69,7 @@ func TestCloudCommands(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
 		want string
-	}{{[]string{"machine-types", "list"}, "lab-medium"}, {[]string{"clusters", "list"}, "demo"}, {[]string{"clusters", "describe", "demo"}, "RUNNING"}, {[]string{"machines", "list", "--cluster", "demo"}, "student"}, {[]string{"operations", "list"}, "CREATE_CLUSTER"}, {[]string{"operations", "describe", s.Operations()[0].ID}, "student"}} {
+	}{{[]string{"machine-types", "list"}, "PRICE_EUR_HOUR"}, {[]string{"machine-types", "list"}, "0.4000"}, {[]string{"machine-types", "list"}, "lab-medium"}, {[]string{"clusters", "list"}, "demo"}, {[]string{"clusters", "describe", "demo"}, "RUNNING"}, {[]string{"machines", "list", "--cluster", "demo"}, "student"}, {[]string{"operations", "list"}, "CREATE_CLUSTER"}, {[]string{"operations", "describe", s.Operations()[0].ID}, "student"}} {
 		out, err := execute(t, url, tc.args...)
 		if err != nil || !strings.Contains(out, tc.want) {
 			t.Fatalf("%v: %q %v", tc.args, out, err)

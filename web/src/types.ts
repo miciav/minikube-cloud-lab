@@ -6,7 +6,7 @@ export type Cluster = {
   status: string;
   createdAt: string;
 };
-export type MachineType = { name: string; cpus: number; memoryMiB: number };
+export type MachineType = { name: string; cpus: number; memoryMiB: number; pricePerHour: number };
 export type Machine = {
   name: string;
   cluster: string;
