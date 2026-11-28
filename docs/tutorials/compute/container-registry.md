@@ -1,6 +1,6 @@
 # Ship your own image through a container registry
 
-Start the cloud using the [course setup](../../../README.md#prepare-the-environment), create a cluster and select its context (`cloud clusters create demo` and `cloud clusters get-credentials demo`). Finish [Standalone Linux instances](instances-and-disks.md) first. The exercise needs room for one instance next to the cluster.
+Start the cloud using the [course setup](../../../README.md#prepare-the-environment), create a cluster and select its context (`cloud clusters create demo` and `cloud clusters get-credentials demo`). On rootful Docker, a cluster created before registries existed does not trust them, and its pods stay in `ImagePullBackOff` with `http: server gave HTTP response to HTTPS client`: delete and recreate it. Rootless Podman clusters need no recreation. Finish [Standalone Linux instances](instances-and-disks.md) first. The exercise needs room for one instance next to the cluster.
 
 So far your clusters have run public images only. A *container registry* stores images you build yourself, the way ECR or GCR do in a public cloud. You build an image inside a VM, push it to a registry managed by the cloud and run it on Kubernetes.
 
@@ -75,7 +75,7 @@ cloud registries images corso
 
 ## Deploy from the registry
 
-Nodes already trust lab registries; only the credentials are missing. Store the pull account in a Secret, replacing `PULL_PASSWORD`:
+The cluster's nodes already trust lab registries (see the prerequisites); only the credentials are missing. Store the pull account in a Secret, replacing `PULL_PASSWORD`:
 
 ```sh
 kubectl create secret docker-registry corso-pull --docker-server=corso.registry:5000 \
@@ -132,6 +132,6 @@ A registry that still holds images is deleted only with `--force`, like a non-em
 ## Limits
 
 - HTTP only: anyone on the lab network can read the traffic. Use the registry for course images, never for secrets.
-- Clusters created before registries existed do not trust the lab subnet: delete and recreate them. Clusters on rootless Podman pull through a per-registry containerd entry that the cloud writes on every node; that path is not covered by CI.
+- Clusters on rootless Podman pull through a per-registry containerd entry that the cloud writes on every node; that path is not covered by CI.
 - On rootful Docker, registry data uses volume subpaths, which need Docker Engine 26 (API 1.45) or later, like instance data disks.
 - Registries are not yet billed or shown in the portal.

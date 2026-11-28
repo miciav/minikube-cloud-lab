@@ -139,7 +139,7 @@ its capacity stays reserved until reconciliation or cluster deletion.
 Delete the cluster before `docker compose down`, so Compose can remove its
 network. Stopping the service preserves data and machines; if nodes remain,
 Docker refuses to remove the network while it is in use.
-**Before deleting the Docker state directory**, uninstall any instance groups, delete standalone instances you own through the cloud, and back up data you need. Run `cloud clusters delete NAME` for the managed cluster and
+**Before deleting the Docker state directory**, uninstall any instance groups, delete standalone instances you own through the cloud, delete registries with `cloud registries delete NAME --force`, and back up data you need. Run `cloud clusters delete NAME` for the managed cluster and
 wait for it to finish. Removing only the files would lose the references to
 Docker resources. Then, to clear the operation history as well:
 
@@ -147,6 +147,8 @@ Docker resources. Then, to clear the operation history as well:
 docker compose down
 rm -rf "$HOME/.minikube-cloud-lab"
 ```
+
+The reset keeps the registries volume. Data of a registry you did not delete stays there and reappears, under new credentials, in a new registry with the same name. To erase it too, use `labcompose down -v`, which also removes the other named volumes.
 
 The kubeconfig context remains after cluster deletion; other contexts are
 preserved. Do not delete all of `~/.kube` to reset this lab.
@@ -194,11 +196,11 @@ Downgrading the cloud to a version without personal images drops the image catal
 
 ## Container registries
 
-Each registry is a small container on the lab network, reachable as `NAME.registry:5000` from instances and cluster nodes, and serves plain HTTP only (no TLS): keep it to course images on a trusted host. A registry lives with the cloud: stopping the cloud removes its registry containers, and starting it recreates every registry on its existing data. While the cloud is down, pulls fail and the kubelet retries. A registry container left without a record in `state.json` is removed at startup.
+Each registry is a small container on the lab network, reachable as `NAME.registry:5000` from instances and cluster nodes, and serves plain HTTP only (no TLS): keep it to course images on a trusted host. A registry lives with the cloud: stopping the cloud removes its registry containers, and starting it recreates every registry on its existing data. While the cloud is down, pulls fail and the kubelet retries. Startup removes every registry container and recreates only the registries recorded in `state.json`. A registry without a record, for example after a restored `state.json`, keeps its data in the registries volume until `labcompose down -v`; creating a registry with the same name brings that data back under new credentials.
 
-Registry data lives in the `minikube-cloud-lab-registries` volume (`minikube-cloud-lab-rootless-registries` on Podman). `labcompose down` keeps it; `labcompose down -v` deletes all registry data. On rootful Docker `state.json` survives in `~/.minikube-cloud-lab`, so the registries come back empty with the same names and credentials. On rootless Podman the cloud state is itself a named volume that `down -v` removes, so the registries are gone entirely. On rootful Docker each registry mounts its directory as a volume subpath, which needs Docker Engine 26 (API 1.45) or later, like instance data disks.
+Registry data lives in the `minikube-cloud-lab-registries` volume (`minikube-cloud-lab-rootless-registries` on Podman). `labcompose down` keeps it; `labcompose down -v` deletes all registry data. On rootful Docker `state.json` survives in `~/.minikube-cloud-lab`, so the registries come back empty with the same names and credentials. On rootless Podman the cloud state is itself a named volume that `down -v` removes, so the registries are gone entirely. Downgrading the cloud to a version without registries drops them from the state on its first save; delete registries through the cloud before downgrading. On rootful Docker each registry mounts its directory as a volume subpath, which needs Docker Engine 26 (API 1.45) or later, like instance data disks.
 
-Docker-runtime nodes trust the whole lab subnet for HTTP pulls, but only nodes created after this feature: delete and recreate older clusters. Clusters on rootless Podman run containerd, which the cloud configures with one entry per registry on every node; that path is not verified in CI. Instances are not nodes: students add the subnet to `insecure-registries` in the instance's `/etc/docker/daemon.json`, as the [registry tutorial](tutorials/compute/container-registry.md) shows.
+Docker-runtime nodes trust the whole lab subnet for HTTP pulls, but only in clusters created after this feature, including nodes added to them later: delete and recreate older clusters, whose pulls otherwise fail with `http: server gave HTTP response to HTTPS client`. Clusters on rootless Podman run containerd, which the cloud configures with one entry per registry on every node, existing nodes included, so older clusters need no recreation there; that path is not verified in CI. Instances are not nodes: students add the subnet to `insecure-registries` in the instance's `/etc/docker/daemon.json`, as the [registry tutorial](tutorials/compute/container-registry.md) shows.
 
 ## Cloud storage
 
