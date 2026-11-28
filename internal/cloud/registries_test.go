@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -217,8 +218,11 @@ func TestStartRegistriesRecreatesMissing(t *testing.T) {
 	if len(created) != 2 || created[1] != (infra.RegistrySpec{Name: "corso", PushUser: "push", PushPassword: "pw-push", PullUser: "pull", PullPassword: "pw-pull"}) {
 		t.Fatalf("created %+v", created)
 	}
-	if deleted := registryCalls(f, "DeleteRegistry"); len(deleted) != 1 || deleted[0].Name != "stray" {
+	if deleted := registryCalls(f, "DeleteRegistry"); len(deleted) != 0 {
 		t.Fatalf("deleted %+v", deleted)
+	}
+	if !f.RegistryData("stray") { // an unrecorded registry loses its container, never its data
+		t.Fatal("unrecorded registry data removed")
 	}
 	observed, _ := f.Registries(context.Background())
 	if len(observed) != 1 || observed[0].Name != "corso" {
@@ -236,9 +240,10 @@ func TestStartRegistriesReportsFailures(t *testing.T) {
 	if err := s.StartRegistries(context.Background()); err == nil || !strings.Contains(err.Error(), "docker down") || s.Registries()[0].Status != "ERROR" {
 		t.Fatalf("err %v registries %+v", err, s.Registries())
 	}
-	f.Errors["Registries"] = errors.New("unreachable")
-	if err := s.StartRegistries(context.Background()); err == nil {
-		t.Fatal("listing failure ignored")
+	delete(f.Errors, "CreateRegistry")
+	f.Errors["StopRegistries"] = errors.New("unreachable")
+	if err := s.StartRegistries(context.Background()); err == nil || !strings.Contains(err.Error(), "unreachable") {
+		t.Fatal("sweep failure ignored")
 	}
 }
 
@@ -387,5 +392,61 @@ func TestStopRegistriesSweepsWhileAnOperationRuns(t *testing.T) {
 	}
 	if err := s.StopRegistries(context.Background()); err != nil {
 		t.Fatalf("lock not released: %v", err)
+	}
+}
+
+// lockedBuffer is a log sink that operation goroutines write while the test reads.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestRegistryPasswordsStayOutOfLogs(t *testing.T) {
+	f := fake.New()
+	var logs lockedBuffer
+	s, err := cloud.NewService(f, t.TempDir(), slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	createRegistry(t, s, "corso")
+	f.Errors["CreateRegistry"] = errors.New("docker down")
+	op, err := s.CreateRegistry("rotto", "student")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait(t, s, op)
+	if err := s.StartRegistries(context.Background()); err == nil {
+		t.Fatal("start ignored the failing create")
+	}
+	if err := s.StopRegistries(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(3 * time.Second); strings.Count(logs.String(), "operation finished") < 2; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("operations not logged: %s", logs.String())
+		}
+	}
+	for _, name := range []string{"corso", "rotto"} {
+		for _, push := range []bool{true, false} {
+			c, err := s.RegistryCredentials(name, push)
+			if err != nil || c.Password == "" {
+				t.Fatalf("%s credentials: %+v %v", name, c, err)
+			}
+			if strings.Contains(logs.String(), c.Password) {
+				t.Fatalf("%s password in logs:\n%s", name, logs.String())
+			}
+		}
 	}
 }

@@ -88,7 +88,11 @@ YAML
 kubectl rollout status deployment/hello --timeout=3m
 kubectl get pods -l app=hello -o json | jq -e '[.items[] | select(.status.phase == "Running")] | length == 1'
 
-# A registry lives with the cloud: recreating the cloud brings it back on the same data.
+# A registry lives with the cloud: stopping the cloud removes its containers, so `down` can drop the
+# network, and recreating the cloud brings it back on the same data.
+docker compose stop cloud
+leftover=$(docker ps -aq --filter label=minikube-cloud-lab.registry)
+if [[ -n $leftover ]]; then echo "registry containers outlived the cloud: $leftover" >&2; exit 1; fi
 docker compose up -d --force-recreate cloud
 wait_ready
 lists_hello

@@ -84,7 +84,7 @@ func TestServeStartsAndStopsRegistries(t *testing.T) {
 
 	f := fake.New()
 	var logs syncBuffer
-	backend := liveStop{Infra: f, logs: &logs, served: make(chan bool, 1)}
+	backend := liveStop{Infra: f, logs: &logs, served: make(chan bool, 2)} // the startup sweep, then shutdown
 	root := newRoot(func(string) (infra.Infra, error) { return backend, nil })
 	root.SetOut(io.Discard)
 	root.SetErr(&logs)
@@ -113,6 +113,7 @@ func TestServeStartsAndStopsRegistries(t *testing.T) {
 	if calls[len(calls)-1] != "StopRegistries" {
 		t.Fatalf("registries not stopped: %v", calls)
 	}
+	<-backend.served // startup sweep, before the API listens
 	if !<-backend.served {
 		t.Fatal("management API closed before registries stopped")
 	}
@@ -134,7 +135,6 @@ func TestServeStartsAndStopsRegistries(t *testing.T) {
 
 func TestServeSurvivesRegistryFailures(t *testing.T) {
 	f := fake.New()
-	f.Errors["Registries"] = errors.New("docker down")
 	f.Errors["StopRegistries"] = errors.New("docker down")
 	var logs syncBuffer
 	root := newRoot(func(string) (infra.Infra, error) { return f, nil })

@@ -229,28 +229,21 @@ func (s *Service) RegistryImages(ctx context.Context, name string) ([]infra.Regi
 	return s.registries.RegistryImages(ctx, spec)
 }
 
-// StartRegistries recreates every recorded registry on its data and removes unrecorded containers.
+// StartRegistries removes every registry container, keeping the data, and recreates the recorded ones.
+// A registry without a record keeps its data until a registry of the same name is created again.
 func (s *Service) StartRegistries(ctx context.Context) error {
 	if s.registries == nil {
 		return nil
 	}
 	s.workMu.Lock()
 	defer s.workMu.Unlock()
-	observed, err := s.registries.Registries(ctx)
-	if err != nil {
-		return fmt.Errorf("list registries: %w", err)
+	if err := s.registries.StopRegistries(ctx); err != nil {
+		return fmt.Errorf("remove registry containers: %w", err)
 	}
 	s.mu.Lock()
 	records := slices.Clone(s.state.Registries)
 	s.mu.Unlock()
 	var errs []error
-	for _, o := range observed {
-		if !slices.ContainsFunc(records, func(r registryRecord) bool { return r.Name == o.Name }) {
-			if err := s.registries.DeleteRegistry(ctx, o.Name); err != nil {
-				errs = append(errs, fmt.Errorf("remove unrecorded registry %s: %w", o.Name, err))
-			}
-		}
-	}
 	type outcome struct {
 		info    infra.RegistryInfo
 		deleted bool

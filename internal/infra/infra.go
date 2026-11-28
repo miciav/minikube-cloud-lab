@@ -102,7 +102,6 @@ type Registries interface {
 	CreateRegistry(context.Context, RegistrySpec) (RegistryInfo, error) // Creates or replaces the container on existing data.
 	DeleteRegistry(context.Context, string) error                       // Removes container and data; an absent registry is success.
 	StopRegistries(context.Context) error                               // Removes every registry container and keeps the data.
-	Registries(context.Context) ([]RegistryInfo, error)
 	RegistryImages(context.Context, RegistrySpec) ([]RegistryImage, error)
 	RegistryBytes(context.Context, string) (int64, error)
 }
