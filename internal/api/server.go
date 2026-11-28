@@ -4,6 +4,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -41,6 +42,24 @@ func respond(w http.ResponseWriter, status int, value any, err error) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+// parseSince reads a duration ("1h") or RFC3339 instant; empty means since the last reset.
+func parseSince(value string, now time.Time) (time.Time, error) {
+	if value == "" {
+		return time.Time{}, nil
+	}
+	if d, err := time.ParseDuration(value); err == nil {
+		if d < 0 {
+			return time.Time{}, fmt.Errorf("%w: since must not be negative", cloud.ErrInvalid)
+		}
+		return now.Add(-d), nil
+	}
+	t, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: since must be a duration or RFC3339 time", cloud.ErrInvalid)
+	}
+	return t, nil
+}
+
 // NewServer routes management requests to the shared cloud service.
 func NewServer(svc *cloud.Service) http.Handler {
 	mux := http.NewServeMux()
@@ -67,6 +86,15 @@ func NewServer(svc *cloud.Service) http.Handler {
 	})
 	mux.HandleFunc("GET /v1/clusters/{name}/monitoring", func(w http.ResponseWriter, r *http.Request) {
 		v, err := svc.Monitoring(r.Context(), r.PathValue("name"))
+		respond(w, 200, v, err)
+	})
+	mux.HandleFunc("GET /v1/billing", func(w http.ResponseWriter, r *http.Request) {
+		since, err := parseSince(r.URL.Query().Get("since"), time.Now())
+		if err != nil {
+			respond(w, 0, nil, err)
+			return
+		}
+		v, err := svc.Billing(since)
 		respond(w, 200, v, err)
 	})
 	mux.HandleFunc("GET /v1/storage", func(w http.ResponseWriter, _ *http.Request) { v, err := svc.StorageCapacity(); respond(w, 200, v, err) })
@@ -164,7 +192,8 @@ func NewServer(svc *cloud.Service) http.Handler {
 		machines, err := svc.Machines(r.URL.Query().Get("cluster"))
 		respond(w, 200, machines, err)
 	})
-	mux.HandleFunc("GET /v1/images", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, cloud.Images(), nil) })
+	registerImageRoutes(mux, svc)
+	registerRegistryRoutes(mux, svc)
 	mux.HandleFunc("GET /v1/instances", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Instances(), nil) })
 	mux.HandleFunc("POST /v1/instances", func(w http.ResponseWriter, r *http.Request) {
 		var request instanceRequest
@@ -202,6 +231,70 @@ func NewServer(svc *cloud.Service) http.Handler {
 		respond(w, 200, op, err)
 	})
 	return Management(mux)
+}
+
+// registerImageRoutes serves the personal image catalog.
+func registerImageRoutes(mux *http.ServeMux, svc *cloud.Service) {
+	mux.HandleFunc("GET /v1/images", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Images(), nil) })
+	mux.HandleFunc("POST /v1/images", func(w http.ResponseWriter, r *http.Request) {
+		var request imageRequest
+		if err := decodeLimitedJSON(w, r, &request, 4096); err != nil {
+			respond(w, 400, nil, cloud.ErrInvalid)
+			return
+		}
+		op, err := svc.CreateImage(request.Name, request.From, request.Description, "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		respond(w, http.StatusAccepted, op, err)
+	})
+	mux.HandleFunc("GET /v1/images/{name}", func(w http.ResponseWriter, r *http.Request) {
+		image, err := svc.Image(r.PathValue("name"))
+		respond(w, 200, image, err)
+	})
+	mux.HandleFunc("DELETE /v1/images/{name}", func(w http.ResponseWriter, r *http.Request) {
+		op, err := svc.DeleteImage(r.PathValue("name"), "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		respond(w, http.StatusAccepted, op, err)
+	})
+}
+
+// registerRegistryRoutes serves the managed container registries.
+func registerRegistryRoutes(mux *http.ServeMux, svc *cloud.Service) {
+	mux.HandleFunc("GET /v1/registries", func(w http.ResponseWriter, _ *http.Request) { respond(w, 200, svc.Registries(), nil) })
+	mux.HandleFunc("POST /v1/registries", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Name string `json:"name"`
+		}
+		if err := decodeLimitedJSON(w, r, &request, 4096); err != nil {
+			respond(w, 400, nil, cloud.ErrInvalid)
+			return
+		}
+		op, err := svc.CreateRegistry(request.Name, "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		respond(w, http.StatusAccepted, op, err)
+	})
+	mux.HandleFunc("DELETE /v1/registries/{name}", func(w http.ResponseWriter, r *http.Request) {
+		force := false
+		if value := r.URL.Query().Get("force"); value != "" {
+			var err error
+			if force, err = strconv.ParseBool(value); err != nil {
+				respond(w, 0, nil, fmt.Errorf("%w: force must be a boolean", cloud.ErrInvalid))
+				return
+			}
+		}
+		op, err := svc.DeleteRegistry(r.PathValue("name"), force, "student") //nolint:contextcheck // accepted work must survive HTTP request cancellation.
+		respond(w, http.StatusAccepted, op, err)
+	})
+	mux.HandleFunc("GET /v1/registries/{name}/credentials", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		access := r.URL.Query().Get("access")
+		if access != "push" && access != "pull" {
+			respond(w, 0, nil, fmt.Errorf("%w: access must be push or pull", cloud.ErrInvalid))
+			return
+		}
+		credential, err := svc.RegistryCredentials(r.PathValue("name"), access == "push")
+		respond(w, 200, credential, err)
+	})
+	mux.HandleFunc("GET /v1/registries/{name}/images", func(w http.ResponseWriter, r *http.Request) {
+		images, err := svc.RegistryImages(r.Context(), r.PathValue("name"))
+		respond(w, 200, images, err)
+	})
 }
 
 // decodeJSON accepts exactly one small JSON object without unknown fields.

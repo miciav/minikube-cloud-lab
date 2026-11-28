@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/network"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -35,6 +37,8 @@ import (
 	"k8s.io/minikube/pkg/minikube/registry"
 	"k8s.io/minikube/pkg/minikube/sysinit"
 	"k8s.io/minikube/pkg/util"
+
+	"github.com/miciav/minikube-cloud-lab/internal/serviceexposure"
 )
 
 // An explicit finite limit avoids ambiguous zero/unlimited PID handling in compatible engines.
@@ -88,6 +92,7 @@ func provisionNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node
 	}
 	h.HostOptions.AuthOptions.CertDir = localpath.MiniPath()
 	h.HostOptions.AuthOptions.StorePath = localpath.MiniPath()
+	h.HostOptions.EngineOptions.InsecureRegistry = engineInsecureRegistries(*cc)
 	if cc.Network != "" {
 		h.Driver = privateSSHDriver{h.Driver}
 	}
@@ -108,6 +113,42 @@ func provisionNode(ctx context.Context, cc *config.ClusterConfig, n *config.Node
 		return api, h, r, err
 	}
 	return api, h, r, config.SaveNode(cc, n)
+}
+
+// engineInsecureRegistries mirrors upstream engineOptions: the service CIDR first, then the profile's
+// registries, which the provisioner renders as dockerd --insecure-registry flags.
+func engineInsecureRegistries(cc config.ClusterConfig) []string {
+	out := []string{constants.DefaultServiceCIDR}
+	for _, r := range cc.InsecureRegistry {
+		if !slices.Contains(out, r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// trustLabNetwork lets node runtimes pull over HTTP from registries on the lab network.
+func (i *Infra) trustLabNetwork(ctx context.Context, cc *config.ClusterConfig) error {
+	if i.network == "" {
+		return nil
+	}
+	client, err := dockerClient()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Close() }()
+	n, err := client.NetworkInspect(ctx, i.network, network.InspectOptions{})
+	if err != nil {
+		return fmt.Errorf("inspect lab network: %w", err)
+	}
+	subnet, err := serviceexposure.ManagedSubnet(n)
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(cc.InsecureRegistry, subnet.String()) {
+		cc.InsecureRegistry = append(cc.InsecureRegistry, subnet.String())
+	}
+	return nil
 }
 
 func prepareBaseImage(ctx context.Context, cc *config.ClusterConfig) error {
@@ -153,7 +194,7 @@ func configureRuntime(ctx context.Context, cc config.ClusterConfig, r cruntime.C
 	if err := cni.ConfigureDefaultBridgeCNIs(r, cc.KubernetesConfig.NetworkPlugin); err != nil {
 		return nil, err
 	}
-	cfg := cruntime.Config{Type: "containerd", Runner: r, ImageRepository: cc.KubernetesConfig.ImageRepository, KubernetesVersion: version}
+	cfg := cruntime.Config{Type: "containerd", Runner: r, ImageRepository: cc.KubernetesConfig.ImageRepository, KubernetesVersion: version, InsecureRegistry: cc.InsecureRegistry}
 	containerd, err := cruntime.New(cfg)
 	if err != nil {
 		return nil, err

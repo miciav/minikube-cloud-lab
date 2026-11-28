@@ -85,11 +85,12 @@ func (s *Service) ActivateInstanceAutoscaling() error {
 	}
 }
 
-func (spec GroupSpec) validate() error {
+func (spec GroupSpec) validate(st *snapshot) error {
 	if len(validation.IsDNS1123Label(spec.Name)) > 0 || strings.HasPrefix(spec.Name, "asg-") {
 		return fmt.Errorf("%w: group name must be a DNS-1123 label outside the asg- namespace", ErrInvalid)
 	}
-	if _, err := LookupImage(spec.Image); err != nil {
+	img, err := st.lookupImage(spec.Image)
+	if err != nil {
 		return err
 	}
 	if _, err := LookupMachineType(spec.MachineType); err != nil {
@@ -101,7 +102,7 @@ func (spec GroupSpec) validate() error {
 	if spec.DrainSeconds < 0 || spec.DrainSeconds > 120 {
 		return fmt.Errorf("%w: drain timeout must be between 0 and 120 seconds", ErrInvalid)
 	}
-	if strings.TrimSpace(spec.Bootstrap) == "" || len(spec.Bootstrap) > MaxGroupBootstrapBytes || strings.ContainsRune(spec.Bootstrap, 0) {
+	if (strings.TrimSpace(spec.Bootstrap) == "" && img.Source == "") || len(spec.Bootstrap) > MaxGroupBootstrapBytes || strings.ContainsRune(spec.Bootstrap, 0) {
 		return fmt.Errorf("%w: bootstrap must contain 1–%d bytes of script", ErrInvalid, MaxGroupBootstrapBytes)
 	}
 	return spec.validateHTTP()
@@ -125,7 +126,7 @@ func (s *Service) CreateGroup(spec GroupSpec) (Group, error) {
 	if err := s.state.requireAutoscaling(); err != nil {
 		return Group{}, err
 	}
-	if err := spec.validate(); err != nil {
+	if err := spec.validate(&s.state); err != nil {
 		return Group{}, err
 	}
 	if _, err := s.state.group(spec.Name); err == nil {

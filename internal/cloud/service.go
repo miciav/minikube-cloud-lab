@@ -29,6 +29,8 @@ type Service struct {
 	state           snapshot
 	inf             infra.Infra
 	instances       infra.Instances
+	images          infra.Images
+	registries      infra.Registries
 	dir             string
 	logger          *slog.Logger
 	changed         chan struct{}
@@ -36,6 +38,8 @@ type Service struct {
 	groupMetrics    string
 	groupAutoscaler string
 	publishedPolicy string
+	billing         usageLedger
+	billingDir      string
 }
 
 // NewService loads state and reconciles requests interrupted by a previous process.
@@ -48,8 +52,11 @@ func NewService(inf infra.Infra, dataDir string, logger *slog.Logger) (*Service,
 	}
 	s := &Service{inf: inf, dir: dataDir, logger: logger, changed: make(chan struct{}), state: snapshot{Clusters: []Cluster{}, Machines: []Machine{}, Operations: []Operation{}}}
 	s.instances, _ = inf.(infra.Instances)
+	s.images, _ = inf.(infra.Images)
+	s.registries, _ = inf.(infra.Registries)
 	data, err := os.ReadFile(filepath.Join(dataDir, "state.json")) // #nosec G304 -- state lives in the operator-selected data directory.
 	if os.IsNotExist(err) {
+		s.openBilling(time.Now().UTC())
 		return s, nil
 	}
 	if err != nil {
@@ -61,6 +68,7 @@ func NewService(inf infra.Infra, dataDir string, logger *slog.Logger) (*Service,
 	if err := s.reconcile(); err != nil {
 		return nil, err
 	}
+	s.openBilling(time.Now().UTC()) // before retryVolumeDeletions, which stores
 	s.retryVolumeDeletions()
 	return s, nil
 }
@@ -113,6 +121,7 @@ func (s *Service) reconcile() error {
 		}
 	}
 	s.reconcileInstances(now)
+	s.reconcileImages()
 	return save(s.dir, s.state)
 }
 
@@ -168,7 +177,7 @@ func (s *Service) CreateCluster(name, kind string, minM, maxM int, requester str
 	}
 	var observed []infra.Machine
 	s.launch(op.ID, func() error {
-		if err := s.inf.CreateCluster(context.Background(), infra.ClusterSpec{Name: name, KubernetesVersion: "v1.35.6", Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, NodeLabels: NodeLabels(kind)}); err != nil {
+		if err := s.inf.CreateCluster(context.Background(), infra.ClusterSpec{Name: name, KubernetesVersion: "v1.37.3", Shape: infra.MachineShape{CPUs: shape.CPUs, MemoryMiB: shape.MemoryMiB}, NodeLabels: NodeLabels(kind)}); err != nil {
 			return err
 		}
 		for n := 1; n < minM; n++ {

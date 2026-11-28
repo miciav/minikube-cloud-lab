@@ -148,7 +148,7 @@ func (i *Infra) CreateCluster(ctx context.Context, spec infra.ClusterSpec) error
 		KeepContext: true, EmbedCerts: true, MultiNodeRequested: true, ListenAddress: "127.0.0.1", Nodes: []config.Node{n},
 		KubernetesConfig: config.KubernetesConfig{KubernetesVersion: spec.KubernetesVersion, ClusterName: spec.Name, Namespace: "default", APIServerName: "minikubeCA", DNSDomain: "cloudlab.internal", ContainerRuntime: "docker", ServiceCIDR: constants.DefaultServiceCIDR, ImageRepository: "registry.k8s.io", CNI: "flannel", NetworkPlugin: "cni", ExtraOptions: config.ExtraOptionSlice{{Component: "kubelet", Key: "node-labels", Value: strings.Join(labels, ",")}, {Component: "kubelet", Key: "kube-reserved", Value: reserved}}},
 	}
-	if err := configureNodeProfile(cc, host.Rootless, os.Getenv("CLOUD_STORAGE_VOLUME")); err != nil {
+	if err := errors.Join(configureNodeProfile(cc, host.Rootless, os.Getenv("CLOUD_STORAGE_VOLUME")), i.trustLabNetwork(ctx, cc)); err != nil {
 		return err
 	}
 	m, h, r, err := provisionNode(ctx, cc, &cc.Nodes[0])
@@ -171,6 +171,7 @@ func (i *Infra) CreateCluster(ctx context.Context, spec infra.ClusterSpec) error
 	if err != nil {
 		return err
 	}
+	i.trustRegistries(ctx, cc, config.MachineName(*cc, cc.Nodes[0]))
 	settings.EmbedCerts = true
 	settings.ClusterServerAddress, err = forwardedAPIServer(ctx, spec.Name)
 	if err != nil {
@@ -288,6 +289,16 @@ func removeMachine(ctx context.Context, api libmachine.API, name string) error {
 	return api.Remove(name)
 }
 
+// nextWorker names the first free mNN slot and keeps the Kubernetes version the cluster was
+// created with, so clusters made before an upgrade stay on one version.
+func nextWorker(cc *config.ClusterConfig) config.Node {
+	index := 2
+	for slices.ContainsFunc(cc.Nodes, func(x config.Node) bool { return x.Name == fmt.Sprintf("m%02d", index) }) {
+		index++
+	}
+	return config.Node{Name: fmt.Sprintf("m%02d", index), KubernetesVersion: cc.KubernetesConfig.KubernetesVersion, ContainerRuntime: cc.KubernetesConfig.ContainerRuntime, Worker: true}
+}
+
 // AddMachine joins a worker using the cluster shape.
 func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, error) {
 	libraryMu.Lock()
@@ -303,11 +314,7 @@ func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, err
 		return infra.Machine{}, err
 	}
 	cc := p.Config
-	index := 2
-	for slices.ContainsFunc(cc.Nodes, func(x config.Node) bool { return x.Name == fmt.Sprintf("m%02d", index) }) {
-		index++
-	}
-	n := config.Node{Name: fmt.Sprintf("m%02d", index), KubernetesVersion: cc.KubernetesConfig.KubernetesVersion, ContainerRuntime: cc.KubernetesConfig.ContainerRuntime, Worker: true}
+	n := nextWorker(cc)
 	m, h, r, err := provisionNode(ctx, cc, &n)
 	if m != nil {
 		defer func() { _ = m.Close() }()
@@ -324,7 +331,7 @@ func (i *Infra) AddMachine(ctx context.Context, name string) (infra.Machine, err
 	if _, err := startNode(ctx, cc, &n, m, h, r, i.providerIP); err != nil {
 		return partial, err
 	}
-
+	i.trustRegistries(ctx, cc, partial.Name)
 	return infra.Machine{Name: partial.Name, Running: true}, nil
 }
 

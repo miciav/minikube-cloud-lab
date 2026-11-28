@@ -26,6 +26,7 @@ import (
 	"k8s.io/minikube/pkg/libmachine/host"
 	"k8s.io/minikube/pkg/minikube/command"
 	"k8s.io/minikube/pkg/minikube/config"
+	"k8s.io/minikube/pkg/minikube/constants"
 	"k8s.io/minikube/pkg/minikube/machine"
 )
 
@@ -71,7 +72,7 @@ func (failedStartupRunner) RunCmd(*exec.Cmd) (*command.RunResult, error) {
 }
 
 func TestStartupFailureReturnsError(t *testing.T) {
-	_, err := configureRuntime(context.Background(), config.ClusterConfig{KubernetesConfig: config.KubernetesConfig{KubernetesVersion: "v1.35.6", ContainerRuntime: "docker", NetworkPlugin: "cni"}}, failedStartupRunner{command.NewFakeCommandRunner()})
+	_, err := configureRuntime(context.Background(), config.ClusterConfig{KubernetesConfig: config.KubernetesConfig{KubernetesVersion: "v1.37.3", ContainerRuntime: "docker", NetworkPlugin: "cni"}}, failedStartupRunner{command.NewFakeCommandRunner()})
 	if err == nil || !strings.Contains(err.Error(), "startup transport unavailable") {
 		t.Fatalf("startup failure not returned: %v", err)
 	}
@@ -175,5 +176,67 @@ func TestLabelWorkerUsesManagedContextAndPreservesOtherFields(t *testing.T) {
 				t.Fatalf("canceled labeling: %v", err)
 			}
 		})
+	}
+}
+
+func TestNewClustersTrustLabSubnet(t *testing.T) {
+	body, err := json.Marshal(labNetwork("172.30.0.0/23"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeDocker(t, map[string]string{"/networks/minikube-cloud-lab": string(body)})
+	i := &Infra{network: "minikube-cloud-lab"}
+	cc := &config.ClusterConfig{InsecureRegistry: []string{"10.0.0.0/8"}}
+	if err := i.trustLabNetwork(context.Background(), cc); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.trustLabNetwork(context.Background(), cc); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"10.0.0.0/8", "172.30.0.0/23"}; !reflect.DeepEqual(cc.InsecureRegistry, want) {
+		t.Fatalf("InsecureRegistry = %v, want %v", cc.InsecureRegistry, want)
+	}
+	if err := (&Infra{}).trustLabNetwork(context.Background(), cc); err != nil {
+		t.Fatalf("no lab network: %v", err)
+	}
+	fakeDocker(t, map[string]string{"/networks/minikube-cloud-lab": `{"Driver":"bridge"}`})
+	if err := i.trustLabNetwork(context.Background(), &config.ClusterConfig{}); err == nil {
+		t.Fatal("unmanaged network accepted")
+	}
+	fakeDocker(t, map[string]string{})
+	if err := i.trustLabNetwork(context.Background(), &config.ClusterConfig{}); err == nil {
+		t.Fatal("inspect failure ignored")
+	}
+}
+
+func TestNodeEngineTrustsServiceCIDRThenLabSubnet(t *testing.T) {
+	got := engineInsecureRegistries(config.ClusterConfig{InsecureRegistry: []string{"172.30.0.0/23", constants.DefaultServiceCIDR, "172.30.0.0/23"}})
+	if want := []string{constants.DefaultServiceCIDR, "172.30.0.0/23"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("engine insecure registries = %v, want %v", got, want)
+	}
+}
+
+// insecureRegistryRunner accepts every command and stops at containerd's insecure-registry config.
+type insecureRegistryRunner struct {
+	*command.FakeCommandRunner
+	rendered string
+}
+
+func (r *insecureRegistryRunner) RunCmd(cmd *exec.Cmd) (*command.RunResult, error) {
+	if line := strings.Join(cmd.Args, " "); strings.Contains(line, "/etc/containerd/certs.d/") {
+		r.rendered = line
+		return &command.RunResult{}, errors.New("stop after insecure registry")
+	}
+	return &command.RunResult{}, nil
+}
+
+func TestNodeRuntimeTrustsLabSubnet(t *testing.T) {
+	r := &insecureRegistryRunner{FakeCommandRunner: command.NewFakeCommandRunner()}
+	cc := config.ClusterConfig{InsecureRegistry: []string{"172.30.0.0/23"}, KubernetesConfig: config.KubernetesConfig{KubernetesVersion: "v1.35.0", ContainerRuntime: "docker", NetworkPlugin: "cni"}}
+	if _, err := configureRuntime(context.Background(), cc, r); err == nil || !strings.Contains(err.Error(), "stop after insecure registry") {
+		t.Fatalf("containerd did not render insecure registries: %v", err)
+	}
+	if !strings.Contains(r.rendered, "/etc/containerd/certs.d/172.30.0.0/23") {
+		t.Fatalf("rendered %q", r.rendered)
 	}
 }

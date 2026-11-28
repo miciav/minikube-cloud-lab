@@ -24,9 +24,10 @@ type OpStatus string
 
 // MachineType defines an available machine shape.
 type MachineType struct {
-	Name      string `json:"name"`
-	CPUs      int    `json:"cpus"`
-	MemoryMiB int    `json:"memoryMiB"`
+	Name         string  `json:"name"`
+	CPUs         int     `json:"cpus"`
+	MemoryMiB    int     `json:"memoryMiB"`
+	PricePerHour float64 `json:"pricePerHour"`
 }
 
 // Cluster is the student's managed Kubernetes cluster.
@@ -75,9 +76,15 @@ var (
 // ponytail: fixed lab ceiling; make it configurable if hosts outgrow it.
 const MaxMachines = 32
 
+// StoragePricePerGiBMonth is the EUR price of one GiB of volume capacity per month.
+const StoragePricePerGiBMonth = 0.10
+
+const hoursPerMonth = 730
+
 // MachineTypes returns the fixed cloud catalog.
+// ponytail: fixed course prices; make them configurable if instructors ask.
 func MachineTypes() []MachineType {
-	return []MachineType{{Name: "lab-small", CPUs: 2, MemoryMiB: 2048}, {Name: "lab-medium", CPUs: 4, MemoryMiB: 8192}}
+	return []MachineType{{Name: "lab-small", CPUs: 2, MemoryMiB: 2048, PricePerHour: 0.10}, {Name: "lab-medium", CPUs: 4, MemoryMiB: 8192, PricePerHour: 0.40}}
 }
 
 // NodeLabels returns the standard labels applied during machine bootstrap.
@@ -115,6 +122,8 @@ type snapshot struct {
 	Groups      []Group           `json:"instanceGroups,omitempty"`
 	DiskOwners  map[string]string `json:"diskOwners,omitempty"`
 	Instances   []Instance        `json:"instances,omitempty"`
+	Images      []Image           `json:"images,omitempty"`
+	Registries  []registryRecord  `json:"registries,omitempty"`
 	Volumes     []Volume          `json:"volumes,omitempty"`
 	Clusters    []Cluster         `json:"clusters"`
 	Machines    []Machine         `json:"machines"`
@@ -122,7 +131,7 @@ type snapshot struct {
 }
 
 func (st snapshot) clone() snapshot {
-	return snapshot{Autoscaling: st.Autoscaling, Groups: slices.Clone(st.Groups), DiskOwners: maps.Clone(st.DiskOwners), Instances: slices.Clone(st.Instances), Volumes: slices.Clone(st.Volumes), Clusters: slices.Clone(st.Clusters), Machines: slices.Clone(st.Machines), Operations: slices.Clone(st.Operations)}
+	return snapshot{Autoscaling: st.Autoscaling, Groups: slices.Clone(st.Groups), DiskOwners: maps.Clone(st.DiskOwners), Instances: slices.Clone(st.Instances), Images: slices.Clone(st.Images), Registries: slices.Clone(st.Registries), Volumes: slices.Clone(st.Volumes), Clusters: slices.Clone(st.Clusters), Machines: slices.Clone(st.Machines), Operations: slices.Clone(st.Operations)}
 }
 
 func save(dir string, st snapshot) error {

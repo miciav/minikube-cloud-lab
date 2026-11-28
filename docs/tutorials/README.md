@@ -5,6 +5,12 @@ Start with the [course environment](../../README.md#prepare-the-environment). Ea
 ## Compute
 
 - [Standalone Linux instances and data disks](compute/instances-and-disks.md) — bootstrap an instance, connect to it and move its data disk to a second instance. Start with a running cloud.
+- [Golden images](compute/golden-images.md) — configure one Ubuntu instance, capture it as a personal image, launch copies that need no installation and compare with cloud-init. Start with a running cloud.
+- [Container registry](compute/container-registry.md) — build an image in a Debian instance, push it to a lab registry and deploy it on your cluster with a read-only pull Secret. Start with a running cluster.
+
+## Costs
+
+- [Check usage and costs](billing/costs.md) — read `cloud billing` after creating a cluster, scaling it and stopping an instance. Start with a running cloud.
 
 ## Kubernetes workloads and scheduling
 

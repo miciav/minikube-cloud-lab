@@ -23,7 +23,7 @@ repos:
     hooks:
       - id: kubeconform
         name: kubeconform
-        entry: go run github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 -strict -summary -kubernetes-version 1.35.0
+        entry: go run github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 -strict -summary -kubernetes-version 1.37.0
         language: system
         files: ^lab/manifests/.*\.yaml$
 

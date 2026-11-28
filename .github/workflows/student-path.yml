@@ -18,6 +18,7 @@ on:
       - 'tests/managed-services.sh'
       - 'tools/instance-autoscaler/**'
       - 'tests/instance-*.sh'
+      - 'tests/registry*.sh'
       - 'tests/service-exposure.sh'
       - '.github/workflows/student-path.yml'
 permissions:
@@ -35,7 +36,7 @@ env:
   NFS_IMAGE: minikube-cloud-lab/nfs:dev
   UBUNTU_IMAGE: minikube-cloud-lab/instance-ubuntu:dev
   DEBIAN_IMAGE: minikube-cloud-lab/instance-debian:dev
-  KUBECTL_VERSION: v1.35.6
+  KUBECTL_VERSION: v1.37.3
 jobs:
   managed-services:
     runs-on: ubuntu-24.04
@@ -75,6 +76,9 @@ jobs:
               jq -e 'map(rtrimstr("/")) | index("https://mirror.gcr.io") != null'
           }
           check_node_mirror demo
+          lab_subnet="$(docker network inspect minikube-cloud-lab --format '{{(index .IPAM.Config 0).Subnet}}')"
+          docker exec demo docker info --format '{{json .RegistryConfig.InsecureRegistryCIDRs}}' |
+            jq -e --arg subnet "$lab_subnet" 'index($subnet) != null'
           [[ "$(command kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')" == https://127.0.0.1:* ]]
           kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
           export TEST_CLUSTER=demo TEST_NETWORK=minikube-cloud-lab
@@ -110,7 +114,9 @@ jobs:
           # The cloud image must work without either host Kubernetes CLI binary.
           docker compose exec -T cloud sh -c '! command -v minikube && ! command -v kubectl'
           # Verify real runtime quotas as well as what Kubernetes can schedule.
-          test "$(docker inspect demo --format '{{.HostConfig.NanoCpus}}')" = 2000000000
+          # The cloud keeps minikube's NanoCpus or applies an equivalent quota on cgroup v2.
+          cpu_limit=$(docker inspect demo --format '{{.HostConfig.NanoCpus}} {{.HostConfig.CpuQuota}} {{.HostConfig.CpuPeriod}}')
+          [[ $cpu_limit == "2000000000 "* || $cpu_limit == "0 200000 100000" ]]
           test "$(docker inspect demo --format '{{.HostConfig.Memory}}')" = 2147483648
           test "$(kubectl get node demo -o jsonpath='{.status.allocatable.cpu}')" = 2
           lab install autoscaler
@@ -153,12 +159,35 @@ jobs:
           kubectl -n yakd-dashboard rollout status deployment/yakd-dashboard --timeout=5m
           curl --retry 30 --retry-delay 2 --retry-all-errors -fsS http://127.0.0.1:8080/v1/clusters/demo/dashboard
           lab uninstall instance-autoscaling
+          # Recreates the cloud on the way.
+          bash tests/registry.sh
+          TEST_CLOUD_CONTAINER=$(docker compose ps -q cloud)
           bash tests/storage-capacity.sh
           bash tests/storage.sh prepare
           cloud clusters delete demo
           bash tests/service-exposure.sh deleted
           bash tests/storage.sh recover
           TEST_RESTART_CLOUD=1 bash tests/instance-disks.sh
+          # Groups need the module; the script waits for ready=1, as the earlier installs rely on.
+          lab install instance-autoscaling
+          trap 'lab uninstall instance-autoscaling || true' EXIT
+          bash tests/instance-golden-image.sh
+          trap - EXIT
+          lab uninstall instance-autoscaling
+          # Retained volumes in state.json may survive down -v and accrue again, so check resetAt, not an empty list.
+          before=$(curl -fsS http://127.0.0.1:8080/v1/billing)
+          echo "$before" | jq -e '.total > 0 and any(.items[]; .kind == "machine")'
+          docker compose logs --no-color cloud > cloud-before-reset.log 2>&1 || true
+          docker compose down -v
+          if docker volume inspect minikube-cloud-lab-billing >/dev/null 2>&1; then echo 'billing volume survived down -v'; exit 1; fi
+          docker compose up -d cloud
+          for _ in $(seq 1 60); do
+            if cloud machine-types list; then break; fi
+            sleep 2
+          done
+          after=$(curl -fsS http://127.0.0.1:8080/v1/billing)
+          jq -ne --argjson b "$before" --argjson a "$after" '$a.resetAt != $b.resetAt and $a.total < $b.total and all($a.items[]; .kind != "machine")'
+          cloud billing
       - name: Diagnostics
         if: failure() || cancelled()
         run: |
@@ -177,6 +206,7 @@ jobs:
           name: student-path-diagnostics
           path: |
             cloud.log
+            cloud-before-reset.log
             events.txt
             autoscaler.log
             containers.txt

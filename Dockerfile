@@ -22,14 +22,14 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY tools/kubectl/main.go ./
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -mod=readonly -trimpath \
-    -ldflags="-s -w -X k8s.io/client-go/pkg/version.gitVersion=v1.35.10 -X k8s.io/component-base/version.gitVersion=v1.35.10" -o /out/kubectl .
+    -ldflags="-s -w -X k8s.io/client-go/pkg/version.gitVersion=v1.37.3 -X k8s.io/component-base/version.gitVersion=v1.37.3" -o /out/kubectl .
 
 FROM docker:29.9.2-cli AS docker-cli
 
 FROM debian:bookworm-slim AS base
 # Take the Debian release's current security fixes rather than freezing apt package versions.
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates && \
     rm -rf /var/lib/apt/lists/* && mkdir -p /data /kube && chown 65532:65532 /data /kube
 ENV KUBECONFIG=/kube/config HOME=/tmp USER=student
 LABEL org.opencontainers.image.source="https://github.com/miciav/minikube-cloud-lab"
@@ -59,7 +59,7 @@ FROM ghcr.io/opentofu/opentofu:1.13.9-minimal@sha256:84af0049634b7a7c455ab79c485
 
 FROM python:3.13-slim-bookworm AS lab
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends nano openssh-client libnss-wrapper && \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends nano openssh-client libnss-wrapper && \
     rm -rf /var/lib/apt/lists/* && pip install --no-cache-dir ansible-core==2.21.6 && \
     pip uninstall -y pip && \
     ln -s /usr/lib/*/libnss_wrapper.so /opt/libnss_wrapper.so
@@ -76,7 +76,7 @@ ENTRYPOINT ["lab"]
 
 FROM debian:bookworm-slim AS nfs
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends nfs-ganesha nfs-ganesha-vfs rpcbind supervisor && \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends nfs-ganesha nfs-ganesha-vfs rpcbind supervisor && \
     rm -rf /var/lib/apt/lists/* && mkdir -p /var/run/ganesha /export && chmod 0777 /export
 COPY --from=build /out/storage-nfs /usr/local/bin/storage-nfs
 COPY storage/supervisord.conf /etc/supervisor/conf.d/nfs.conf

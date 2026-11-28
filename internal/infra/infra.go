@@ -4,6 +4,7 @@ package infra
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 type (
@@ -31,6 +32,7 @@ type InstanceSpec struct {
 	Bootstrap     string
 	SSHUser       string
 	UserData      string
+	Custom        bool   // Image names a personal image.
 	AuthorizedKey string // One authorized_keys line.
 }
 
@@ -52,6 +54,56 @@ type Instances interface {
 	Instances(context.Context) ([]Instance, error)
 	DeleteOwnedInstance(context.Context, string, string) error
 	InstanceLoadBalancerRunning(context.Context) (bool, error)
+}
+
+// ImageSpec describes a personal image captured from a stopped standalone instance.
+type ImageSpec struct {
+	Name, Instance string
+	SSHUser        string
+	SourceKey      string // authorized_keys line the cloud installed on the source instance
+}
+
+// CapturedImage is what a capture observed.
+type CapturedImage struct {
+	Bytes     int64
+	CloudInit bool
+}
+
+// Images manages personal images captured from standalone instances.
+type Images interface {
+	CaptureImage(context.Context, ImageSpec) (CapturedImage, error)
+	DeleteImage(context.Context, string) error         // An absent image is success.
+	ImageExists(context.Context, string) (bool, error) // Both the image and its /var volume.
+}
+
+// RegistrySpec describes a container registry and its two accounts.
+type RegistrySpec struct {
+	Name                   string
+	PushUser, PushPassword string // read/write
+	PullUser, PullPassword string // read-only
+}
+
+// RegistryInfo is the observed state of a registry container.
+type RegistryInfo struct {
+	Name, IP string
+	Running  bool
+}
+
+// RegistryImage is one tag stored in a registry.
+type RegistryImage struct {
+	Repository string    `json:"repository"`
+	Tag        string    `json:"tag"`
+	Bytes      int64     `json:"bytes"`
+	Pushed     time.Time `json:"pushed"`
+}
+
+// Registries manages container registries whose data outlives their containers.
+type Registries interface {
+	CreateRegistry(context.Context, RegistrySpec) (RegistryInfo, error) // Creates or replaces the container on existing data.
+	DeleteRegistry(context.Context, string) error                       // Removes container and data; an absent registry is success.
+	StopRegistries(context.Context) error                               // Removes every registry container and keeps the data.
+	RegistryImages(context.Context, RegistrySpec) ([]RegistryImage, error)
+	RegistryBytes(context.Context, string) (int64, error)
 }
 
 // Infra manages cluster and machine lifecycles.

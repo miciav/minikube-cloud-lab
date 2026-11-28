@@ -94,7 +94,7 @@ jobs:
           docker run --rm --entrypoint lab-tool minikube-cloud-lab/lab:dev ansible-playbook --version
           docker run --rm --network none --user "$(id -u):$(id -g)" --entrypoint lab-tool \
             -v "$PWD/lab/capstone:/workspace" -w /workspace minikube-cloud-lab/lab:dev tofu -chdir=infrastructure init -backend=false
-          docker run --rm --entrypoint kubectl minikube-cloud-lab/lab:dev version --client | grep -Fx 'Client Version: v1.35.10'
+          docker run --rm --entrypoint kubectl minikube-cloud-lab/lab:dev version --client | grep -Fx 'Client Version: v1.37.3'
           docker run --rm --entrypoint docker minikube-cloud-lab/cloud:dev --version
           docker run --rm --entrypoint sh minikube-cloud-lab/instance-ubuntu:dev -c 'test ! -e /usr/sbin/policy-rc.d && ! ls /etc/ssh/ssh_host_* 2>/dev/null && id ubuntu && sudo -l -U ubuntu | grep -q NOPASSWD'
           bash tests/instance-image-boot.sh minikube-cloud-lab/instance-ubuntu:dev

@@ -34,6 +34,7 @@ func (i *Infra) RunServiceExposure(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = client.Close() }()
+	i.cleanupImageHelpersLogged(ctx, client)
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {

@@ -17,6 +17,8 @@ type Call struct {
 	Method, Cluster, Machine string
 	Spec                     infra.ClusterSpec
 	Instance                 infra.InstanceSpec
+	Image                    infra.ImageSpec
+	Registry                 infra.RegistrySpec
 }
 
 // Infra records requests and supports errors and delays configured before use.
@@ -24,16 +26,22 @@ type Infra struct {
 	mu        sync.Mutex
 	machines  map[string][]infra.Machine
 	instances map[string]infra.Instance
-	calls     []Call
-	next      int
-	created   int
-	Errors    map[string]error
-	Delay     time.Duration
+	images    map[string]bool
+	// registries are containers; registryData are data volumes and their images.
+	registries   map[string]infra.RegistryInfo
+	registryData map[string][]infra.RegistryImage
+	calls        []Call
+	next         int
+	created      int
+	Errors       map[string]error
+	Delay        time.Duration
+	// ImageCloudInit is reported by every capture.
+	ImageCloudInit bool
 }
 
 // New returns an empty fake backend.
 func New() *Infra {
-	return &Infra{machines: make(map[string][]infra.Machine), instances: make(map[string]infra.Instance), Errors: make(map[string]error)}
+	return &Infra{machines: make(map[string][]infra.Machine), instances: make(map[string]infra.Instance), images: make(map[string]bool), registries: make(map[string]infra.RegistryInfo), registryData: make(map[string][]infra.RegistryImage), Errors: make(map[string]error)}
 }
 
 func (f *Infra) record(ctx context.Context, c Call) error {
@@ -251,4 +259,134 @@ func (f *Infra) SetDashboard(ctx context.Context, name, _ string, enabled bool) 
 		method = "InstallDashboard"
 	}
 	return f.record(ctx, Call{Method: method, Cluster: name})
+}
+
+// CaptureImage stores the image name and reports a fixed size.
+func (f *Infra) CaptureImage(ctx context.Context, spec infra.ImageSpec) (infra.CapturedImage, error) {
+	if err := f.record(ctx, Call{Method: "CaptureImage", Image: spec}); err != nil {
+		return infra.CapturedImage{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.images[spec.Name] = true
+	return infra.CapturedImage{Bytes: 1 << 20, CloudInit: f.ImageCloudInit}, nil
+}
+
+// DeleteImage removes an image; an absent one is already deleted.
+func (f *Infra) DeleteImage(ctx context.Context, name string) error {
+	if err := f.record(ctx, Call{Method: "DeleteImage", Image: infra.ImageSpec{Name: name}}); err != nil {
+		return err
+	}
+	f.ForgetImage(name)
+	return nil
+}
+
+// ImageExists reports whether a capture stored the image.
+func (f *Infra) ImageExists(ctx context.Context, name string) (bool, error) {
+	if err := f.record(ctx, Call{Method: "ImageExists", Image: infra.ImageSpec{Name: name}}); err != nil {
+		return false, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.images[name], nil
+}
+
+// ForgetImage drops an image without a call, as a runtime prune would.
+func (f *Infra) ForgetImage(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.images, name)
+}
+
+// CreateRegistry runs a registry container on its existing or new data.
+func (f *Infra) CreateRegistry(ctx context.Context, spec infra.RegistrySpec) (infra.RegistryInfo, error) {
+	if err := f.record(ctx, Call{Method: "CreateRegistry", Registry: spec}); err != nil {
+		return infra.RegistryInfo{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r := infra.RegistryInfo{Name: spec.Name, IP: fmt.Sprintf("172.30.0.%d", 200+f.created), Running: true}
+	f.created++
+	f.registries[spec.Name] = r
+	if _, ok := f.registryData[spec.Name]; !ok {
+		f.registryData[spec.Name] = nil // new, empty data
+	}
+	return r, nil
+}
+
+// DeleteRegistry removes a registry container and its data.
+func (f *Infra) DeleteRegistry(ctx context.Context, name string) error {
+	if err := f.record(ctx, Call{Method: "DeleteRegistry", Registry: infra.RegistrySpec{Name: name}}); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.registries, name)
+	delete(f.registryData, name)
+	return nil
+}
+
+// StopRegistries removes every registry container and keeps the data.
+func (f *Infra) StopRegistries(ctx context.Context) error {
+	if err := f.record(ctx, Call{Method: "StopRegistries"}); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	clear(f.registries)
+	return nil
+}
+
+// Registries returns the registry containers sorted by name.
+func (f *Infra) Registries(ctx context.Context) ([]infra.RegistryInfo, error) {
+	if err := f.record(ctx, Call{Method: "Registries"}); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]infra.RegistryInfo, 0, len(f.registries))
+	for _, r := range f.registries {
+		out = append(out, r)
+	}
+	slices.SortFunc(out, func(a, b infra.RegistryInfo) int { return strings.Compare(a.Name, b.Name) })
+	return out, nil
+}
+
+// RegistryImages returns the images stored in a registry's data.
+func (f *Infra) RegistryImages(ctx context.Context, spec infra.RegistrySpec) ([]infra.RegistryImage, error) {
+	if err := f.record(ctx, Call{Method: "RegistryImages", Registry: spec}); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.registryData[spec.Name]), nil
+}
+
+// RegistryBytes sums the image sizes in a registry's data.
+func (f *Infra) RegistryBytes(ctx context.Context, name string) (int64, error) {
+	if err := f.record(ctx, Call{Method: "RegistryBytes", Registry: infra.RegistrySpec{Name: name}}); err != nil {
+		return 0, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var total int64
+	for _, image := range f.registryData[name] {
+		total += image.Bytes
+	}
+	return total, nil
+}
+
+// SetRegistryImages replaces a registry's stored images, as pushes would.
+func (f *Infra) SetRegistryImages(name string, images ...infra.RegistryImage) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.registryData[name] = images
+}
+
+// RegistryData reports whether a registry's data exists.
+func (f *Infra) RegistryData(name string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.registryData[name]
+	return ok
 }

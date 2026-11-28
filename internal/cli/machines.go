@@ -16,9 +16,9 @@ func addMachineCommands(root *cobra.Command) {
 			return err
 		}
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintln(w, "NAME\tCPUS\tMEMORY_MIB")
+		_, _ = fmt.Fprintln(w, "NAME\tCPUS\tMEMORY_MIB\tPRICE_EUR_HOUR")
 		for _, kind := range items {
-			_, _ = fmt.Fprintf(w, "%s\t%d\t%d\n", kind.Name, kind.CPUs, kind.MemoryMiB)
+			_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%.4f\n", kind.Name, kind.CPUs, kind.MemoryMiB, kind.PricePerHour)
 		}
 		return w.Flush()
 	}})

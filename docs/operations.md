@@ -5,7 +5,7 @@ Use this guide to inspect a running lab, reach its endpoints or recover state. F
 ## Docker host and credentials
 
 You need Docker Engine on Linux or Docker Desktop on macOS, Compose v2, access
-to the local Docker socket. The lab image includes `kubectl` v1.35.10.
+to the local Docker socket. The lab image includes `kubectl` v1.37.3.
 The `cloud` and `lab` tools run in containers on both platforms; no Go install
 or native project binaries are needed. For the default experiment, provide
 at least 6 CPUs and 6 GiB of available memory. The images support Linux amd64
@@ -40,6 +40,13 @@ images, including workers added by the autoscaler. If an image is not cached,
 Docker falls back to Docker Hub and its rate limits still apply. The setting is
 applied when nodes are created; delete and recreate an existing cluster to use it.
 The Docker daemon on your computer is not configured by this project.
+
+New clusters run Kubernetes v1.37.3. A cluster keeps the version it was created with,
+workers added later included, so clusters from before the upgrade stay on v1.35.6.
+Run `cloud clusters delete` and `cloud clusters create` to move one to v1.37.3.
+Recreate such clusters before using the lab images: `kubectl` v1.37.3 and Cluster
+Autoscaler v1.37.0 are two minor versions ahead of v1.35, outside the supported skew.
+`kubectl get nodes` shows the version of each node.
 
 Wait until `cloud machine-types list` responds before creating the cluster.
 The first start downloads node images and Kubernetes components and may take
@@ -97,6 +104,8 @@ measurements are labelled; the cluster tab works independently of the optional h
 
 Install `monitoring` to collect samples every 15 seconds. Select **Monitoring** in the main navigation and choose 15 minutes, one hour or 24 hours. Cluster usage is shown in cores and MiB. Queue gauges estimate available, in-flight and delayed messages. Bucket gauges show object count and logical bytes. A gap indicates a missed observation. A measured zero means the source actually returned zero. History survives closing the browser and `lab uninstall monitoring`. Reinstall to inspect retained samples within the retention period. To erase the owned volume, run `lab uninstall monitoring` followed by `lab purge monitoring --yes`.
 
+The **Costs** section shows the same figures as `cloud billing` for three periods: Since reset, Last hour and Last 30 minutes.
+
 The **Kubernetes** tab embeds the automatically installed YAKD dashboard using its
 existing localhost Service endpoint. YAKD provides workload details and logs; it is
 not rewritten or proxied under a different URL path. A separate link opens the same
@@ -130,7 +139,7 @@ its capacity stays reserved until reconciliation or cluster deletion.
 Delete the cluster before `docker compose down`, so Compose can remove its
 network. Stopping the service preserves data and machines; if nodes remain,
 Docker refuses to remove the network while it is in use.
-**Before deleting the Docker state directory**, uninstall any instance groups, delete standalone instances you own through the cloud, and back up data you need. Run `cloud clusters delete NAME` for the managed cluster and
+**Before deleting the Docker state directory**, uninstall any instance groups, delete standalone instances you own through the cloud, delete registries with `cloud registries delete NAME --force`, and back up data you need. Run `cloud clusters delete NAME` for the managed cluster and
 wait for it to finish. Removing only the files would lose the references to
 Docker resources. Then, to clear the operation history as well:
 
@@ -138,6 +147,8 @@ Docker resources. Then, to clear the operation history as well:
 docker compose down
 rm -rf "$HOME/.minikube-cloud-lab"
 ```
+
+The reset keeps the registries volume. Data of a registry you did not delete stays there and reappears, under new credentials, in a new registry with the same name. To erase it too, use `labcompose down -v`, which also removes the other named volumes.
 
 The kubeconfig context remains after cluster deletion; other contexts are
 preserved. Do not delete all of `~/.kube` to reset this lab.
@@ -178,6 +189,19 @@ cluster name, inspect any volume named `NAME-mNN` with `docker volume inspect`.
 Remove it only after confirming it belongs to the deleted lab and no container
 uses it; the cloud does not automatically delete historical orphan volumes.
 
+## Personal images
+
+`cloud images create` stores each personal image in the local container runtime: an image plus a volume holding a copy of `/var`. Each clone launched from it receives another copy, so disk usage grows with the size of `/var` and with the number of instances. The cloud allows at most 8 personal images. `docker image prune -a` or `docker volume prune` (`podman` on Podman) can remove them behind the cloud's back; the next start then marks the image `ERROR`. Delete it with `cloud images delete NAME`, never with the runtime, and capture it again. See the [golden images tutorial](tutorials/compute/golden-images.md).
+Downgrading the cloud to a version without personal images drops the image catalog from the state on its first save and orphans the `localhost/minikube-cloud-lab/image-*` images and `mcl-image-*-var` volumes. Delete personal images through the cloud before downgrading.
+
+## Container registries
+
+Each registry is a small container on the lab network, reachable as `NAME.registry:5000` from instances and cluster nodes, and serves plain HTTP only (no TLS): keep it to course images on a trusted host. A registry lives with the cloud: stopping the cloud removes its registry containers, and starting it recreates every registry on its existing data. While the cloud is down, pulls fail and the kubelet retries. Startup removes every registry container and recreates only the registries recorded in `state.json`. A registry without a record, for example after a restored `state.json`, keeps its data in the registries volume until `labcompose down -v`; creating a registry with the same name brings that data back under new credentials.
+
+Registry data lives in the `minikube-cloud-lab-registries` volume (`minikube-cloud-lab-rootless-registries` on Podman). `labcompose down` keeps it; `labcompose down -v` deletes all registry data. On rootful Docker `state.json` survives in `~/.minikube-cloud-lab`, so the registries come back empty with the same names and credentials. On rootless Podman the cloud state is itself a named volume that `down -v` removes, so the registries are gone entirely. Downgrading the cloud to a version without registries drops them from the state on its first save; delete registries through the cloud before downgrading. On rootful Docker each registry mounts its directory as a volume subpath, which needs Docker Engine 26 (API 1.45) or later, like instance data disks.
+
+Docker-runtime nodes trust the whole lab subnet for HTTP pulls, but only in clusters created after this feature, including nodes added to them later: delete and recreate older clusters, whose pulls otherwise fail with `http: server gave HTTP response to HTTPS client`. Clusters on rootless Podman run containerd, which the cloud configures with one entry per registry on every node, existing nodes included, so older clusters need no recreation there; that path is not verified in CI. Instances are not nodes: students add the subnet to `insecure-registries` in the instance's `/etc/docker/daemon.json`, as the [registry tutorial](tutorials/compute/container-registry.md) shows.
+
 ## Cloud storage
 
 The cloud automatically installs storage classes for dynamically provisioned NFS volumes. `cloud-standard` deletes released volumes; `cloud-retain` preserves them for recovery. Deleting a cluster conservatively retains its remaining volumes, which can be removed explicitly. `cloud volumes list` displays their state. See the [storage tutorial](tutorials/storage/persistent-volumes.md) for creation and recovery across clusters.
@@ -200,3 +224,11 @@ restart NFS afterward with `docker compose restart nfs`. Keep backups; do not us
 Each managed service owns a separate Compose project and one named volume. Its private bootstrap settings live under `~/.minikube-cloud-lab/services/<runtime>/<project>-<module>/`. Preserve the volume and this directory together when moving a lab. Reuse the installed PostgreSQL major version when restoring its volume. The core project's Compose shutdown and cluster deletion leave these service projects independent. To release resources use `lab uninstall NAME`; use `lab status NAME` to see retained data.
 
 For diagnostics inspect the service container with the runtime's logs command. Filter container inventory by the `com.docker.compose.project` label. A failed first install can be retried after resolving image, port or filesystem errors. Keep the existing volume when credentials are missing and restore the matching private configuration.
+
+## Usage and cost ledger
+
+The cloud meters fictitious costs: `lab-small` 0.10 EUR per hour, `lab-medium` 0.40 EUR per hour, and storage 0.10 EUR per GiB per month (730 hours). Cluster machines (including the control plane) accrue from creation until removal. Instances accrue except while `STOPPED`; their root disk is free. Kubernetes volumes (bound or retained) and data disks accrue storage for their size until deleted. Managed services, load balancers and Pods are not billed.
+
+The ledger is `usage.json` in `CLOUD_BILLING_DIR`. Compose sets it to `/data/billing`, on the `minikube-cloud-lab-billing` volume (`minikube-cloud-lab-rootless-billing` with Podman). `docker compose down` keeps it and time keeps accruing for running resources. `labcompose down -v` removes the volume, so the count restarts from zero; resources that survive start accruing again from the reset. A corrupt ledger is replaced by a fresh one. The meter never limits or blocks anything.
+
+`cloud billing` and `GET /v1/billing?since=` read it. The CLI and portal show costs with six decimals and mark each resource `accruing` (Accruing) while billed or `ended` (Ended) otherwise. `since` is a Go duration (`30m`) or an RFC3339 time; future, negative or unparsable values return 400, and a time before the reset is clamped to the reset.

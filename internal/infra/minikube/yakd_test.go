@@ -21,7 +21,7 @@ import (
 func yakdConfig(t *testing.T, server string) *config.ClusterConfig {
 	t.Helper()
 	_, _ = isolatedBackend(t)
-	cc := &config.ClusterConfig{Name: "demo", KubernetesConfig: config.KubernetesConfig{KubernetesVersion: "v1.35.6", ImageRepository: "registry.k8s.io"}}
+	cc := &config.ClusterConfig{Name: "demo", KubernetesConfig: config.KubernetesConfig{KubernetesVersion: "v1.37.3", ImageRepository: "registry.k8s.io"}}
 	if err := config.SaveProfile(cc.Name, cc); err != nil {
 		t.Fatal(err)
 	}

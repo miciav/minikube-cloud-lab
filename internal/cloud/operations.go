@@ -50,6 +50,9 @@ func (s *Service) store(next snapshot) error {
 		return err
 	}
 	s.state = next
+	if s.billing.reconcile(billableResources(next), []string{"machine", "instance", "volume"}, time.Now().UTC()) {
+		s.saveBilling()
+	}
 	s.notify()
 	return nil
 }

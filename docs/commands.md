@@ -8,7 +8,8 @@ Run the commands from a checkout after `source scripts/configure.sh`. `cloud` ma
 | `lab install monitoring` / `lab status monitoring` / `lab uninstall monitoring` | Start, inspect or stop collection. History survives uninstall. |
 | `lab purge monitoring --yes` | Erase the disabled module’s history. |
 | `cloud serve` | Starts the management API and externalgrpc service; `--data-dir`, `--api` (loopback), `--grpc` |
-| `cloud machine-types list` | Displays the catalog |
+| `cloud machine-types list` | Displays the catalog with `PRICE_EUR_HOUR` |
+| `cloud billing [--since 30m\|RFC3339]` | Shows the cost since the last reset or since a Go duration or RFC3339 time, per resource (`STATUS` `accruing` or `ended`, costs with six decimals) with a `TOTAL` line; see [costs](tutorials/billing/costs.md) |
 | `cloud clusters create NAME` | `--machine-type lab-small`, `--min-nodes 1`, `--max-nodes 3`, `--async` |
 | `cloud clusters list` | Lists the managed cluster |
 | `cloud clusters describe NAME` | Displays machine type, size limits, and status |
@@ -18,8 +19,10 @@ Run the commands from a checkout after `source scripts/configure.sh`. `cloud` ma
 | `cloud machines list` | Optional `--cluster NAME` filter |
 | `cloud volumes list` / `cloud volumes delete ID` | List volumes or delete an available volume |
 | `cloud volumes create --capacity SIZE` / `publish ID --cluster NAME` / `unpublish ID` | Allocate and publish a static volume or release its cluster binding |
-| `cloud images list` | Displays the standalone instance images |
-| `cloud instances create NAME` | `--image ubuntu-26.04` (or `debian-12`), `--machine-type lab-small`, `--async` |
+| `cloud images list` / `describe NAME` | Displays the built-in and personal instance images |
+| `cloud images create NAME --from INSTANCE` | Captures a stopped standalone instance without data disks as a personal image; `--description TEXT`, `--async` |
+| `cloud images delete NAME` | Removes a personal image unless an instance or group uses it; `--async` |
+| `cloud instances create NAME` | `--image ubuntu-26.04` (`debian-12` or a personal image), `--machine-type lab-small`, `--async` |
 | `cloud instances list` / `describe NAME` | Lists instances or displays one, with status and IP |
 | `cloud instances stop NAME` / `start NAME` / `delete NAME` | Lifecycle requests; `--async` |
 | `cloud instances ssh NAME [-- COMMAND...]` | Opens a shell, or runs a command and returns its exit status |
@@ -28,11 +31,14 @@ Run the commands from a checkout after `source scripts/configure.sh`. `cloud` ma
 | `lab install MODULE` / `lab status MODULE` / `lab uninstall MODULE` | Manage `autoscaler`, `instance-autoscaling` or `yakd`; see [scope and removal](../README.md#optional-modules) |
 | `lab load start` / `lab load stop` | Creates / deletes the workload; `start --replicas N` |
 | `lab services` | Show local endpoints for exposed Kubernetes Services |
-| `cloud groups create NAME` / `resize NAME` / `delete NAME` | Create a group, change desired capacity or remove its members |
+| `cloud groups create NAME` / `resize NAME` / `delete NAME` | Create a group, change desired capacity or remove its members; `--bootstrap` is optional with a personal image |
 | `cloud groups list` / `describe NAME` | Inspect desired and ready capacity |
 | `cloud disks create NAME` / `attach NAME` / `detach NAME` / `delete NAME` | Manage a standalone instance data disk |
 | `cloud disks list` / `cloud disks shell INSTANCE DISK` | Inspect disks or open the rootless disk console |
 | `cloud storage status` | Inspect the Kubernetes volume allocation budget |
+| `cloud registries create NAME` / `delete NAME [--force]` | Create a container registry at `NAME.registry:5000` (at most 3), or delete it; a registry that holds images needs `--force`; see the [registry tutorial](tutorials/compute/container-registry.md) |
+| `cloud registries list` / `images NAME` | List registries, or the repositories and tags in one with size in bytes |
+| `cloud registries credentials NAME --push\|--pull` | Print the endpoint, user name and password of the read/write or read-only account |
 
 ## Growing an existing cluster
 

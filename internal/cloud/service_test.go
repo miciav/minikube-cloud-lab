@@ -120,7 +120,7 @@ func TestCreateClusterPassesShapeAndLabels(t *testing.T) {
 			}
 			wait(t, s, op)
 			call := f.Calls()[0]
-			if call.Spec.Shape.CPUs != tc.cpus || call.Spec.Shape.MemoryMiB != tc.memoryMiB || call.Spec.KubernetesVersion != "v1.35.6" {
+			if call.Spec.Shape.CPUs != tc.cpus || call.Spec.Shape.MemoryMiB != tc.memoryMiB || call.Spec.KubernetesVersion != "v1.37.3" {
 				t.Fatalf("shape: %+v", call.Spec)
 			}
 			for k, v := range map[string]string{"node.kubernetes.io/instance-type": tc.kind, "topology.kubernetes.io/region": "lab-region-1", "topology.kubernetes.io/zone": "lab-region-1-a"} {
