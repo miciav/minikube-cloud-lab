@@ -1,21 +1,41 @@
 package cli
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/miciav/minikube-cloud-lab/internal/api"
+	"github.com/miciav/minikube-cloud-lab/internal/cloud"
 	"github.com/miciav/minikube-cloud-lab/internal/infra/fake"
 )
 
 func TestImagesList(t *testing.T) {
-	_, url := setup(t, nil)
-	out, err := execute(t, url, "images", "list")
+	dir := t.TempDir()
+	state := `{"images":[{"name":"web","status":"AVAILABLE","source":"vm1","base":"debian-12","bytes":2048,"createdAt":"2026-01-02T03:04:05Z","description":"my web"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(state), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := cloud.NewService(fake.New(), dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"NAME", "SSH_USER", "ubuntu-26.04", "ubuntu", "debian-12", "docker"} {
+	server := httptest.NewServer(api.NewServer(s))
+	t.Cleanup(server.Close)
+	out, err := execute(t, server.URL, "images", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(out, "\n")
+	if strings.Join(strings.Fields(lines[0]), " ") != "NAME SOURCE BASE STATUS SIZE CREATED DESCRIPTION" {
+		t.Fatalf("header: %q", lines[0])
+	}
+	if f := strings.Fields(lines[1]); f[0] != "ubuntu-26.04" || f[1] != "built-in" || f[2] != "ubuntu-26.04" || f[3] != "AVAILABLE" || f[4] != "-" || f[5] != "-" {
+		t.Fatalf("builtin row: %q", lines[1])
+	}
+	for _, want := range []string{"debian-12", "web", "instance/vm1", "2048", "2026-", "my web"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
@@ -135,4 +155,78 @@ func TestInstanceUserData(t *testing.T) {
 		}
 	}
 	t.Fatal("cloud-config did not reach the backend intact")
+}
+
+func TestImageLifecycleCommands(t *testing.T) {
+	s, url := setup(t, nil)
+	for _, args := range [][]string{{"instances", "create", "vm1"}, {"instances", "stop", "vm1"}} {
+		if _, err := execute(t, url, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := execute(t, url, "images", "create", "web"); err == nil {
+		t.Fatal("--from must be required")
+	}
+	if out, err := execute(t, url, "images", "create", "web", "--from", "vm1", "--description", "my web"); err != nil || out != "Created image web\n" {
+		t.Fatalf("create: %q %v", out, err)
+	}
+	out, err := execute(t, url, "images", "describe", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Name:", "web", "Status:", "AVAILABLE", "instance/vm1", "my web", "SSH user:", "Cloud-init:", "no"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("describe missing %q in:\n%s", want, out)
+		}
+	}
+	out, err = execute(t, url, "images", "describe", "debian-12")
+	if err != nil || !strings.Contains(out, "built-in") || strings.Contains(out, "Error:") {
+		t.Fatalf("builtin describe: %q %v", out, err)
+	}
+	if _, err := execute(t, url, "images", "describe", "missing"); err == nil {
+		t.Fatal("missing image described")
+	}
+	out, err = execute(t, url, "images", "create", "web2", "--from", "vm1", "--async")
+	if err != nil || !strings.HasPrefix(out, "op-") {
+		t.Fatalf("async create: %q %v", out, err)
+	}
+	if op, err := s.Operation(strings.TrimSpace(out)); err != nil {
+		t.Fatal(err)
+	} else {
+		wait(t, s, op)
+	}
+	if out, err := execute(t, url, "images", "delete", "web"); err != nil || out != "Deleted image web\n" {
+		t.Fatalf("delete: %q %v", out, err)
+	}
+	out, err = execute(t, url, "images", "delete", "web2", "--async")
+	if err != nil || !strings.HasPrefix(out, "op-") {
+		t.Fatalf("async delete: %q %v", out, err)
+	}
+	if op, err := s.Operation(strings.TrimSpace(out)); err != nil {
+		t.Fatal(err)
+	} else {
+		wait(t, s, op)
+	}
+	if _, err := execute(t, url, "images", "delete", "web"); err == nil {
+		t.Fatal("delete of missing image succeeded")
+	}
+}
+
+func TestImageDescribeShowsError(t *testing.T) {
+	dir := t.TempDir()
+	state := `{"images":[{"name":"bad","status":"ERROR","source":"vm1","base":"debian-12","sshUser":"u","cloudInit":true,"error":"boom"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(state), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f := fake.New()
+	s, err := cloud.NewService(f, dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(api.NewServer(s))
+	t.Cleanup(server.Close)
+	out, err := execute(t, server.URL, "images", "describe", "bad")
+	if err != nil || !strings.Contains(out, "Error:") || !strings.Contains(out, "boom") || !strings.Contains(out, "yes") {
+		t.Fatalf("describe: %q %v", out, err)
+	}
 }

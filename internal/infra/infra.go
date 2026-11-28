@@ -31,6 +31,7 @@ type InstanceSpec struct {
 	Bootstrap     string
 	SSHUser       string
 	UserData      string
+	Custom        bool   // Image names a personal image.
 	AuthorizedKey string // One authorized_keys line.
 }
 
@@ -52,6 +53,26 @@ type Instances interface {
 	Instances(context.Context) ([]Instance, error)
 	DeleteOwnedInstance(context.Context, string, string) error
 	InstanceLoadBalancerRunning(context.Context) (bool, error)
+}
+
+// ImageSpec describes a personal image captured from a stopped standalone instance.
+type ImageSpec struct {
+	Name, Instance string
+	SSHUser        string
+	SourceKey      string // authorized_keys line the cloud installed on the source instance
+}
+
+// CapturedImage is what a capture observed.
+type CapturedImage struct {
+	Bytes     int64
+	CloudInit bool
+}
+
+// Images manages personal images captured from standalone instances.
+type Images interface {
+	CaptureImage(context.Context, ImageSpec) (CapturedImage, error)
+	DeleteImage(context.Context, string) error         // An absent image is success.
+	ImageExists(context.Context, string) (bool, error) // Both the image and its /var volume.
 }
 
 // Infra manages cluster and machine lifecycles.

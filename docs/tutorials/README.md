@@ -5,6 +5,7 @@ Start with the [course environment](../../README.md#prepare-the-environment). Ea
 ## Compute
 
 - [Standalone Linux instances and data disks](compute/instances-and-disks.md) — bootstrap an instance, connect to it and move its data disk to a second instance. Start with a running cloud.
+- [Golden images](compute/golden-images.md) — configure one Ubuntu instance, capture it as a personal image, launch copies that need no installation and compare with cloud-init. Start with a running cloud.
 
 ## Kubernetes workloads and scheduling
 

@@ -32,16 +32,69 @@ func createInstance(t *testing.T, s *cloud.Service, name string) {
 	}
 }
 
-func TestImagesCatalog(t *testing.T) {
-	want := []cloud.Image{
-		{Name: "ubuntu-26.04", Description: "Ubuntu 26.04 LTS; install Docker yourself", SSHUser: "ubuntu"},
-		{Name: "debian-12", Description: "Debian 12 (minikube kicbase) with Docker Engine", SSHUser: "docker"},
+// seedImages starts a service whose state already holds personal images.
+func seedImages(t *testing.T, images ...cloud.Image) *cloud.Service {
+	t.Helper()
+	s, _ := seedImagesFake(t, images...)
+	return s
+}
+
+func seedImagesFake(t *testing.T, images ...cloud.Image) (*cloud.Service, *fake.Infra) {
+	t.Helper()
+	dir := t.TempDir()
+	data, err := json.Marshal(map[string]any{"images": images})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := cloud.Images(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("catalog: %+v", got)
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), data, 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := cloud.LookupImage("ubuntu"); !errors.Is(err, cloud.ErrInvalid) {
+	f := fake.New()
+	for _, image := range images {
+		if _, err := f.CaptureImage(context.Background(), infra.ImageSpec{Name: image.Name}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := cloud.NewService(f, dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, f
+}
+
+func TestImagesListsBuiltinsThenPersonal(t *testing.T) {
+	s := seedImages(t, cloud.Image{Name: "zeta", Status: "AVAILABLE"}, cloud.Image{Name: "alpha", Status: "AVAILABLE"})
+	var got []string
+	for _, image := range s.Images() {
+		got = append(got, image.Name)
+	}
+	if want := []string{"ubuntu-26.04", "debian-12", "alpha", "zeta"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("catalog: %v", got)
+	}
+	if first := s.Images()[0]; first.Status != "AVAILABLE" || !first.CloudInit || first.Base != "ubuntu-26.04" {
+		t.Fatalf("builtin: %+v", first)
+	}
+}
+
+func TestCreateInstanceRejectsUnavailableImage(t *testing.T) {
+	s := seedImages(t, cloud.Image{Name: "web", Status: "CREATING", SSHUser: "ubuntu"})
+	if _, err := s.CreateInstance("vm", "web", "lab-small", "student", ""); !errors.Is(err, cloud.ErrFailedPrecondition) {
+		t.Fatalf("creating image: %v", err)
+	}
+	if _, err := s.CreateInstance("vm", "ubuntu", "lab-small", "student", ""); !errors.Is(err, cloud.ErrInvalid) {
 		t.Fatalf("unknown image: %v", err)
+	}
+}
+
+func TestCreateInstanceAcceptsPersonalImage(t *testing.T) {
+	s := seedImages(t, cloud.Image{Name: "web", Status: "AVAILABLE", SSHUser: "ubuntu"})
+	op, err := s.CreateInstance("vm", "web", "lab-small", "student", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait(t, s, op)
+	if got, err := s.Instance("vm"); err != nil || got.Image != "web" || got.SSHUser != "ubuntu" {
+		t.Fatalf("instance: %+v %v", got, err)
 	}
 }
 
@@ -427,5 +480,33 @@ func TestReconcileLogsStrayInstancesWhenNoneRecorded(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "ignoring unregistered instance container") || !strings.Contains(logs.String(), "instance=stray") {
 		t.Fatalf("logs: %s", logs.String())
+	}
+}
+
+func TestCreateInstanceMarksCustomImage(t *testing.T) {
+	s, f := seedImagesFake(t, cloud.Image{Name: "web", Source: "vm", Status: "AVAILABLE", SSHUser: "ubuntu", CloudInit: true})
+	for image, want := range map[string]bool{"web": true, "ubuntu-26.04": false} {
+		op, err := s.CreateInstance("vm-"+strings.ReplaceAll(image, ".", ""), image, "lab-small", "student", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		wait(t, s, op)
+		var got *bool
+		for _, c := range f.Calls() {
+			if c.Method == "CreateInstance" && c.Instance.Image == image {
+				got = &c.Instance.Custom
+			}
+		}
+		if got == nil || *got != want {
+			t.Fatalf("%s custom = %v, want %v", image, got, want)
+		}
+	}
+}
+
+func TestCreateInstanceRejectsUserDataWithoutCloudInit(t *testing.T) {
+	s := seedImages(t, cloud.Image{Name: "web", Source: "vm", Status: "AVAILABLE", SSHUser: "ubuntu"})
+	_, err := s.CreateInstance("vm", "web", "lab-small", "student", "#cloud-config\n")
+	if !errors.Is(err, cloud.ErrInvalid) || !strings.Contains(err.Error(), "cloud-init") {
+		t.Fatalf("err = %v", err)
 	}
 }

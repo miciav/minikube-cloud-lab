@@ -178,6 +178,11 @@ cluster name, inspect any volume named `NAME-mNN` with `docker volume inspect`.
 Remove it only after confirming it belongs to the deleted lab and no container
 uses it; the cloud does not automatically delete historical orphan volumes.
 
+## Personal images
+
+`cloud images create` stores each personal image in the local container runtime: an image plus a volume holding a copy of `/var`. Each clone launched from it receives another copy, so disk usage grows with the size of `/var` and with the number of instances. The cloud allows at most 8 personal images. `docker image prune -a` or `docker volume prune` (`podman` on Podman) can remove them behind the cloud's back; the next start then marks the image `ERROR`. Delete it with `cloud images delete NAME`, never with the runtime, and capture it again. See the [golden images tutorial](tutorials/compute/golden-images.md).
+Downgrading the cloud to a version without personal images drops the image catalog from the state on its first save and orphans the `localhost/minikube-cloud-lab/image-*` images and `mcl-image-*-var` volumes. Delete personal images through the cloud before downgrading.
+
 ## Cloud storage
 
 The cloud automatically installs storage classes for dynamically provisioned NFS volumes. `cloud-standard` deletes released volumes; `cloud-retain` preserves them for recovery. Deleting a cluster conservatively retains its remaining volumes, which can be removed explicitly. `cloud volumes list` displays their state. See the [storage tutorial](tutorials/storage/persistent-volumes.md) for creation and recovery across clusters.

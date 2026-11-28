@@ -110,7 +110,9 @@ jobs:
           # The cloud image must work without either host Kubernetes CLI binary.
           docker compose exec -T cloud sh -c '! command -v minikube && ! command -v kubectl'
           # Verify real runtime quotas as well as what Kubernetes can schedule.
-          test "$(docker inspect demo --format '{{.HostConfig.NanoCpus}}')" = 2000000000
+          # The cloud keeps minikube's NanoCpus or applies an equivalent quota on cgroup v2.
+          cpu_limit=$(docker inspect demo --format '{{.HostConfig.NanoCpus}} {{.HostConfig.CpuQuota}} {{.HostConfig.CpuPeriod}}')
+          [[ $cpu_limit == "2000000000 "* || $cpu_limit == "0 200000 100000" ]]
           test "$(docker inspect demo --format '{{.HostConfig.Memory}}')" = 2147483648
           test "$(kubectl get node demo -o jsonpath='{.status.allocatable.cpu}')" = 2
           lab install autoscaler
@@ -159,6 +161,12 @@ jobs:
           bash tests/service-exposure.sh deleted
           bash tests/storage.sh recover
           TEST_RESTART_CLOUD=1 bash tests/instance-disks.sh
+          # Groups need the module; the script waits for ready=1, as the earlier installs rely on.
+          lab install instance-autoscaling
+          trap 'lab uninstall instance-autoscaling || true' EXIT
+          bash tests/instance-golden-image.sh
+          trap - EXIT
+          lab uninstall instance-autoscaling
       - name: Diagnostics
         if: failure() || cancelled()
         run: |

@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/miciav/minikube-cloud-lab/internal/api"
 	"github.com/miciav/minikube-cloud-lab/internal/cloud"
+	"github.com/miciav/minikube-cloud-lab/internal/infra/fake"
 )
 
 func call(t *testing.T, method, url, body string) (*http.Response, []byte) {
@@ -147,4 +151,21 @@ func TestInstanceDiskHTTPContract(t *testing.T) {
 	t.Setenv("CLOUD_DISK_VOLUME", "")
 	_, err = c.InstanceDisks(t.Context())
 	assertStatus(t, err, http.StatusServiceUnavailable)
+}
+
+func TestImagesIncludePersonal(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"images":[{"name":"web","status":"AVAILABLE","source":"vm"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := cloud.NewService(fake.New(), dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(api.NewServer(s))
+	t.Cleanup(server.Close)
+	images, err := api.NewClient(server.URL).Images(context.Background())
+	if err != nil || len(images) != 3 || images[2].Name != "web" || images[2].Source != "vm" {
+		t.Fatalf("images: %+v %v", images, err)
+	}
 }

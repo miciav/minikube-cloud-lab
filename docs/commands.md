@@ -18,8 +18,10 @@ Run the commands from a checkout after `source scripts/configure.sh`. `cloud` ma
 | `cloud machines list` | Optional `--cluster NAME` filter |
 | `cloud volumes list` / `cloud volumes delete ID` | List volumes or delete an available volume |
 | `cloud volumes create --capacity SIZE` / `publish ID --cluster NAME` / `unpublish ID` | Allocate and publish a static volume or release its cluster binding |
-| `cloud images list` | Displays the standalone instance images |
-| `cloud instances create NAME` | `--image ubuntu-26.04` (or `debian-12`), `--machine-type lab-small`, `--async` |
+| `cloud images list` / `describe NAME` | Displays the built-in and personal instance images |
+| `cloud images create NAME --from INSTANCE` | Captures a stopped standalone instance without data disks as a personal image; `--description TEXT`, `--async` |
+| `cloud images delete NAME` | Removes a personal image unless an instance or group uses it; `--async` |
+| `cloud instances create NAME` | `--image ubuntu-26.04` (`debian-12` or a personal image), `--machine-type lab-small`, `--async` |
 | `cloud instances list` / `describe NAME` | Lists instances or displays one, with status and IP |
 | `cloud instances stop NAME` / `start NAME` / `delete NAME` | Lifecycle requests; `--async` |
 | `cloud instances ssh NAME [-- COMMAND...]` | Opens a shell, or runs a command and returns its exit status |
@@ -28,7 +30,7 @@ Run the commands from a checkout after `source scripts/configure.sh`. `cloud` ma
 | `lab install MODULE` / `lab status MODULE` / `lab uninstall MODULE` | Manage `autoscaler`, `instance-autoscaling` or `yakd`; see [scope and removal](../README.md#optional-modules) |
 | `lab load start` / `lab load stop` | Creates / deletes the workload; `start --replicas N` |
 | `lab services` | Show local endpoints for exposed Kubernetes Services |
-| `cloud groups create NAME` / `resize NAME` / `delete NAME` | Create a group, change desired capacity or remove its members |
+| `cloud groups create NAME` / `resize NAME` / `delete NAME` | Create a group, change desired capacity or remove its members; `--bootstrap` is optional with a personal image |
 | `cloud groups list` / `describe NAME` | Inspect desired and ready capacity |
 | `cloud disks create NAME` / `attach NAME` / `detach NAME` / `delete NAME` | Manage a standalone instance data disk |
 | `cloud disks list` / `cloud disks shell INSTANCE DISK` | Inspect disks or open the rootless disk console |

@@ -189,12 +189,41 @@ type instanceRequest struct {
 	MachineType string `json:"machineType"`
 }
 
+type imageRequest struct {
+	Name        string `json:"name"`
+	From        string `json:"from"`
+	Description string `json:"description,omitempty"`
+}
+
+func imagePath(name string) string { return "/v1/images/" + url.PathEscape(name) }
+
 func instancePath(name string) string { return "/v1/instances/" + url.PathEscape(name) }
 
 // Images lists the instance image catalog.
 func (c *Client) Images(ctx context.Context) ([]cloud.Image, error) {
 	var result []cloud.Image
 	_, err := c.request(ctx, http.MethodGet, "/v1/images", nil, &result)
+	return result, err
+}
+
+// CreateImage captures a stopped instance asynchronously.
+func (c *Client) CreateImage(ctx context.Context, name, from, description string) (cloud.Operation, error) {
+	var result cloud.Operation
+	_, err := c.request(ctx, http.MethodPost, "/v1/images", imageRequest{Name: name, From: from, Description: description}, &result)
+	return result, err
+}
+
+// Image describes one catalog image.
+func (c *Client) Image(ctx context.Context, name string) (cloud.Image, error) {
+	var result cloud.Image
+	_, err := c.request(ctx, http.MethodGet, imagePath(name), nil, &result)
+	return result, err
+}
+
+// DeleteImage requests removal of a personal image asynchronously.
+func (c *Client) DeleteImage(ctx context.Context, name string) (cloud.Operation, error) {
+	var result cloud.Operation
+	_, err := c.request(ctx, http.MethodDelete, imagePath(name), nil, &result)
 	return result, err
 }
 
