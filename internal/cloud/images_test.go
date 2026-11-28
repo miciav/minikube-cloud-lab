@@ -60,6 +60,7 @@ func editState(t *testing.T, dir string, edit func(map[string]any)) {
 
 func TestCreateImageCapturesStoppedInstance(t *testing.T) {
 	s, f, _ := stoppedSource(t)
+	f.Delay = 200 * time.Millisecond // keep the capture running while checking CREATING
 	op, err := s.CreateImage("web", "src", "nginx", "student")
 	if err != nil || op.Type != "CREATE_IMAGE" || op.Target != "web" || op.Requester != "student" {
 		t.Fatalf("accepted: %+v %v", op, err)
