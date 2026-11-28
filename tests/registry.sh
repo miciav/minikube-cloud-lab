@@ -21,7 +21,9 @@ must_reject() {
     if output=$(cloud "$@" </dev/null 2>&1); then echo "Unexpected success: $*" >&2; return 1; fi
     [[ "$output" == *"$expected"* ]] || { echo "$output" >&2; return 1; }
 }
-guest() { local vm=$1; shift; cloud instances ssh "$vm" -- "$@"; } # joined like OpenSSH
+# The arguments are joined with spaces and parsed again by the guest shell, like OpenSSH: quote
+# any argument holding spaces or shell characters inside one command string.
+guest() { local vm=$1; shift; cloud instances ssh "$vm" -- "$@"; }
 secret() { cloud registries credentials "$registry" "--$1" </dev/null | awk '$1 == "password" {print $2}'; }
 wait_ready() { # restart the cloud and wait for its API
     for _ in $(seq 1 60); do if cloud machine-types list </dev/null >/dev/null 2>&1; then return; fi; sleep 2; done
@@ -31,9 +33,9 @@ wait_ready() { # restart the cloud and wait for its API
 lists_hello() { cloud registries images "$registry" </dev/null | awk '$1 == "hello" && $2 == "v1" {found = 1} END {exit !found}'; }
 
 subnet=$(docker network inspect minikube-cloud-lab --format '{{(index .IPAM.Config 0).Subnet}}')
+registry_created=yes # before any check, so the trap deletes it
 cloud registries create "$registry" </dev/null | grep -Fx "Created registry $registry at $endpoint"
-registry_created=yes
-cloud registries list </dev/null | grep -E "^$registry +$endpoint +"
+cloud registries list </dev/null | awk -v n="$registry" -v e="$endpoint" '$1 == n && $2 == e {f = 1} END {exit !f}'
 cloud registries credentials "$registry" --pull </dev/null | grep -Fx 'username pull'
 push_pw=$(secret push) pull_pw=$(secret pull)
 
@@ -49,7 +51,7 @@ for _ in \$(seq 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
 mkdir -p /tmp/hello
 printf 'FROM %s\nCMD ["httpd", "-f", "-p", "8080"]\n' '$BUSYBOX_IMAGE' > /tmp/hello/Dockerfile
 SCRIPT
-guest "$vm" docker info --format '{{json .RegistryConfig.InsecureRegistryCIDRs}}' </dev/null | grep -F "\"$subnet\""
+guest "$vm" "docker info --format '{{json .RegistryConfig.InsecureRegistryCIDRs}}'" </dev/null | grep -F "\"$subnet\""
 guest "$vm" docker login -u push --password-stdin "$endpoint" <<<"$push_pw"
 guest "$vm" docker build -q -t "$endpoint/hello:v1" /tmp/hello </dev/null
 guest "$vm" docker push "$endpoint/hello:v1" </dev/null

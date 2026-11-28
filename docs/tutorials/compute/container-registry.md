@@ -111,11 +111,11 @@ kubectl get pods -l app=hello
 kubectl get events --field-selector reason=Pulled
 ```
 
-The events show the kubelet pulling `corso.registry:5000/hello:v1` with the pull account.
+The events show the kubelet pulling `corso.registry:5000/hello:v1`. The pull succeeds only because the Secret gives the kubelet the pull account: the registry refuses anonymous clients.
 
 ## A registry lives with the cloud
 
-Stopping the cloud stops its registries; starting it brings them back on their data. While the cloud is down, pulls fail and the kubelet retries. `labcompose down -v` erases all registry data: the registries come back empty with the same names and credentials. See [operations](../../operations.md#container-registries).
+Stopping the cloud stops its registries; starting it brings them back on their data. While the cloud is down, pulls fail and the kubelet retries. `labcompose down -v` erases all registry data. On rootful Docker the registries come back empty with the same names and credentials; on rootless Podman it also erases the cloud state, so the registries are gone. See [operations](../../operations.md#container-registries).
 
 ## Clean up
 
